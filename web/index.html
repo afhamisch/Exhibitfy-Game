@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tom Rexington, Esq.: Bates &amp; Destroy — prototype</title>
+<style>
+  :root {
+    --orange: #d93e15;
+    --ink: #14161a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--ink); color: #f2f1ec;
+    font: 14px/1.5 "Helvetica Neue", Arial, sans-serif;
+  }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* crosshair */
+  #reticle {
+    position: fixed; left: 50%; top: 50%; width: 22px; height: 22px;
+    margin: -11px 0 0 -11px; pointer-events: none; opacity: 0.85;
+  }
+  #reticle::before, #reticle::after {
+    content: ""; position: absolute; background: #fff;
+    box-shadow: 0 0 2px rgba(0,0,0,.8);
+  }
+  #reticle::before { left: 50%; top: 0; width: 2px; height: 100%; margin-left: -1px; }
+  #reticle::after  { top: 50%; left: 0; height: 2px; width: 100%; margin-top: -1px; }
+
+  #hud {
+    position: fixed; left: 18px; top: 16px; pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  }
+  #hud .score { font-size: 30px; font-weight: 700; letter-spacing: .02em; }
+  #hud .score b { color: var(--orange); }
+  #hud .sub { opacity: .75; font-size: 12px; letter-spacing: .12em;
+              text-transform: uppercase; }
+
+  #overlay {
+    position: fixed; inset: 0; display: flex; align-items: center;
+    justify-content: center; background: rgba(10,11,13,.86);
+    backdrop-filter: blur(3px); text-align: center; cursor: pointer; z-index: 5;
+  }
+  #overlay .card { max-width: 460px; padding: 28px 34px; }
+  #overlay h1 {
+    margin: 0 0 4px; font-size: 26px; letter-spacing: .01em; line-height: 1.15;
+  }
+  #overlay h1 b { color: var(--orange); }
+  #overlay .tag {
+    font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+    opacity: .6; margin-bottom: 20px;
+  }
+  #overlay table { margin: 0 auto 18px; border-collapse: collapse; }
+  #overlay td { padding: 3px 10px; font-size: 13px; }
+  #overlay td.k { text-align: right; opacity: .6; }
+  #overlay td.v { text-align: left; }
+  kbd {
+    background: #24272d; border: 1px solid #383c44; border-bottom-width: 2px;
+    border-radius: 4px; padding: 1px 6px; font: 12px/1.4 inherit;
+  }
+  #overlay .go {
+    display: inline-block; margin-top: 6px; padding: 10px 22px;
+    background: var(--orange); color: #fff; border-radius: 3px;
+    font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    font-size: 12px;
+  }
+  #overlay .note { margin-top: 16px; font-size: 11px; opacity: .45; }
+  #loading { font-size: 13px; opacity: .7; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="reticle" hidden></div>
+<div id="hud" hidden>
+  <div class="score">STAMPED <b id="score">0</b></div>
+  <div class="sub" id="remaining">4 documents at large</div>
+</div>
+
+<div id="overlay">
+  <div class="card">
+    <h1>Tom Rexington, Esq.<br><b>Bates &amp; Destroy</b></h1>
+    <div class="tag">Playable prototype</div>
+    <table>
+      <tr><td class="k">Move</td><td class="v"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td></tr>
+      <tr><td class="k">Look</td><td class="v">Mouse</td></tr>
+      <tr><td class="k">Stamp</td><td class="v">Left click</td></tr>
+      <tr><td class="k">Sprint</td><td class="v"><kbd>Shift</kbd></td></tr>
+      <tr><td class="k">Release</td><td class="v"><kbd>Esc</kbd></td></tr>
+    </table>
+    <div id="loading">Loading assets…</div>
+    <div class="go" id="go" hidden>Click to play</div>
+    <div class="note">Chase down the paperwork and stamp it.</div>
+  </div>
+</div>
+
+<!-- three.js is vendored into web/vendor so the prototype runs offline and
+     has no third-party CDN dependency when embedded. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

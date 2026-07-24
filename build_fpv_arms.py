@@ -430,7 +430,12 @@ def build_thumb(side_uv, curl=(34.0, 30.0), splay=-52.0, twist=-26.0,
 
 def build_hand(name, bar_radius, grip_point=None, tighten=None, thumb=None,
                suffix=""):
-    """Right hand in canonical local space: +Z fingers, +Y dorsal, -X thumb.
+    """A LEFT hand in canonical local space: +Z fingers, +Y dorsal, +X... no.
+
+    Canonical space is +Z along the fingers, +Y out of the back of the hand,
+    and the thumb at -X. For that frame a right hand would need its thumb at
+    dorsal x fingers = +X, so this builds a LEFT hand; the right side is the
+    one that gets mirrored.
 
     Finger bends are solved so each digit wraps the handle it is actually
     holding, rather than being posed by eye and hoping it lands.
@@ -569,6 +574,9 @@ def build_arm(name, wrist_world, hand_basis, elbow_dir, bow, watch=False):
         sleeve_at(s1 - 0.055), cframes[-1][0], cframes[-1][1])
     cloth.add_loft([crings[-1], lip], uv_rect=(0.0, 0.99, 1.0, 0.92),
                    group=2, flip=True)
+    # cap the inside of the fold. The forearm passes through it, so it is never
+    # seen, but it leaves the sleeve watertight instead of an open tube.
+    cloth.add_grid_cap(lip, group=3, flip=True)
 
     node = Node(name, arm_world, meshes=[cloth, skin])
     return node, arm_world, path_at, (twisted, ts, pts)
@@ -622,7 +630,7 @@ def build_watch(path_at, frame_fn, ts):
     dial = M.Mesh("Watch_Dial", MAT["watch_dial"])
     face = vec.mad(base, up, 0.0162)
     M.cylinder(dial, face, vec.mad(face, up, 0.0009), 0.0180, 0.0178, 22,
-               group=0, cap_start=False, up_hint=fwd)
+               group=0, cap_start=True, up_hint=fwd)
     node.add_mesh(dial)
 
     hands = M.Mesh("Watch_Hands", MAT["watch_steel"])
@@ -812,7 +820,7 @@ def build_stamp(bates="000137"):
 
     M.tube_along_path(handle, hp, hprof, up_hint=(0.0, 1.0, 0.0),
                       uv_rect=(0.0, 0.0, 1.0, 1.0), group=0,
-                      cap_start=False, cap_end=False)
+                      cap_start=True, cap_end=True)
     node.add_mesh(handle)
 
     caps = M.Mesh("Stamp_HandleCaps", MAT["orange"])
@@ -829,7 +837,7 @@ def build_stamp(bates="000137"):
     M.tube_along_path(gr, gp, lambda t: M.profile_ellipse(
         16, S["grip_r"] * (0.94 + 0.09 * math.sin(t * math.pi)),
         S["grip_r"] * 0.93), up_hint=(0.0, 1.0, 0.0), group=0,
-        cap_start=False, cap_end=False)
+        cap_start=True, cap_end=True)
     node.add_mesh(gr)
 
     gcap = M.Mesh("Stamp_ForegripFittings", MAT["orange"])
@@ -943,9 +951,9 @@ def build_scene(bates="000137", images=None):
         hand = build_hand("Hand_" + side, bar_r, gp, tighten, thumb,
                           "_" + side)
         hand.matrix = vec.mat_mul(vec.rigid_inverse(arm_world), hand_world)
-        if side == "L":
+        if side == "R":
             mirror_node(hand)
-            hand.name = "Hand_L"
+            hand.name = "Hand_R"
         arm_node.add(hand)
 
         if side == "L":

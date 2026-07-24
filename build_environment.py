@@ -76,9 +76,10 @@ def materials(scene):
     scene.material(Material(MAT["card"], (1, 1, 1, 1), 0.0, 0.90,
                             "env_cardboard"))
     scene.material(Material(MAT["plastic"], P["plastic"], 0.0, 0.52))
-    scene.material(Material(MAT["paper"], (1, 1, 1, 1), 0.0, 0.90, "env_paper"))
+    scene.material(Material(MAT["paper"], (1, 1, 1, 1), 0.0, 0.90, "env_paper",
+                            double_sided=True))
     scene.material(Material(MAT["glow"], P["glow"], 0.0, 0.40,
-                            emissive=P["glow"]))
+                            emissive=P["glow"], double_sided=True))
     scene.material(Material(MAT["steel"], hex_srgb("#AEB3BA"), 1.0, 0.30))
 
 
@@ -97,14 +98,45 @@ def slab(mesh, w, d, h, center, mat_uv_scale=1.0, group=0, chamfer=0.008):
         (0, 0, w * mat_uv_scale, d * mat_uv_scale))
 
 
+def slab_box(mesh, w, h, d, center, tile=1.0, group=0, subdiv=1):
+    """A closed axis-aligned box with planar UVs on every face.
+
+    box_chamfered lofts along Y and caps the ends with a fan, which leaves the
+    top face with degenerate UVs -- fine for a drawer front, useless for a
+    carpeted floor. This keeps the tiling correct on the faces you actually
+    look at, and closes all six sides so nothing reads as hollow from below.
+    """
+    x, y, z = center
+    hw, hh, hd = w * 0.5, h * 0.5, d * 0.5
+    uv = (0, 0, w * tile, d * tile)
+    uvx = (0, 0, d * tile, h * tile)
+    uvz = (0, 0, w * tile, h * tile)
+    M.plate(mesh, (x, y + hh, z), (1, 0, 0), (0, 0, -1), w, d, group=group,
+            uv_rect=uv, subdiv=subdiv)                       # top    +Y
+    M.plate(mesh, (x, y - hh, z), (1, 0, 0), (0, 0, 1), w, d, group=group,
+            uv_rect=uv, subdiv=subdiv)                       # bottom -Y
+    M.plate(mesh, (x + hw, y, z), (0, 0, -1), (0, 1, 0), d, h, group=group + 1,
+            uv_rect=uvx)                                     # +X
+    M.plate(mesh, (x - hw, y, z), (0, 0, 1), (0, 1, 0), d, h, group=group + 2,
+            uv_rect=uvx)                                     # -X
+    M.plate(mesh, (x, y, z + hd), (1, 0, 0), (0, 1, 0), w, h, group=group + 3,
+            uv_rect=uvz)                                     # +Z
+    M.plate(mesh, (x, y, z - hd), (-1, 0, 0), (0, 1, 0), w, h, group=group + 4,
+            uv_rect=uvz)                                     # -Z
+
+
+FLOOR_T = 0.08
+CEIL_T = 0.06
+
+
 def floor_plate(mesh, w, d, center=(0, 0, 0), tile=0.9, group=0):
-    M.plate(mesh, center, (1.0, 0.0, 0.0), (0.0, 0.0, -1.0), w, d, group=group,
-            uv_rect=(0, 0, w * tile, d * tile), subdiv=1)
+    """Walking surface stays at y = 0; the slab hangs below it."""
+    slab_box(mesh, w, FLOOR_T, d,
+             (center[0], center[1] - FLOOR_T * 0.5, center[2]), tile, group)
 
 
 def ceiling_plate(mesh, w, d, y, tile=1.6, group=0):
-    M.plate(mesh, (0.0, y, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), w, d,
-            group=group, uv_rect=(0, 0, w * tile, d * tile), subdiv=1)
+    slab_box(mesh, w, CEIL_T, d, (0.0, y + CEIL_T * 0.5, 0.0), tile, group)
 
 
 def wall_panel(mesh_wall, mesh_base, x, z, length, along_z=True, group=0):
@@ -308,8 +340,10 @@ def piece_desk_chair(scene):
     # desk clutter: a paper stack, a couple of loose sheets, a mug
     stack = M.Mesh("Paper_Stack", MAT["paper"])
     slab(stack, 0.225, 0.290, 0.045, (-0.34, H + 0.022, 0.02), 1.0, chamfer=0.003)
-    scatter_papers(stack, rnd, 2, (-0.05, 0.30), (-0.18, 0.18), y=H + 0.002)
     root.add_mesh(stack)
+    loose = M.Mesh("Desk_Loose_Paper", MAT["paper"])
+    scatter_papers(loose, rnd, 2, (-0.05, 0.30), (-0.18, 0.18), y=H + 0.002)
+    root.add_mesh(loose)
     mug = M.Mesh("Mug", MAT["plastic"])
     M.cylinder(mug, (0.42, H + 0.001, -0.16), (0.42, H + 0.095, -0.16),
                0.041, 0.038, 14, group=0)
