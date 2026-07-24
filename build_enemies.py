@@ -74,7 +74,7 @@ VARIANTS = {
         "sheets": 1,
         "scale": 1.0,
         "run": {"cadence": 1.0, "stride": 46.0, "bob": 0.052, "lean": 11.0,
-                "sway": 0.014, "flutter": 7.0, "jitter": 1.0, "arm": 44.0},
+                "sway": 0.014, "flutter": 7.0, "jitter": 1.0, "arm": 38.0},
         "face": "calm",
     },
     "privilege": {
@@ -84,7 +84,7 @@ VARIANTS = {
         "scale": 0.97,
         # evasive and smug: less honest sprinting, more side-stepping
         "run": {"cadence": 1.12, "stride": 38.0, "bob": 0.038, "lean": 4.0,
-                "sway": 0.052, "flutter": 11.0, "jitter": 0.5, "arm": 30.0,
+                "sway": 0.052, "flutter": 11.0, "jitter": 0.5, "arm": 27.0,
                 "dodge": 1.0},
         "face": "smug",
     },
@@ -95,7 +95,7 @@ VARIANTS = {
         "scale": 1.16,
         # heavy: slow cadence, deep bob, hard landings, minimal arm swing
         "run": {"cadence": 0.66, "stride": 34.0, "bob": 0.070, "lean": 15.0,
-                "sway": 0.020, "flutter": 3.0, "jitter": 0.3, "arm": 22.0,
+                "sway": 0.020, "flutter": 3.0, "jitter": 0.3, "arm": 20.0,
                 "thud": 1.0},
         "face": "calm",
     },
@@ -105,7 +105,7 @@ VARIANTS = {
         "sheets": 5,
         "scale": 1.04,
         "run": {"cadence": 1.25, "stride": 50.0, "bob": 0.058, "lean": 8.0,
-                "sway": 0.030, "flutter": 16.0, "jitter": 2.0, "arm": 52.0,
+                "sway": 0.030, "flutter": 16.0, "jitter": 2.0, "arm": 44.0,
                 "scatter": 1.0},
         "face": "panic",
     },
@@ -467,7 +467,9 @@ def run_cycle(scene):
             arm = r["limbs"]["arm_" + side]
             fore = r["limbs"]["fore_" + side]
             up = _swing(cfg["arm"], p + ph + math.pi)
-            elbow = (0.45 + 0.55 * math.sin(p + ph + 2.2)) * 46.0 * D2R
+            # flex tracks the shoulder: deepest as the arm comes through in
+            # front, opening out as it trails behind
+            elbow = (0.42 + 0.58 * math.sin(p + ph + math.pi + 0.5)) * 52.0 * D2R
             pose[arm] = vec.mat_mul(
                 vec.translate((arm.bind_local[3], arm.bind_local[7],
                                arm.bind_local[11])),
@@ -475,7 +477,7 @@ def run_cycle(scene):
                             vec.rot_z((-1 if side == "L" else 1) *
                                       (16.0 + 8.0 * math.sin(p)) * D2R)))
             pose[fore] = vec.mat_mul(vec.translate((0.0, -LIMB["upper"], 0.0)),
-                                     vec.rot_x(-abs(elbow)))
+                                     vec.rot_x(abs(elbow)))
 
         # faces and mark hold their bind state through the run
         for key, node in r["faces"].items():
@@ -518,6 +520,10 @@ def stamped(scene):
 
         pose[r["rig"]] = vec.translate((0.0, drop, 0.0))
         body_y = BODY_Y * (1.0 - 0.62 * lie) + 0.02 * lie
+        # the legs hang off the bottom edge of the sheet, so when the sheet
+        # squashes they have to ride up with it or they detach in mid air
+        hip_y = body_y - SHEET["h"] * 0.5 * squash[1] * (1.0 - 0.55 * lie) \
+            + 0.014
         pose[r["torso"]] = vec.mat_mul(
             vec.translate((0.0, body_y, -0.08 * lie)),
             vec.rot_x(-78.0 * lie * D2R))
@@ -567,9 +573,9 @@ def stamped(scene):
                 vec.mat_mul(vec.rot_z(sgn * (18.0 + 62.0 * splay) * D2R),
                             vec.rot_x((-52.0 * (1.0 - splay) - 6.0) * D2R)))
             pose[fore] = vec.mat_mul(vec.translate((0.0, -LIMB["upper"], 0.0)),
-                                     vec.rot_x(-(38.0 - 30.0 * splay) * D2R))
+                                     vec.rot_x((38.0 - 30.0 * splay) * D2R))
             pose[leg] = vec.mat_mul(
-                vec.translate((leg.bind_local[3], leg.bind_local[7],
+                vec.translate((leg.bind_local[3], max(0.03, hip_y),
                                leg.bind_local[11])),
                 vec.mat_mul(vec.rot_z(sgn * 34.0 * splay * D2R),
                             vec.rot_x((16.0 - 88.0 * splay) * D2R)))
