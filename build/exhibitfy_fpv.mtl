@@ -1,0 +1,121 @@
+# Materials for exhibitfy_fpv.obj (approximate OBJ mapping of PBR)
+newmtl Skin_Tom
+Kd 1.0000 1.0000 1.0000
+Ks 0.2500 0.2500 0.2500
+Ns 2.0
+d 1.0
+illum 2
+map_Kd textures/skin_basecolor.png
+map_Pr textures/skin_mr.png
+Pm 0.000
+Pr 1.000
+
+newmtl Shirt_White
+Kd 1.0000 1.0000 1.0000
+Ks 0.2500 0.2500 0.2500
+Ns 2.0
+d 1.0
+illum 2
+map_Kd textures/shirt_basecolor.png
+map_Pr textures/shirt_mr.png
+Pm 0.000
+Pr 1.000
+
+newmtl Steel_Machined
+Kd 1.0000 1.0000 1.0000
+Ks 0.9000 0.9000 0.9000
+Ns 2.0
+d 1.0
+illum 2
+map_Kd textures/steel_basecolor.png
+map_Pr textures/steel_mr.png
+Pm 1.000
+Pr 1.000
+
+newmtl Housing_Black
+Kd 0.0060 0.0070 0.0086
+Ks 0.2500 0.2500 0.2500
+Ns 282.2
+d 1.0
+illum 2
+Pm 0.250
+Pr 0.440
+
+newmtl Housing_Exhibitfy
+Kd 1.0000 1.0000 1.0000
+Ks 0.9000 0.9000 0.9000
+Ns 2.0
+d 1.0
+illum 2
+map_Kd textures/housing_basecolor.png
+map_Pr textures/housing_mr.png
+Pm 1.000
+Pr 1.000
+
+newmtl Accent_Exhibitfy_Orange
+Kd 0.6939 0.0482 0.0075
+Ks 0.2500 0.2500 0.2500
+Ns 392.0
+d 1.0
+illum 2
+Pm 0.100
+Pr 0.340
+
+newmtl Rubber_Base
+Kd 0.0086 0.0091 0.0116
+Ks 0.2500 0.2500 0.2500
+Ns 5.8
+d 1.0
+illum 2
+Pm 0.000
+Pr 0.920
+
+newmtl Stamp_Die_Face
+Kd 1.0000 1.0000 1.0000
+Ks 0.2500 0.2500 0.2500
+Ns 2.0
+d 1.0
+illum 2
+map_Kd textures/stamp_die_basecolor.png
+map_Pr textures/stamp_die_mr.png
+Pm 0.000
+Pr 1.000
+
+newmtl Grip_Rubber
+Kd 1.0000 1.0000 1.0000
+Ks 0.2500 0.2500 0.2500
+Ns 2.0
+d 1.0
+illum 2
+map_Kd textures/grip_basecolor.png
+map_Pr textures/grip_mr.png
+Pm 0.000
+Pr 1.000
+
+newmtl Watch_Silver
+Kd 0.5841 0.6105 0.6584
+Ks 0.9000 0.9000 0.9000
+Ns 576.0
+d 1.0
+illum 2
+Pm 1.000
+Pr 0.200
+
+newmtl Watch_Dial
+Kd 0.0044 0.0060 0.0097
+Ks 0.2500 0.2500 0.2500
+Ns 605.2
+d 1.0
+illum 2
+Pm 0.200
+Pr 0.180
+
+newmtl Bates_Number_Wheels
+Kd 1.0000 1.0000 1.0000
+Ks 0.9000 0.9000 0.9000
+Ns 392.0
+d 1.0
+illum 2
+map_Kd textures/wheel_digits.png
+Pm 0.850
+Pr 0.340
