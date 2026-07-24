@@ -8,7 +8,8 @@ Bates stamp, posed mid-ready to slam forward.
     python3 build_fpv_arms.py [--no-preview] [--bates 000137]
 
 Outputs into build/:
-    exhibitfy_fpv_arms.glb      runtime asset (PBR + embedded textures)
+    exhibitfy_fpv_arms.glb      runtime asset (PBR, textures, Stamp_Swing)
+    exhibitfy_fpv_arms_single_mesh.glb   same geometry as one static object
     exhibitfy_fpv.obj / .mtl    quad-preserved editable mesh
     textures/*.png              every map, as authored
     previews/*.png              software renders incl. a wireframe pass
@@ -242,13 +243,14 @@ def bezier_path(p0, p1, p2, p3, steps):
 # --------------------------------------------------------------- the hand
 
 
-def build_finger(name, root, radius, phal, splay, curl, side_uv):
+def build_finger(name, root, radius, phal, splay, curl, side_uv,
+                 suffix=""):
     """One finger as a tapered, curled tube of quad loops.
 
     Built in finger-local space (origin at the knuckle, +Z down the finger)
     so the node transform can be keyframed straight away.
     """
-    m = M.Mesh("Finger_" + name, MAT["skin"])
+    m = M.Mesh("Finger_" + name + suffix, MAT["skin"])
     n = HAND["finger_sides"]
 
     # walk the curl, sampling each phalanx into several loops
@@ -291,7 +293,7 @@ def build_finger(name, root, radius, phal, splay, curl, side_uv):
     M.dome_tip(m, rings[-1], apex, steps=2, group=0,
                uv_rect=(0.0, v1 - (v1 - v0) * 0.06, 1.0, v1))
 
-    node = Node("Finger_" + name,
+    node = Node("Finger_" + name + suffix,
                 vec.mat_mul(vec.translate(root), vec.rot_y(splay * D2R)),
                 meshes=[m])
     node.bind_local = list(node.matrix)
@@ -333,8 +335,9 @@ def build_palm(side_uv):
     return m
 
 
-def build_thumb(side_uv, curl=(48.0, 40.0), splay=-58.0, twist=-22.0):
-    m = M.Mesh("Thumb", MAT["skin"])
+def build_thumb(side_uv, curl=(48.0, 40.0), splay=-58.0, twist=-22.0,
+                suffix=""):
+    m = M.Mesh("Thumb" + suffix, MAT["skin"])
     n = HAND["finger_sides"]
     radius = 0.0152
     phal = (0.040, 0.032)
@@ -363,13 +366,13 @@ def build_thumb(side_uv, curl=(48.0, 40.0), splay=-58.0, twist=-22.0):
     root = (-HAND["palm_w0"] * 0.48, -0.006, 0.024)
     mtx = vec.mat_mul(vec.translate(root),
                       vec.mat_mul(vec.rot_y(splay * D2R), vec.rot_z(twist * D2R)))
-    node = Node("Thumb", mtx, meshes=[m])
+    node = Node("Thumb" + suffix, mtx, meshes=[m])
     node.bind_local = list(node.matrix)
     node.mirror_sign = 1.0
     return node
 
 
-def build_hand(name, curls=None, thumb=None):
+def build_hand(name, curls=None, thumb=None, suffix=""):
     """Right hand in canonical local space: +Z fingers, +Y dorsal, -X thumb."""
     curls = curls or {}
     hv = TX.HAND_V
@@ -378,9 +381,10 @@ def build_hand(name, curls=None, thumb=None):
     for fname, root, radius, phal, splay in FINGERS:
         curl = curls.get(fname, (52.0, 72.0, 46.0))
         r = (root[0], root[1], HAND["palm_len"] + root[2])
-        node.add(build_finger(fname, r, radius, phal, splay, curl, hv))
+        node.add(build_finger(fname, r, radius, phal, splay, curl, hv,
+                              suffix))
     tk = thumb or {}
-    node.add(build_thumb(hv, **tk))
+    node.add(build_thumb(hv, suffix=suffix, **tk))
     return node
 
 
@@ -864,7 +868,7 @@ def build_scene(bates="000137", images=None):
         arm_node, arm_world, path_at, frame_info = build_arm(
             "Arm_" + side, wrist_world, hand_world, elbow_dir, bow)
 
-        hand = build_hand("Hand_" + side, curls, thumb)
+        hand = build_hand("Hand_" + side, curls, thumb, "_" + side)
         hand.matrix = vec.mat_mul(vec.rigid_inverse(arm_world), hand_world)
         if side == "L":
             mirror_node(hand)
@@ -1219,10 +1223,21 @@ def main(argv=None):
     obj = os.path.join(args.out, "exhibitfy_fpv.obj")
     export_obj(scene, obj)
 
+    # A single-object copy of the same geometry. The rigged file is 16 objects
+    # so it can animate; in a DCC that means Edit Mode only ever shows the one
+    # you have selected. This one opens as a single mesh with a material slot
+    # per material -- select, tab in, and everything is there.
+    single = scene.merged("TomRexington_FPV")
+    solo = os.path.join(args.out, "exhibitfy_fpv_arms_single_mesh.glb")
+    export_glb(single, solo)
+
     st = scene.stats()
     print("  meshes %d | quads %d | triangles %d"
           % (st["meshes"], st["quads"], st["triangles"]))
-    print("  %s (%.1f KB)" % (glb, os.path.getsize(glb) / 1024.0))
+    print("  %s (%.1f KB)  rigged, %s" % (glb, os.path.getsize(glb) / 1024.0,
+                                          anim.name))
+    print("  %s (%.1f KB)  single mesh, static"
+          % (solo, os.path.getsize(solo) / 1024.0))
     print("  %s" % obj)
 
     if not args.no_preview:

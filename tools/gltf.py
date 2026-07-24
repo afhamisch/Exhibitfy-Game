@@ -79,8 +79,14 @@ class Animation:
             tr["scale"].append(tuple(float(v) for v in scale))
 
     def key_matrix(self, node, time, matrix):
+        """Key all three channels.
+
+        All-or-nothing per node: a channel keyed on some frames but not others
+        would leave the sampler counts mismatched, and squash/stretch means
+        scale genuinely animates on some nodes.
+        """
         t, q, s = vec.mat_to_trs(matrix)
-        self.key(node, time, t, q, s if abs(s[0] - 1.0) > 1e-6 else None)
+        self.key(node, time, t, q, s)
 
     @property
     def duration(self):
@@ -127,6 +133,55 @@ class Scene:
             walk(r, vec.IDENTITY)
         return out
 
+    def merged(self, name="Merged"):
+        """A new Scene holding one node with everything baked into world space.
+
+        The rigged export is many nodes so it can animate; that also means a
+        DCC opens it as many objects, and Edit Mode only ever shows the active
+        one. This collapses the whole thing to a single object with one
+        material slot per material -- select it, tab in, and the entire model
+        is there. Static by definition: baking the hierarchy discards it.
+        """
+        out = Scene(self.name + "_merged")
+        out.materials = dict(self.materials)
+        out.images = dict(self.images)
+        node = Node(name)
+        out.add_root(node)
+
+        by_mat = {}
+        for world, m in self.flatten():
+            dst = by_mat.get(m.material)
+            if dst is None:
+                dst = _new_mesh(name + "_" + m.material, m.material)
+                by_mat[m.material] = dst
+                node.add_mesh(dst)
+            base = len(dst.pos)
+            for i, p in enumerate(m.pos):
+                dst.add_vertex(vec.xform_point(world, p), m.uv[i])
+            # keep shading groups distinct per source mesh so merging never
+            # smooths across two parts that happened to touch
+            gshift = id(m) % 100000 * 100
+            for idx, g in m.faces:
+                dst.add_face(tuple(base + v for v in idx), g + gshift)
+        out.prune()
+        return out
+
+    def prune(self):
+        """Drop materials and images this scene does not actually use.
+
+        Kit pieces are built from one shared material library, so without this
+        every piece would embed every texture -- seven copies of the same
+        carpet in a seven-piece kit.
+        """
+        used_mat = {m.material for _, m in self.flatten()}
+        self.materials = {k: v for k, v in self.materials.items()
+                          if k in used_mat}
+        used_img = set()
+        for m in self.materials.values():
+            used_img.update(t for t in (m.base_tex, m.mr_tex) if t)
+        self.images = {k: v for k, v in self.images.items() if k in used_img}
+        return self
+
     def stats(self):
         tris = verts = 0
         quads = 0
@@ -137,6 +192,11 @@ class Scene:
             quads += s["quads"]
         return {"triangles": tris, "quads": quads, "raw_verts": verts,
                 "meshes": len(self.flatten())}
+
+
+def _new_mesh(name, material):
+    from .mesh import Mesh
+    return Mesh(name, material)
 
 
 # --------------------------------------------------------------- normals
