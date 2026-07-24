@@ -50,10 +50,10 @@ HAND = {
 # name, root(x, y, z-offset from knuckle line), radius, phalanx lengths,
 # splay (deg about Y), curl (deg per phalanx)
 FINGERS = [
-    ("Index",  (-0.0288, 0.0035, -0.004), 0.0112, (0.041, 0.027, 0.021), -7.5),
-    ("Middle", (-0.0096, 0.0045, 0.000),  0.0117, (0.045, 0.030, 0.022), -1.5),
-    ("Ring",   (0.0099, 0.0035, -0.004),  0.0108, (0.042, 0.028, 0.021), 5.5),
-    ("Pinky",  (0.0274, 0.0010, -0.013),  0.0092, (0.034, 0.022, 0.018), 13.0),
+    ("Index",  (-0.0268, 0.0035, -0.004), 0.0112, (0.041, 0.027, 0.021), -3.5),
+    ("Middle", (-0.0090, 0.0045, 0.000),  0.0117, (0.045, 0.030, 0.022), -0.5),
+    ("Ring",   (0.0090, 0.0035, -0.004),  0.0108, (0.042, 0.028, 0.021), 3.0),
+    ("Pinky",  (0.0252, 0.0010, -0.013),  0.0092, (0.034, 0.022, 0.018), 7.5),
 ]
 
 STAMP = {
@@ -85,11 +85,11 @@ STAMP = {
     "head_size": (0.090, 0.026, 0.050),
     "handle_y": 0.2245,
     "handle_half": 0.0745,
-    "handle_r": 0.0197,
+    "handle_r": 0.0158,
     # side foregrip (left-hand support)
     "grip_root": (-0.0575, 0.0435, 0.017),
     "grip_tip": (-0.1330, 0.0125, 0.052),
-    "grip_r": 0.0182,
+    "grip_r": 0.0152,
 }
 
 RIG = {
@@ -243,62 +243,112 @@ def bezier_path(p0, p1, p2, p3, steps):
 # --------------------------------------------------------------- the hand
 
 
-def build_finger(name, root, radius, phal, splay, curl, side_uv,
-                 suffix=""):
-    """One finger as a tapered, curled tube of quad loops.
+def wrap_angles(root, lengths, centre, wrap_r, max_bend=95.0, first_max=88.0):
+    """Bend angles that wrap a chain of segments around a cylinder.
 
-    Built in finger-local space (origin at the knuckle, +Z down the finger)
-    so the node transform can be keyframed straight away.
+    Everything happens in the hand's YZ plane (the handle runs along hand X),
+    working in 2D as (z, y): the finger's rest direction is +z and a positive
+    bend curls it towards -y, i.e. into the palm. `centre` is the handle axis,
+    `wrap_r` the radius the joints should ride on (handle + finger radius).
+
+    Solving this instead of hand-picking angles is the difference between a
+    grip that happens to look right for one handle and one that stays right
+    when the handle moves or changes size.
     """
-    m = M.Mesh("Finger_" + name + suffix, MAT["skin"])
+    def sub(a, b):
+        return (a[0] - b[0], a[1] - b[1])
+
+    def add(a, b):
+        return (a[0] + b[0], a[1] + b[1])
+
+    def length(a):
+        return math.hypot(a[0], a[1])
+
+    def signed(a, b):
+        """angle from a to b, positive = anticlockwise in (z, y)"""
+        return math.atan2(a[0] * b[1] - a[1] * b[0], a[0] * b[0] + a[1] * b[1])
+
+    pts = [root]
+    d = length(sub(centre, root))
+    l0 = lengths[0]
+    # first joint: put it on the wrap circle if the proximal phalanx can reach
+    hit = None
+    if abs(l0 - wrap_r) <= d <= l0 + wrap_r:
+        a = (l0 * l0 - wrap_r * wrap_r + d * d) / (2.0 * d)
+        h = math.sqrt(max(0.0, l0 * l0 - a * a))
+        u = ((centre[0] - root[0]) / d, (centre[1] - root[1]) / d)
+        mid = (root[0] + u[0] * a, root[1] + u[1] * a)
+        # two solutions; take the one on the palm side (curling towards -y)
+        for s in (-1.0, 1.0):
+            cand = (mid[0] + u[1] * h * s, mid[1] - u[0] * h * s)
+            if hit is None or cand[1] < hit[1]:
+                hit = cand
+    if hit is None:
+        # out of reach: aim straight at the circle and let the clamps hold it
+        u = ((centre[0] - root[0]) / max(d, 1e-6),
+             (centre[1] - root[1]) / max(d, 1e-6))
+        hit = (root[0] + u[0] * l0, root[1] + u[1] * l0)
+    pts.append(hit)
+
+    # remaining joints ride around the circle, one chord per phalanx
+    ang = math.atan2(hit[1] - centre[1], hit[0] - centre[0])
+    for L in lengths[1:]:
+        step = 2.0 * math.asin(max(-1.0, min(1.0, L / (2.0 * wrap_r))))
+        ang -= step                      # walk around, curling into the palm
+        pts.append(add(centre, (math.cos(ang) * wrap_r,
+                                math.sin(ang) * wrap_r)))
+
+    out = []
+    prev = (1.0, 0.0)                    # rest direction is +z
+    for i in range(1, len(pts)):
+        v = sub(pts[i], pts[i - 1])
+        if length(v) < 1e-9:
+            out.append(0.0)
+            continue
+        v = (v[0] / length(v), v[1] / length(v))
+        a = -signed(prev, v)             # positive = curl towards the palm
+        lim = first_max if i == 1 else max_bend
+        a = max(-8.0 * D2R, min(lim * D2R, a))
+        out.append(a)
+        prev = (math.cos(-a) * prev[0] - math.sin(-a) * prev[1],
+                math.sin(-a) * prev[0] + math.cos(-a) * prev[1])
+    return out
+
+
+def build_finger(name, root, radius, phal, splay, bends, side_uv, suffix=""):
+    """A finger as three jointed bones: proximal, middle, distal.
+
+    Each bone is a straight capsule in its own space, so no amount of curl can
+    fold the geometry through itself, and the capsule ends double as knuckle
+    balls that keep the joints closed at any bend. Every joint is a node, so
+    the finger is genuinely articulated rather than frozen in one pose.
+    """
     n = HAND["finger_sides"]
-
-    # walk the curl, sampling each phalanx into several loops
-    pts = [(0.0, 0.0, 0.0)]
-    radii = [radius]
-    d = (0.0, 0.0, 1.0)
-    knuckles = [0]
-    for pi, (ln, ang) in enumerate(zip(phal, curl)):
-        sub = 4
-        for s in range(sub):
-            a = (ang * D2R) / sub
-            # curl bends towards the palm (-Y)
-            r = vec.rot_x(a)
-            d = vec.norm(vec.xform_dir(r, d))
-            p = vec.mad(pts[-1], d, ln / sub)
-            pts.append(p)
-            t = (pi * sub + s + 1) / (len(phal) * sub)
-            taper = radius * (1.0 - 0.30 * t)
-            # slight swell over each joint reads as a knuckle
-            if s == sub - 1 and pi < len(phal) - 1:
-                taper *= 1.10
-            elif s == 0:
-                taper *= 1.05
-            radii.append(taper)
-        knuckles.append(len(pts) - 1)
-
-    frames = vec.parallel_frames(pts, (0.0, 1.0, 0.0))
-    rings = []
-    for i, (p, f) in enumerate(zip(pts, frames)):
-        rx = radii[i]
-        ry = radii[i] * 0.93          # fingers are wider than they are deep
-        prof = M.profile_super(n, rx, ry, 2.5)
-        rings.append(M.ring_from_profile(prof, p, f[0], f[1]))
-
+    seg_names = ("", "_Mid", "_Tip")
+    radii = [radius, radius * 0.90, radius * 0.80, radius * 0.72]
     v0, v1 = side_uv
-    m.add_loft(rings, uv_rect=(0.0, v0, 1.0, v1), group=0)
-    m.add_grid_cap(rings[0], group=0, flip=True)
-    tip_axis = vec.mul(vec.sub(pts[-1], pts[-2]), 1.0)
-    apex = vec.mad(pts[-1], vec.norm(tip_axis), radii[-1] * 1.15)
-    M.dome_tip(m, rings[-1], apex, steps=2, group=0,
-               uv_rect=(0.0, v1 - (v1 - v0) * 0.06, 1.0, v1))
 
-    node = Node("Finger_" + name + suffix,
+    nodes = []
+    for i, (ln, bend) in enumerate(zip(phal, bends)):
+        m = M.Mesh("Finger_" + name + seg_names[i] + suffix, MAT["skin"])
+        # slightly wider than deep, and the knuckle end a touch fatter
+        M.capsule(m, ln, radii[i] * (1.06 if i else 1.10), radii[i + 1], n,
+                  group=0, uv_rect=(0.0, v0, 1.0, v1),
+                  base=True, tip=(i == len(phal) - 1))
+        if i == 0:
+            mtx = vec.mat_mul(
                 vec.mat_mul(vec.translate(root), vec.rot_y(splay * D2R)),
-                meshes=[m])
-    node.bind_local = list(node.matrix)
-    node.mirror_sign = 1.0
-    return node
+                vec.rot_x(bend))
+        else:
+            mtx = vec.mat_mul(vec.translate((0.0, 0.0, phal[i - 1])),
+                              vec.rot_x(bend))
+        node = Node("Finger_" + name + seg_names[i] + suffix, mtx, meshes=[m])
+        node.bind_local = list(node.matrix)
+        node.mirror_sign = 1.0
+        if nodes:
+            nodes[-1].add(node)
+        nodes.append(node)
+    return nodes[0]
 
 
 def build_palm(side_uv):
@@ -314,9 +364,11 @@ def build_palm(side_uv):
             vec.smoothstep(min(1.0, t * 1.15))
         th = HAND["palm_t0"] + (HAND["palm_t1"] - HAND["palm_t0"]) * t
         # the palm arches: knuckle end drops slightly to the palmar side
-        y = -0.004 * t * t
+        y = -0.005 * t * t
         z = L * t
-        prof = M.profile_super(n, w * 0.5, th * 0.5, 3.1)
+        # knuckle ridge: the back of the hand swells just before the fingers
+        ridge = math.exp(-((t - 0.88) ** 2) / 0.012) * 0.0055
+        prof = M.profile_super(n, w * 0.5, th * 0.5, 2.25)
         ring = []
         for (px, py) in prof:
             # thenar (thumb ball) and hypothenar pads -- the "strong hand" read
@@ -325,63 +377,77 @@ def build_palm(side_uv):
             hypo = math.exp(-((t - 0.45) ** 2) / 0.055) * \
                 max(0.0, px / (w * 0.5)) * max(0.0, -py / (th * 0.5)) * 0.006
             grow = 1.0 + (thenar + hypo) / max(1e-5, th * 0.5)
-            ring.append((px - thenar * 0.9, y + py * grow, z))
+            dorsal = ridge * max(0.0, py / (th * 0.5))
+            ring.append((px - thenar * 0.9, y + py * grow + dorsal, z))
         # close the seam
         ring[-1] = ring[0]
         out.append(ring)
     m.add_loft(out, uv_rect=(0.0, v0, 1.0, v1), group=0)
     m.add_grid_cap(out[0], group=1, flip=True)
-    m.add_grid_cap(out[-1], group=0)
+    knuckle = (0.0, -0.005 * 1.0, L + HAND["palm_t1"] * 0.42)
+    M.dome_tip(m, out[-1], knuckle, steps=2, group=0,
+               uv_rect=(0.0, v1 - (v1 - v0) * 0.05, 1.0, v1), bulge=0.55)
     return m
 
 
-def build_thumb(side_uv, curl=(48.0, 40.0), splay=-58.0, twist=-22.0,
-                suffix=""):
-    m = M.Mesh("Thumb" + suffix, MAT["skin"])
+def build_thumb(side_uv, curl=(34.0, 30.0), splay=-52.0, twist=-26.0,
+                pitch=-16.0, suffix=""):
+    """Thumb as two jointed bones, opposed across the grip.
+
+    A power grip closes the thumb over the front of the fist rather than
+    laying it along the handle -- that opposition is most of what makes a
+    hold read as strong rather than as a hand resting on something.
+    """
     n = HAND["finger_sides"]
-    radius = 0.0152
-    phal = (0.040, 0.032)
-    pts = [(0.0, 0.0, 0.0)]
-    radii = [radius]
-    d = (0.0, 0.0, 1.0)
-    for pi, (ln, ang) in enumerate(zip(phal, curl)):
-        sub = 4
-        for s in range(sub):
-            d = vec.norm(vec.xform_dir(vec.rot_x((ang * D2R) / sub), d))
-            pts.append(vec.mad(pts[-1], d, ln / sub))
-            t = (pi * sub + s + 1) / (len(phal) * sub)
-            radii.append(radius * (1.0 - 0.26 * t))
-    frames = vec.parallel_frames(pts, (0.0, 1.0, 0.0))
-    rings = []
-    for i, (p, f) in enumerate(zip(pts, frames)):
-        prof = M.profile_super(n, radii[i], radii[i] * 0.90, 2.5)
-        rings.append(M.ring_from_profile(prof, p, f[0], f[1]))
+    radius = 0.0148
+    phal = (0.038, 0.030)
+    radii = (radius, radius * 0.90, radius * 0.80)
     v0, v1 = side_uv
-    m.add_loft(rings, uv_rect=(0.0, v0, 1.0, v1), group=0)
-    m.add_grid_cap(rings[0], group=0, flip=True)
-    apex = vec.mad(pts[-1], vec.norm(vec.sub(pts[-1], pts[-2])), radii[-1] * 1.2)
-    M.dome_tip(m, rings[-1], apex, steps=2, group=0,
-               uv_rect=(0.0, v1 - (v1 - v0) * 0.06, 1.0, v1))
+    root = (-HAND["palm_w0"] * 0.50, -0.008, 0.026)
 
-    root = (-HAND["palm_w0"] * 0.48, -0.006, 0.024)
-    mtx = vec.mat_mul(vec.translate(root),
-                      vec.mat_mul(vec.rot_y(splay * D2R), vec.rot_z(twist * D2R)))
-    node = Node("Thumb" + suffix, mtx, meshes=[m])
-    node.bind_local = list(node.matrix)
-    node.mirror_sign = 1.0
-    return node
+    nodes = []
+    for i, (ln, ang) in enumerate(zip(phal, curl)):
+        m = M.Mesh("Thumb" + ("_Tip" if i else "") + suffix, MAT["skin"])
+        M.capsule(m, ln, radii[i] * 1.05, radii[i + 1], n, group=0,
+                  uv_rect=(0.0, v0, 1.0, v1), base=True, tip=(i == 1))
+        if i == 0:
+            mtx = vec.mat_mul(
+                vec.mat_mul(vec.translate(root),
+                            vec.mat_mul(vec.rot_y(splay * D2R),
+                                        vec.rot_z(twist * D2R))),
+                vec.mat_mul(vec.rot_x(pitch * D2R), vec.rot_x(ang * D2R)))
+        else:
+            mtx = vec.mat_mul(vec.translate((0.0, 0.0, phal[0])),
+                              vec.rot_x(ang * D2R))
+        node = Node("Thumb" + ("_Tip" if i else "") + suffix, mtx, meshes=[m])
+        node.bind_local = list(node.matrix)
+        node.mirror_sign = 1.0
+        if nodes:
+            nodes[-1].add(node)
+        nodes.append(node)
+    return nodes[0]
 
 
-def build_hand(name, curls=None, thumb=None, suffix=""):
-    """Right hand in canonical local space: +Z fingers, +Y dorsal, -X thumb."""
-    curls = curls or {}
+def build_hand(name, bar_radius, grip_point=None, tighten=None, thumb=None,
+               suffix=""):
+    """Right hand in canonical local space: +Z fingers, +Y dorsal, -X thumb.
+
+    Finger bends are solved so each digit wraps the handle it is actually
+    holding, rather than being posed by eye and hoping it lands.
+    """
     hv = TX.HAND_V
+    grip = grip_point or HAND["grip_point"]
+    tighten = tighten or {}
     node = Node(name)
     node.add_mesh(build_palm(hv))
+    centre = (grip[2], grip[1])          # handle axis, in the hand's (z, y)
+
     for fname, root, radius, phal, splay in FINGERS:
-        curl = curls.get(fname, (52.0, 72.0, 46.0))
         r = (root[0], root[1], HAND["palm_len"] + root[2])
-        node.add(build_finger(fname, r, radius, phal, splay, curl, hv,
+        # wrap radius: the finger surface should touch the handle surface
+        wrap = bar_radius + radius * 0.92 + tighten.get(fname, 0.0)
+        bends = wrap_angles((r[2], r[1]), phal, centre, wrap)
+        node.add(build_finger(fname, r, radius, phal, splay, bends, hv,
                               suffix))
     tk = thumb or {}
     node.add(build_thumb(hv, suffix=suffix, **tk))
@@ -847,9 +913,12 @@ def build_scene(bates="000137", images=None):
             gp = HAND["grip_point"]
             elbow_dir = RIG["elbow_dir_r"]
             bow = RIG["forearm_bow_r"]
-            curls = {"Index": (60.0, 82.0, 50.0), "Middle": (62.0, 84.0, 52.0),
-                     "Ring": (64.0, 86.0, 53.0), "Pinky": (66.0, 88.0, 55.0)}
-            thumb = {"curl": (50.0, 42.0), "splay": -60.0, "twist": -20.0}
+            # primary hand: closes hardest, thumb locked over the front
+            bar_r = STAMP["handle_r"] * RIG["stamp_scale"]
+            tighten = {"Index": -0.0012, "Middle": -0.0018,
+                       "Ring": -0.0016, "Pinky": -0.0010}
+            thumb = {"curl": (40.0, 34.0), "splay": -56.0, "twist": -20.0,
+                     "pitch": -22.0}
         else:
             axis = dir_world(RIG["grip_l_axis"])
             dorsal = dir_world(RIG["grip_l_dorsal"])
@@ -858,9 +927,12 @@ def build_scene(bates="000137", images=None):
                   HAND["grip_point"][2])
             elbow_dir = RIG["elbow_dir_l"]
             bow = RIG["forearm_bow_l"]
-            curls = {"Index": (57.0, 79.0, 48.0), "Middle": (59.0, 81.0, 50.0),
-                     "Ring": (61.0, 83.0, 50.0), "Pinky": (63.0, 85.0, 52.0)}
-            thumb = {"curl": (46.0, 38.0), "splay": -55.0, "twist": -26.0}
+            # support hand on the foregrip: firm, a shade more relaxed
+            bar_r = STAMP["grip_r"] * RIG["stamp_scale"]
+            tighten = {"Index": -0.0008, "Middle": -0.0012,
+                       "Ring": -0.0010, "Pinky": -0.0006}
+            thumb = {"curl": (36.0, 30.0), "splay": -52.0, "twist": -26.0,
+                     "pitch": -18.0}
 
         hand_world = grip_frame(axis, dorsal, point, gp)
         wrist_world = (hand_world[3], hand_world[7], hand_world[11])
@@ -868,7 +940,8 @@ def build_scene(bates="000137", images=None):
         arm_node, arm_world, path_at, frame_info = build_arm(
             "Arm_" + side, wrist_world, hand_world, elbow_dir, bow)
 
-        hand = build_hand("Hand_" + side, curls, thumb, "_" + side)
+        hand = build_hand("Hand_" + side, bar_r, gp, tighten, thumb,
+                          "_" + side)
         hand.matrix = vec.mat_mul(vec.rigid_inverse(arm_world), hand_world)
         if side == "L":
             mirror_node(hand)

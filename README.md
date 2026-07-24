@@ -223,9 +223,15 @@ Exhibitfy values and re-run the build — nothing else needs to change.
 
 - Male forearms, mid-30s, light skin tone, slightly exaggerated cartoon-realism
   — tapered and athletic rather than brawler-thick.
-- **Right hand is the primary swinging hand**: a firm staggered power grip on
-  the T-bar with the thumb wrapped across it. The left hand supports on the
-  foregrip.
+- **The grip is solved, not posed.** `wrap_angles()` wraps each finger chain
+  around the cylinder it is actually holding: the first joint is placed by
+  circle-circle intersection on the handle's wrap radius, and the rest ride
+  around it one chord per phalanx. Move a handle or change its gauge and the
+  hands re-close on it correctly. Measured result: every joint on both hands
+  sits 0.6–1.8 mm inside the handle surface — contact, not floating.
+- **Right hand is the primary swinging hand**, closing hardest with the thumb
+  opposed across the front of the fist. The left hand supports on the foregrip
+  a shade more relaxed.
 - Elliptical cross-sections that flatten toward the wrist, with tendon shading
   and a wrist crease painted into the skin map.
 - **Forearm hair**: ~2,200 short curved strokes in the texture, masked to the
@@ -254,8 +260,11 @@ survive skinning:
 - Forearm: 18-sided rings, 19 loops elbow → wrist. Sleeve: 18-sided, 21 loops.
 - Palm: 18-sided rings, 11 loops wrist → knuckles, with thenar and hypothenar
   pads sculpted into the ring radii.
-- Fingers: 10-sided, 13 loops each — a loop at every joint plus swell rings
-  over the knuckles, so a curl deforms cleanly.
+- Fingers: **three jointed bones each** (proximal / middle / distal), every
+  one a straight 10-sided capsule in its own node. Straight bones cannot fold
+  through themselves the way a single loft swept around a tight curl does, and
+  the capsule end caps double as knuckle balls that keep a bent joint closed.
+  Every joint is a node, so the fingers are genuinely articulated.
 - Hard-surface parts are chamfered rather than raw boxes, and cylinders run
   18–24 sides, so highlights travel smoothly instead of faceting.
 

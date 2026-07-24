@@ -292,6 +292,50 @@ def dome_tip(mesh, ring, apex, steps=3, group=0, uv_rect=(0.0, 0.0, 1.0, 1.0),
                  radius_uv=0.02, group=group)
 
 
+def capsule(mesh, length, r0, r1, n=8, group=0, cap_rings=2,
+            uv_rect=(0.0, 0.0, 1.0, 1.0), squash=0.92, tip=True, base=True):
+    """A tapered tube along +Z with hemispherical ends.
+
+    Built straight, in its own local space: a bone. Chaining these through
+    node transforms gives a limb that articulates without the sweep ever
+    self-intersecting on the inside of a bend, which is what happens when you
+    push a single loft around a tight curl. The end caps double as the joint
+    balls, so a bent joint can never open a gap.
+    """
+    rings = []
+    v = []
+    if base:
+        for k in range(cap_rings, 0, -1):
+            t = k / cap_rings
+            a = math.acos(max(-1.0, min(1.0, t)))     # 0 at pole
+            rings.append(profile_ellipse(n, r0 * math.sin(a), r0 * math.sin(a)))
+            v.append(-math.cos(a) * r0 * squash)
+    rings.append(profile_ellipse(n, r0, r0))
+    v.append(0.0)
+    rings.append(profile_ellipse(n, r1, r1))
+    v.append(length)
+    if tip:
+        for k in range(1, cap_rings + 1):
+            t = k / cap_rings
+            a = math.acos(max(-1.0, min(1.0, t)))
+            rings.append(profile_ellipse(n, r1 * math.sin(a), r1 * math.sin(a)))
+            v.append(length + math.cos(a) * r1 * squash)
+
+    placed = [ring_from_profile(p, (0.0, 0.0, z), (1.0, 0.0, 0.0),
+                                (0.0, 1.0, 0.0)) for p, z in zip(rings, v)]
+    span = v[-1] - v[0]
+    vc = [(z - v[0]) / span if span else 0.0 for z in v]
+    mesh.add_loft(placed, v_coords=vc, uv_rect=uv_rect, group=group)
+    if base:
+        mesh.add_cap(placed[0], center=(0.0, 0.0, v[0]), group=group, flip=True)
+    else:
+        mesh.add_grid_cap(placed[0], group=group + 1, flip=True)
+    if tip:
+        mesh.add_cap(placed[-1], center=(0.0, 0.0, v[-1]), group=group)
+    else:
+        mesh.add_grid_cap(placed[-1], group=group + 2)
+
+
 def box_chamfered(mesh, size, chamfer=0.006, center=(0.0, 0.0, 0.0),
                   group=0, uv_rect=(0.0, 0.0, 1.0, 1.0), segments=1):
     """Axis-aligned chamfered box built as a loft along Y.
