@@ -33,13 +33,15 @@ Pm 1.000
 Pr 1.000
 
 newmtl Housing_Black
-Kd 0.0060 0.0070 0.0086
-Ks 0.2500 0.2500 0.2500
-Ns 282.2
+Kd 1.0000 1.0000 1.0000
+Ks 0.9000 0.9000 0.9000
+Ns 2.0
 d 1.0
 illum 2
-Pm 0.250
-Pr 0.440
+map_Kd textures/housing_plain_basecolor.png
+map_Pr textures/paint_mr.png
+Pm 1.000
+Pr 1.000
 
 newmtl Housing_Exhibitfy
 Kd 1.0000 1.0000 1.0000
@@ -53,22 +55,25 @@ Pm 1.000
 Pr 1.000
 
 newmtl Accent_Exhibitfy_Orange
-Kd 0.6939 0.0482 0.0075
-Ks 0.2500 0.2500 0.2500
-Ns 392.0
+Kd 1.0000 1.0000 1.0000
+Ks 0.9000 0.9000 0.9000
+Ns 2.0
 d 1.0
 illum 2
-Pm 0.100
-Pr 0.340
+map_Kd textures/accent_basecolor.png
+map_Pr textures/paint_mr.png
+Pm 1.000
+Pr 1.000
 
 newmtl Rubber_Base
-Kd 0.0086 0.0091 0.0116
+Kd 1.0000 1.0000 1.0000
 Ks 0.2500 0.2500 0.2500
-Ns 5.8
+Ns 2.3
 d 1.0
 illum 2
+map_Kd textures/rubber_basecolor.png
 Pm 0.000
-Pr 0.920
+Pr 0.950
 
 newmtl Stamp_Die_Face
 Kd 1.0000 1.0000 1.0000
@@ -95,11 +100,11 @@ Pr 1.000
 newmtl Watch_Silver
 Kd 0.5841 0.6105 0.6584
 Ks 0.9000 0.9000 0.9000
-Ns 576.0
+Ns 635.0
 d 1.0
 illum 2
 Pm 1.000
-Pr 0.200
+Pr 0.160
 
 newmtl Watch_Dial
 Kd 0.0044 0.0060 0.0097
@@ -119,3 +124,12 @@ illum 2
 map_Kd textures/wheel_digits.png
 Pm 0.850
 Pr 0.340
+
+newmtl Steel_Cast
+Kd 0.2705 0.2961 0.3325
+Ks 0.9000 0.9000 0.9000
+Ns 282.2
+d 1.0
+illum 2
+Pm 1.000
+Pr 0.440

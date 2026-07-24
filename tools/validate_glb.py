@@ -116,6 +116,57 @@ def validate(path, verbose=True):
             if "material" not in prim:
                 notes.append("%s: no material assigned" % tag)
 
+    # ---- animations
+    anim_summary = []
+    for ai, anim in enumerate(g.get("animations", [])):
+        name = anim.get("name", "<unnamed>")
+        if not anim.get("channels"):
+            problems.append("animation %s has no channels" % name)
+            continue
+        targets = set()
+        t_lo, t_hi, nkeys = 1e30, -1e30, 0
+        for ci, ch in enumerate(anim["channels"]):
+            samp = anim["samplers"][ch["sampler"]]
+            path = ch["target"]["path"]
+            node = ch["target"].get("node")
+            if node is None:
+                problems.append("%s ch%d has no target node" % (name, ci))
+                continue
+            targets.add(node)
+            # a node driven by animation must not carry a matrix
+            if "matrix" in g["nodes"][node]:
+                problems.append("%s targets node %d which uses `matrix` "
+                                "(glTF forbids this on animated nodes)"
+                                % (name, node))
+            times = accessor_values(g, bin_, samp["input"])
+            vals = accessor_values(g, bin_, samp["output"])
+            if len(times) != len(vals):
+                problems.append("%s ch%d: %d times vs %d values"
+                                % (name, ci, len(times), len(vals)))
+            ts = [t[0] for t in times]
+            if any(ts[i] >= ts[i + 1] for i in range(len(ts) - 1)):
+                problems.append("%s ch%d: times not strictly increasing"
+                                % (name, ci))
+            t_lo = min(t_lo, ts[0])
+            t_hi = max(t_hi, ts[-1])
+            nkeys = max(nkeys, len(ts))
+            if path == "rotation":
+                for q in vals:
+                    l = math.sqrt(sum(v * v for v in q))
+                    if abs(l - 1.0) > 1e-3:
+                        problems.append("%s ch%d: non-unit quaternion"
+                                        % (name, ci))
+                        break
+                # neighbouring keys on opposite hemispheres spin the long way
+                flips = sum(1 for i in range(len(vals) - 1)
+                            if sum(vals[i][k] * vals[i + 1][k]
+                                   for k in range(4)) < 0.0)
+                if flips:
+                    problems.append("%s ch%d: %d quaternion key(s) take the "
+                                    "long way round" % (name, ci, flips))
+        anim_summary.append((name, len(targets), len(anim["channels"]),
+                             t_lo, t_hi, nkeys))
+
     used = set()
 
     def walk(i, depth=0, seen=()):
@@ -138,6 +189,10 @@ def validate(path, verbose=True):
                  len(g.get("materials", [])), len(g.get("images", []))))
         print("%d triangles, %d vertices, %.1f KB binary"
               % (total_tris, total_verts, len(bin_) / 1024.0))
+        for (nm, ntgt, nch, lo, hi, nk) in anim_summary:
+            print("animation '%s': %d nodes, %d channels, %d keys, "
+                  "%.3f-%.3f s (%d frames @ 30 fps)"
+                  % (nm, ntgt, nch, nk, lo, hi, round(hi * 30) + 1))
         for n in notes:
             print("  note: %s" % n)
         for p in problems:

@@ -24,8 +24,8 @@ import sys
 import time
 
 from tools import glyphs, mesh as M, textures as TX, vec
-from tools.gltf import Material, Node, Scene, export_glb
-from tools.imaging import Canvas, hex_srgb
+from tools.gltf import Animation, Material, Node, Scene, export_glb
+from tools.imaging import Canvas, hex_srgb, write_apng
 from tools.objexport import export_obj
 
 TAU = math.pi * 2.0
@@ -34,82 +34,89 @@ D2R = math.pi / 180.0
 # ---------------------------------------------------------------- tuning
 
 HAND = {
-    "palm_len": 0.094,
-    "palm_w0": 0.058,      # at the wrist
-    "palm_w1": 0.086,      # across the knuckles
-    "palm_t0": 0.037,
-    "palm_t1": 0.031,
-    "palm_rings": 9,
-    "palm_sides": 16,
-    "finger_sides": 8,
+    "palm_len": 0.092,
+    "palm_w0": 0.055,      # at the wrist
+    "palm_w1": 0.081,      # across the knuckles
+    "palm_t0": 0.034,
+    "palm_t1": 0.029,
+    "palm_rings": 11,
+    "palm_sides": 18,
+    "finger_sides": 10,
     # a gripped bar sits here in hand-local space (used by the grip solver)
-    "grip_point": (0.0, -0.036, 0.074),
+    "grip_point": (0.0, -0.0335, 0.072),
 }
 
 # name, root(x, y, z-offset from knuckle line), radius, phalanx lengths,
 # splay (deg about Y), curl (deg per phalanx)
 FINGERS = [
-    ("Index",  (-0.0305, 0.0035, -0.004), 0.0118, (0.040, 0.026, 0.021), -7.0),
-    ("Middle", (-0.0100, 0.0045, 0.000),  0.0124, (0.044, 0.029, 0.022), -1.0),
-    ("Ring",   (0.0105, 0.0035, -0.004),  0.0114, (0.041, 0.027, 0.021), 5.0),
-    ("Pinky",  (0.0290, 0.0010, -0.014),  0.0098, (0.033, 0.022, 0.018), 12.0),
+    ("Index",  (-0.0288, 0.0035, -0.004), 0.0112, (0.041, 0.027, 0.021), -7.5),
+    ("Middle", (-0.0096, 0.0045, 0.000),  0.0117, (0.045, 0.030, 0.022), -1.5),
+    ("Ring",   (0.0099, 0.0035, -0.004),  0.0108, (0.042, 0.028, 0.021), 5.5),
+    ("Pinky",  (0.0274, 0.0010, -0.013),  0.0092, (0.034, 0.022, 0.018), 13.0),
 ]
 
 STAMP = {
-    # base / die
-    "pad_size": (0.128, 0.017, 0.092),
-    "pad_y": 0.004,
-    "base_size": (0.146, 0.050, 0.112),
-    "base_y": 0.021,          # bottom of the base block
-    "collar_h": 0.011,
-    # tower
-    "tower_y0": 0.071,
-    "tower_y1": 0.213,
-    "plate_x": 0.054,
-    "plate_th": 0.013,
-    "plate_z": 0.094,
-    "column_r": 0.0225,
-    "wheel_y": 0.118,
-    "wheel_r": 0.0335,
-    "wheel_half": 0.042,
+    # Striking head, stacked bottom-up from the die face at local y = 0.
+    # Mass is deliberately concentrated down here and the tower slimmed above
+    # it: heavy business end, agile shaft.
+    "die_size": (0.126, 0.0088, 0.090),   # proud rubber die block
+    "die_y": 0.0007,          # clears the face plate at y = 0
+    "pad_size": (0.134, 0.0090, 0.098),   # wider rubber backing
+    "pad_y": 0.0095,
+    "sole_size": (0.142, 0.0086, 0.106),  # machined steel sole plate
+    "sole_y": 0.0185,
+    "base_size": (0.138, 0.042, 0.102),
+    "base_y": 0.0271,         # bottom of the base block
+    "collar_h": 0.0095,
+    # tower -- narrower and shorter than the head, so the silhouette tapers
+    "tower_y0": 0.0691,
+    "tower_y1": 0.1800,
+    "plate_x": 0.0455,
+    "plate_th": 0.0110,
+    "plate_z": 0.0820,
+    "column_r": 0.0195,
+    "wheel_y": 0.1060,
+    "wheel_r": 0.0290,
+    "wheel_half": 0.0365,
+    "window_pad": 0.005,
     # head + handle
-    "head_y": 0.226,
-    "head_size": (0.104, 0.030, 0.058),
-    "handle_y": 0.264,
-    "handle_half": 0.089,
-    "handle_r": 0.0205,
+    "head_y": 0.1925,
+    "head_size": (0.090, 0.026, 0.050),
+    "handle_y": 0.2245,
+    "handle_half": 0.0745,
+    "handle_r": 0.0197,
     # side foregrip (left-hand support)
-    "grip_root": (-0.064, 0.052, 0.020),
-    "grip_tip": (-0.156, 0.014, 0.062),
-    "grip_r": 0.0192,
+    "grip_root": (-0.0575, 0.0435, 0.017),
+    "grip_tip": (-0.1330, 0.0125, 0.052),
+    "grip_r": 0.0182,
 }
 
 RIG = {
     # where the stamp sits in camera space, and how it is cocked.
     # stamp_pos is the centre of the striking face.
-    "stamp_pos": (0.115, -0.222, -0.518),
-    "stamp_scale": 1.22,      # the tool is deliberately oversized and heavy
-    "stamp_pitch": 24.0,      # about X: cocks the tower back towards the player
-    "stamp_yaw": -16.0,       # about Y: turns the branded flank into view
-    "stamp_roll": 6.0,        # about Z: aggressive diagonal
+    "stamp_pos": (0.098, -0.181, -0.462),
+    "stamp_scale": 1.10,      # heavy in the hand, but still quick to swing
+    "stamp_pitch": 29.0,      # about X: cocks the tower back towards the player
+    "stamp_yaw": -17.0,       # about Y: turns the branded flank into view
+    "stamp_roll": 7.0,        # about Z: aggressive diagonal
     # grips, in stamp-local space
-    "grip_r_point": (0.043, 0.264, 0.0),      # right hand on the T-bar
+    "grip_r_point": (0.040, 0.2245, 0.0),     # right hand on the T-bar
     "grip_r_axis": (1.0, 0.0, 0.0),
-    "grip_r_dorsal": (0.05, 1.0, 0.15),
-    "grip_l_point": (-0.112, 0.031, 0.043),   # left hand on the foregrip
-    "grip_l_axis": (0.876, 0.362, -0.400),
-    "grip_l_dorsal": (-0.12, 1.0, 0.30),
+    "grip_r_dorsal": (0.06, 1.0, 0.22),
+    "grip_l_point": (-0.0955, 0.0281, 0.0347),  # left hand on the foregrip
+    "grip_l_axis": (0.888, 0.363, -0.283),
+    "grip_l_dorsal": (-0.14, 1.0, 0.32),
     # forearms: direction from wrist back to the elbow, and length
-    "forearm_len": 0.272,
-    "elbow_dir_r": (0.46, -0.76, 0.46),
-    "elbow_dir_l": (-0.44, -0.79, 0.43),
+    "forearm_len": 0.278,
+    "elbow_dir_r": (0.44, -0.80, 0.41),
+    "elbow_dir_l": (-0.42, -0.82, 0.39),
     "forearm_bow_r": (0.026, -0.016, 0.024),
     "forearm_bow_l": (-0.026, -0.020, 0.022),
     # forearm cross-section
-    "r_elbow": (0.056, 0.051),
-    "r_mid": (0.046, 0.041),
-    "r_wrist": (0.034, 0.0265),
-    "sleeve_pad": 0.0105,
+    "r_elbow": (0.0525, 0.0475),
+    "r_mid": (0.0435, 0.0385),
+    "r_wrist": (0.0325, 0.0252),
+    "sleeve_pad": 0.0098,
     "sleeve_t0": -0.95,       # extends behind the elbow, off-camera
     "sleeve_t1": 0.46,        # rolled up to mid-forearm
     "cuff_t0": 0.29,          # where the roll starts
@@ -117,15 +124,46 @@ RIG = {
     "watch_t": 0.862,
 }
 
-# A second keyframe, purely to show the rig drives everything from RIG: the
-# tool punched forward and down at full extension, i.e. the moment of impact.
-POSE_IMPACT = {
-    "stamp_pos": (0.030, -0.402, -0.780),
-    "stamp_pitch": 8.0,
-    "stamp_yaw": -6.0,
-    "stamp_roll": 2.0,
-    "elbow_dir_r": (0.62, -0.42, 0.66),
-    "elbow_dir_l": (-0.60, -0.48, 0.64),
+# ---------------------------------------------------------------- impact
+# The surface the die is driven into: a document lying on a desk just in front
+# of and below the camera, tilted up towards the player so the strike reads.
+# The stamp's local origin IS the striking face, so at the impact frame the
+# stamp node sits exactly on this point with its +Y along this normal --
+# the face plants flush in the plane, by construction rather than by eye.
+IMPACT = {
+    "point": (0.062, -0.336, -0.523),
+    "normal": vec.norm((0.0, 0.940, 0.341)),
+    "front_hint": (0.0, 0.0, 1.0),   # which way the tool's front faces there
+    "yaw": -5.0,                     # extra style rotation, applied in local
+    "roll": 2.5,
+}
+
+# ------------------------------------------------------------ Stamp_Swing
+# 23 frames at 30 fps (0.767 s). One scalar `s` drives the whole swing:
+#   s = 0  ready stance      s < 0  cocked back      s = 1  planted on the plane
+# Keys are baked every frame, so the easing below is exactly what ships.
+SWING = {
+    "name": "Stamp_Swing",
+    "fps": 30.0,
+    "frames": 23,
+    # (frame, s, easing used to REACH this beat)
+    "beats": [
+        (0, 0.00, "linear"),   # ready
+        (4, -0.26, "out"),     # short, powerful cock back and up
+        (5, -0.26, "hold"),    # the loaded beat
+        (11, 1.00, "in"),      # accelerate all the way into the plane
+        (13, 1.00, "hold"),    # planted: 3 frames (11, 12, 13) face on plane
+        (22, 0.00, "inout"),   # controlled recovery, no bounce
+    ],
+    # extra weight-into-the-surface during the hold (metres along -normal)
+    "press": [(10, 0.0, "linear"), (11, 0.0022, "out"), (13, 0.0030, "inout"),
+              (16, 0.0, "inout"), (22, 0.0, "hold")],
+    "windup_s": -0.26,
+    "windup_offset": (0.016, 0.048, 0.044),   # back towards the player and up
+    "windup_pitch": 16.0,                     # cocks the tower further back
+    "arc": (-0.008, 0.046, -0.014),           # bow of the travel path
+    "wrist_lag": 8.5,                         # deg, driven by swing velocity
+    "grip_squeeze": 5.5,                      # deg of extra finger curl on hit
 }
 
 MAT = {
@@ -141,6 +179,7 @@ MAT = {
     "watch_steel": "Watch_Silver",
     "watch_dial": "Watch_Dial",
     "wheels": "Bates_Number_Wheels",
+    "steel_cast": "Steel_Cast",
 }
 
 
@@ -172,6 +211,9 @@ def mirror_node(node, mirror_matrix=False):
     """
     if mirror_matrix:
         node.matrix = vec.mat_mul(_S_MIRROR, vec.mat_mul(node.matrix, _S_MIRROR))
+    if hasattr(node, "bind_local"):
+        node.bind_local = list(node.matrix)
+        node.mirror_sign = -node.mirror_sign
     for m in node.meshes:
         mirror_mesh(m)
     for c in node.children:
@@ -215,7 +257,7 @@ def build_finger(name, root, radius, phal, splay, curl, side_uv):
     d = (0.0, 0.0, 1.0)
     knuckles = [0]
     for pi, (ln, ang) in enumerate(zip(phal, curl)):
-        sub = 3
+        sub = 4
         for s in range(sub):
             a = (ang * D2R) / sub
             # curl bends towards the palm (-Y)
@@ -252,6 +294,8 @@ def build_finger(name, root, radius, phal, splay, curl, side_uv):
     node = Node("Finger_" + name,
                 vec.mat_mul(vec.translate(root), vec.rot_y(splay * D2R)),
                 meshes=[m])
+    node.bind_local = list(node.matrix)
+    node.mirror_sign = 1.0
     return node
 
 
@@ -289,7 +333,7 @@ def build_palm(side_uv):
     return m
 
 
-def build_thumb(side_uv, curl=(38.0, 34.0), splay=-46.0, twist=-32.0):
+def build_thumb(side_uv, curl=(48.0, 40.0), splay=-58.0, twist=-22.0):
     m = M.Mesh("Thumb", MAT["skin"])
     n = HAND["finger_sides"]
     radius = 0.0152
@@ -298,7 +342,7 @@ def build_thumb(side_uv, curl=(38.0, 34.0), splay=-46.0, twist=-32.0):
     radii = [radius]
     d = (0.0, 0.0, 1.0)
     for pi, (ln, ang) in enumerate(zip(phal, curl)):
-        sub = 3
+        sub = 4
         for s in range(sub):
             d = vec.norm(vec.xform_dir(vec.rot_x((ang * D2R) / sub), d))
             pts.append(vec.mad(pts[-1], d, ln / sub))
@@ -316,10 +360,13 @@ def build_thumb(side_uv, curl=(38.0, 34.0), splay=-46.0, twist=-32.0):
     M.dome_tip(m, rings[-1], apex, steps=2, group=0,
                uv_rect=(0.0, v1 - (v1 - v0) * 0.06, 1.0, v1))
 
-    root = (-HAND["palm_w0"] * 0.46, -0.004, 0.020)
+    root = (-HAND["palm_w0"] * 0.48, -0.006, 0.024)
     mtx = vec.mat_mul(vec.translate(root),
                       vec.mat_mul(vec.rot_y(splay * D2R), vec.rot_z(twist * D2R)))
-    return Node("Thumb", mtx, meshes=[m])
+    node = Node("Thumb", mtx, meshes=[m])
+    node.bind_local = list(node.matrix)
+    node.mirror_sign = 1.0
+    return node
 
 
 def build_hand(name, curls=None, thumb=None):
@@ -375,7 +422,7 @@ def build_arm(name, wrist_world, hand_basis, elbow_dir, bow, watch=False):
         return vec.bezier4(p0, p1, p2, p3, t)
 
     # ---- bare skin: runs the full length so nothing peeks out under cloth
-    steps = 15
+    steps = 19
     t0_skin = -0.10
     ts = [t0_skin + (1.0 - t0_skin) * i / (steps - 1) for i in range(steps)]
     pts = [path_at(t) for t in ts]
@@ -424,7 +471,7 @@ def build_arm(name, wrist_world, hand_basis, elbow_dir, bow, watch=False):
 
     cloth = M.Mesh(name + "_Sleeve", MAT["shirt"])
     s0, s1 = RIG["sleeve_t0"], RIG["sleeve_t1"]
-    csteps = 18
+    csteps = 21
     cts = [s0 + (s1 - s0) * i / (csteps - 1) for i in range(csteps)]
     cpts = [sleeve_at(t) for t in cts]
     cframes = vec.parallel_frames(cpts, (0.0, 1.0, 0.0))
@@ -538,29 +585,46 @@ def build_stamp(bates="000137"):
     S = STAMP
     node = Node("Stamp_Exhibitfy")
 
-    # ---- rubber pad + die face -----------------------------------------
-    pad = M.Mesh("Stamp_Pad", MAT["rubber"])
-    M.box_chamfered(pad, S["pad_size"], 0.004,
-                    (0.0, S["pad_y"] + S["pad_size"][1] * 0.5, 0.0), group=0)
+    # ---- striking head --------------------------------------------------
+    # Stepped like a real die: a proud rubber die block, a wider rubber
+    # backing above it, then a machined steel sole plate. The step gives the
+    # face a shoulder to catch light, so the business end reads as the heavy
+    # end of the tool rather than a flat slab.
+    ds = S["die_size"]
+    ps = S["pad_size"]
+    pad = M.Mesh("Stamp_DieBlock", MAT["rubber"])
+    M.box_chamfered(pad, ds, 0.0028, (0.0, S["die_y"] + ds[1] * 0.5, 0.0),
+                    group=0)
+    M.box_chamfered(pad, ps, 0.0035, (0.0, S["pad_y"] + ps[1] * 0.5, 0.0),
+                    group=10)
     node.add_mesh(pad)
 
+    sole = M.Mesh("Stamp_SolePlate", MAT["steel_cast"])
+    ss = S["sole_size"]
+    M.box_chamfered(sole, ss, 0.0032, (0.0, S["sole_y"] + ss[1] * 0.5, 0.0),
+                    group=0)
+    node.add_mesh(sole)
+
     die = M.Mesh("Stamp_DieFace", MAT["die"])
+    # The face sits exactly on the stamp's local y = 0 plane, so the node
+    # origin IS the striking surface -- that is what the impact plane and the
+    # Stamp_DieAnchor emitter align to.
     # Type reads the right way up when the player sees the face during the
     # slam (a real die would be mirrored -- this one is built to be read).
-    M.plate(die, (0.0, S["pad_y"] - 0.0006, 0.0), (1.0, 0.0, 0.0),
-            (0.0, 0.0, 1.0), S["pad_size"][0] * 0.90, S["pad_size"][2] * 0.90,
+    M.plate(die, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0),
+            ds[0] * 0.955, ds[2] * 0.955,
             group=0, uv_rect=(0.0, 0.0, 1.0, 1.0), subdiv=2)
     node.add_mesh(die)
 
     # ---- base block -----------------------------------------------------
     base = M.Mesh("Stamp_Base", MAT["black"])
     bs = S["base_size"]
-    M.box_chamfered(base, bs, 0.007, (0.0, S["base_y"] + bs[1] * 0.5, 0.0),
-                    group=0, segments=2)
+    M.box_chamfered(base, bs, 0.006, (0.0, S["base_y"] + bs[1] * 0.5, 0.0),
+                    group=0, segments=3)
     node.add_mesh(base)
 
     collar = M.Mesh("Stamp_Collar", MAT["orange"])
-    M.box_chamfered(collar, (bs[0] * 1.015, S["collar_h"], bs[2] * 1.015), 0.004,
+    M.box_chamfered(collar, (bs[0] * 1.02, S["collar_h"], bs[2] * 1.02), 0.0035,
                     (0.0, S["base_y"] + bs[1] - S["collar_h"] * 0.4, 0.0),
                     group=0)
     node.add_mesh(collar)
@@ -570,8 +634,8 @@ def build_stamp(bates="000137"):
     # the numbering wheels show through -- the Bates read at a glance.
     y0, y1 = S["tower_y0"], S["tower_y1"]
     pz = S["plate_z"] * 0.5
-    win0 = S["wheel_y"] - S["wheel_r"] - 0.006
-    win1 = S["wheel_y"] + S["wheel_r"] + 0.006
+    win0 = S["wheel_y"] - S["wheel_r"] - S["window_pad"]
+    win1 = S["wheel_y"] + S["wheel_r"] + S["window_pad"]
     inner_w = (S["plate_x"] - S["plate_th"] * 0.5) * 2.0
 
     plates = M.Mesh("Stamp_SidePlates", MAT["black"])
@@ -614,11 +678,11 @@ def build_stamp(bates="000137"):
 
     steel = M.Mesh("Stamp_Mechanism", MAT["steel"])
     M.cylinder(steel, (0.0, y0 - 0.01, 0.0), (0.0, y1 + 0.006, 0.0),
-               S["column_r"], S["column_r"] * 0.88, 18, group=0)
+               S["column_r"], S["column_r"] * 0.88, 22, group=0)
     # cross-braces between the plates
     for by in (y0 + 0.012, y1 - 0.012):
         M.cylinder(steel, (-S["plate_x"], by, 0.0), (S["plate_x"], by, 0.0),
-                   0.008, 0.008, 10, group=10)
+                   0.0072, 0.0072, 12, group=10)
     node.add_mesh(steel)
 
     # numbering wheels: the detail that says "Bates" at a glance
@@ -632,7 +696,7 @@ def build_stamp(bates="000137"):
         x1 = -wh + (2 * wh) * (i + 1) / ndisc
         for (xx, rr) in ((x0 + 0.0006, wr * 0.86), (x0 + 0.0022, wr),
                          (x1 - 0.0022, wr), (x1 - 0.0006, wr * 0.86)):
-            prof = M.profile_ellipse(20, rr, rr)
+            prof = M.profile_ellipse(24, rr, rr)
             rings.append(M.ring_from_profile(prof, (xx, wy, 0.0),
                                              (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)))
             vs.append((xx + wh) / (2 * wh))
@@ -652,7 +716,7 @@ def build_stamp(bates="000137"):
         yy = sy0 + (sy1 - sy0) * i / n
         rr = S["column_r"] + 0.010
         sp.append((math.cos(a) * rr, yy, math.sin(a) * rr))
-    M.tube_along_path(spring, sp, lambda t: M.profile_ellipse(6, 0.0038, 0.0038),
+    M.tube_along_path(spring, sp, lambda t: M.profile_ellipse(8, 0.0034, 0.0034),
                       up_hint=(0.0, 1.0, 0.0), group=0)
     node.add_mesh(spring)
 
@@ -664,17 +728,17 @@ def build_stamp(bates="000137"):
 
     neck = M.Mesh("Stamp_Neck", MAT["steel"])
     M.cylinder(neck, (0.0, S["head_y"] + 0.010, 0.0),
-               (0.0, S["handle_y"] - 0.004, 0.0), 0.016, 0.014, 14, group=0)
+               (0.0, S["handle_y"] - 0.004, 0.0), 0.0152, 0.0132, 18, group=0)
     node.add_mesh(neck)
 
     handle = M.Mesh("Stamp_Handle", MAT["grip"])
     hy, hh, hr = S["handle_y"], S["handle_half"], S["handle_r"]
-    hp = [(-hh + (2 * hh) * i / 14.0, hy, 0.0) for i in range(15)]
+    hp = [(-hh + (2 * hh) * i / 18.0, hy, 0.0) for i in range(19)]
 
     def hprof(t):
         # slight barrel through the middle: comfortable in a closed fist
         r = hr * (0.90 + 0.10 * math.sin(t * math.pi) ** 0.5)
-        return M.profile_ellipse(14, r, r * 0.96)
+        return M.profile_ellipse(18, r, r * 0.96)
 
     M.tube_along_path(handle, hp, hprof, up_hint=(0.0, 1.0, 0.0),
                       uv_rect=(0.0, 0.0, 1.0, 1.0), group=0,
@@ -685,15 +749,15 @@ def build_stamp(bates="000137"):
     for sx in (-1, 1):
         x0 = sx * hh
         M.cylinder(caps, (x0, hy, 0.0), (x0 + sx * 0.017, hy, 0.0),
-                   hr * 0.95, hr * 0.72, 14, group=0)
+                   hr * 0.95, hr * 0.70, 18, group=0)
     node.add_mesh(caps)
 
     # ---- side foregrip ---------------------------------------------------
     gr = M.Mesh("Stamp_Foregrip", MAT["grip"])
     g0, g1 = S["grip_root"], S["grip_tip"]
-    gp = [vec.lerp(g0, g1, i / 9.0) for i in range(10)]
+    gp = [vec.lerp(g0, g1, i / 11.0) for i in range(12)]
     M.tube_along_path(gr, gp, lambda t: M.profile_ellipse(
-        12, S["grip_r"] * (0.94 + 0.09 * math.sin(t * math.pi)),
+        16, S["grip_r"] * (0.94 + 0.09 * math.sin(t * math.pi)),
         S["grip_r"] * 0.93), up_hint=(0.0, 1.0, 0.0), group=0,
         cap_start=False, cap_end=False)
     node.add_mesh(gr)
@@ -701,10 +765,10 @@ def build_stamp(bates="000137"):
     gcap = M.Mesh("Stamp_ForegripFittings", MAT["orange"])
     d = vec.norm(vec.sub(g1, g0))
     M.cylinder(gcap, vec.mad(g0, d, -0.004), vec.mad(g0, d, 0.016),
-               S["grip_r"] * 1.20, S["grip_r"] * 1.02, 14, group=0,
+               S["grip_r"] * 1.20, S["grip_r"] * 1.02, 18, group=0,
                up_hint=(0.0, 1.0, 0.0))
     M.cylinder(gcap, vec.mad(g1, d, -0.012), vec.mad(g1, d, 0.006),
-               S["grip_r"] * 1.02, S["grip_r"] * 1.18, 14, group=3,
+               S["grip_r"] * 1.02, S["grip_r"] * 1.18, 18, group=3,
                up_hint=(0.0, 1.0, 0.0))
     node.add_mesh(gcap)
 
@@ -727,33 +791,42 @@ def build_scene(bates="000137", images=None):
                             "shirt_basecolor", "shirt_mr"))
     scene.material(Material(MAT["steel"], (1, 1, 1, 1), 1.0, 1.0,
                             "steel_basecolor", "steel_mr"))
-    scene.material(Material(MAT["black"], TX.BRAND["black"], 0.25, 0.44))
+    scene.material(Material(MAT["black"], (1, 1, 1, 1), 1.0, 1.0,
+                            "housing_plain_basecolor", "paint_mr"))
     scene.material(Material(MAT["decal"], (1, 1, 1, 1), 1.0, 1.0,
                             "housing_basecolor", "housing_mr"))
-    scene.material(Material(MAT["orange"], TX.BRAND["orange"], 0.10, 0.34))
-    scene.material(Material(MAT["rubber"], hex_srgb("#17181C"), 0.0, 0.92))
+    scene.material(Material(MAT["orange"], (1, 1, 1, 1), 1.0, 1.0,
+                            "accent_basecolor", "paint_mr"))
+    scene.material(Material(MAT["rubber"], (1, 1, 1, 1), 0.0, 0.95,
+                            "rubber_basecolor"))
     scene.material(Material(MAT["die"], (1, 1, 1, 1), 0.0, 1.0,
                             "stamp_die_basecolor", "stamp_die_mr"))
     scene.material(Material(MAT["grip"], (1, 1, 1, 1), 0.0, 1.0,
                             "grip_basecolor", "grip_mr"))
-    scene.material(Material(MAT["watch_steel"], hex_srgb("#C9CDD4"), 1.0, 0.20))
+    scene.material(Material(MAT["watch_steel"], hex_srgb("#C9CDD4"), 1.0, 0.16))
     scene.material(Material(MAT["watch_dial"], hex_srgb("#0E1219"), 0.2, 0.18))
     scene.material(Material(MAT["wheels"], (1, 1, 1, 1), 0.85, 0.34,
                             "wheel_digits"))
+    scene.material(Material(MAT["steel_cast"], hex_srgb("#8E949C"), 1.0, 0.44))
 
     root = Node("TomRexington_FPV_Rig")
     scene.add_root(root)
 
     # ---- stamp placement --------------------------------------------------
     stamp_world = vec.mat_mul(
-        vec.translate(RIG["stamp_pos"]),
-        vec.mat_mul(vec.rot_y(RIG["stamp_yaw"] * D2R),
-                    vec.mat_mul(vec.rot_x(RIG["stamp_pitch"] * D2R),
-                                vec.mat_mul(vec.rot_z(RIG["stamp_roll"] * D2R),
-                                            vec.scale(RIG["stamp_scale"])))))
+        vec.mat_mul(vec.translate(RIG["stamp_pos"]), ready_rotation()),
+        vec.scale(RIG["stamp_scale"]))
     stamp = build_stamp(bates)
     stamp.matrix = stamp_world
     root.add(stamp)
+
+    # the stamp frame without scale -- hands hang off this, so the grips stay
+    # rigid no matter what stamp_scale is set to
+    stamp_rigid = vec.mat_mul(
+        vec.translate(RIG["stamp_pos"]), ready_rotation())
+    rig = {"stamp": stamp, "grip_local": {}, "hand_local": {},
+           "arm": {}, "hand": {}, "fingers": {}}
+    scene.rig = rig
 
     def to_world(p):
         return vec.xform_point(stamp_world, p)
@@ -770,9 +843,9 @@ def build_scene(bates="000137", images=None):
             gp = HAND["grip_point"]
             elbow_dir = RIG["elbow_dir_r"]
             bow = RIG["forearm_bow_r"]
-            curls = {"Index": (54.0, 74.0, 44.0), "Middle": (56.0, 76.0, 46.0),
-                     "Ring": (58.0, 78.0, 46.0), "Pinky": (60.0, 80.0, 48.0)}
-            thumb = {"curl": (30.0, 26.0), "splay": -52.0, "twist": -28.0}
+            curls = {"Index": (60.0, 82.0, 50.0), "Middle": (62.0, 84.0, 52.0),
+                     "Ring": (64.0, 86.0, 53.0), "Pinky": (66.0, 88.0, 55.0)}
+            thumb = {"curl": (50.0, 42.0), "splay": -60.0, "twist": -20.0}
         else:
             axis = dir_world(RIG["grip_l_axis"])
             dorsal = dir_world(RIG["grip_l_dorsal"])
@@ -783,7 +856,7 @@ def build_scene(bates="000137", images=None):
             bow = RIG["forearm_bow_l"]
             curls = {"Index": (57.0, 79.0, 48.0), "Middle": (59.0, 81.0, 50.0),
                      "Ring": (61.0, 83.0, 50.0), "Pinky": (63.0, 85.0, 52.0)}
-            thumb = {"curl": (34.0, 30.0), "splay": -48.0, "twist": -30.0}
+            thumb = {"curl": (46.0, 38.0), "splay": -55.0, "twist": -26.0}
 
         hand_world = grip_frame(axis, dorsal, point, gp)
         wrist_world = (hand_world[3], hand_world[7], hand_world[11])
@@ -802,13 +875,179 @@ def build_scene(bates="000137", images=None):
             twisted, ts, _pts = frame_info
             arm_node.add(build_watch(path_at, twisted, ts))
 
-        # name meshes per side for tidy outliners
-        for m in arm_node.meshes:
-            m.name = m.name
         root.add(arm_node)
         arms.append(arm_node)
 
+        # everything the animation needs: the constant grip offset in the
+        # stamp's rigid frame, and the bind wrist relationship
+        rig["grip_local"][side] = vec.mat_mul(
+            vec.rigid_inverse(stamp_rigid), hand_world)
+        rig["hand_local"][side] = list(hand.matrix)
+        rig["arm"][side] = arm_node
+        rig["hand"][side] = hand
+        rig["fingers"][side] = [c for c in hand.children
+                                if hasattr(c, "bind_local")]
+
+    # ---- locators the game hooks impact effects onto ---------------------
+    # Emitter at the striking face. +Y points out of the face along the
+    # strike direction; the compensating scale keeps its world scale at 1.
+    anchor = Node("Stamp_DieAnchor",
+                  vec.mat_mul(vec.rot_x(math.pi),
+                              vec.scale(1.0 / RIG["stamp_scale"])))
+    stamp.add(anchor)
+    rig["die_anchor"] = anchor
+
+    # The surface the die is driven into: origin on the plane, +Y = normal.
+    ny = vec.norm(IMPACT["normal"])
+    nz = vec.norm(vec.sub(IMPACT["front_hint"],
+                          vec.mul(ny, vec.dot(IMPACT["front_hint"], ny))))
+    plane = Node("Impact_Plane",
+                 vec.mat_from_basis(vec.cross(ny, nz), ny, nz, IMPACT["point"]))
+    root.add(plane)
+    rig["impact_plane"] = plane
+
     return scene
+
+
+# ------------------------------------------------------------- the swing
+
+
+def ease(kind, t):
+    t = max(0.0, min(1.0, t))
+    if kind == "hold":
+        return 0.0
+    if kind == "linear":
+        return t
+    if kind == "out":          # fast off the mark, settles in
+        return 1.0 - (1.0 - t) ** 2.2
+    if kind == "in":           # loads up, then drives hard -- the slam
+        return t ** 2.6
+    return t * t * (3.0 - 2.0 * t)     # inout
+
+
+def piecewise(beats, frame):
+    """Sample a (frame, value, easing) curve, easing named on the later beat."""
+    if frame <= beats[0][0]:
+        return beats[0][1]
+    for i in range(1, len(beats)):
+        f0, v0, _ = beats[i - 1]
+        f1, v1, k = beats[i]
+        if frame <= f1:
+            span = max(1e-9, f1 - f0)
+            return v0 + (v1 - v0) * ease(k, (frame - f0) / span)
+    return beats[-1][1]
+
+
+def impact_rotation():
+    """Stamp orientation with the die flush in the impact plane."""
+    y = vec.norm(IMPACT["normal"])
+    f = IMPACT["front_hint"]
+    z = vec.norm(vec.sub(f, vec.mul(y, vec.dot(f, y))))
+    x = vec.cross(y, z)
+    base = vec.mat_from_basis(x, y, z)
+    return vec.mat_mul(base, vec.mat_mul(vec.rot_y(IMPACT["yaw"] * D2R),
+                                         vec.rot_z(IMPACT["roll"] * D2R)))
+
+
+def ready_rotation():
+    return vec.mat_mul(vec.rot_y(RIG["stamp_yaw"] * D2R),
+                       vec.mat_mul(vec.rot_x(RIG["stamp_pitch"] * D2R),
+                                   vec.rot_z(RIG["stamp_roll"] * D2R)))
+
+
+def swing_stamp_rigid(s, press=0.0):
+    """Stamp transform (no scale) for swing parameter `s`.
+
+    s = 0 ready, s = 1 die planted on the impact plane, s < 0 cocked back.
+    """
+    p_ready = RIG["stamp_pos"]
+    p_hit = IMPACT["point"]
+    q_ready = vec.quat_from_mat(ready_rotation())
+    q_hit = vec.quat_from_mat(impact_rotation())
+
+    if s >= 0.0:
+        mid = vec.lerp(p_ready, p_hit, 0.5)
+        ctrl = vec.add(mid, SWING["arc"])
+        pos = vec.bezier3(p_ready, ctrl, p_hit, s)
+        q = vec.quat_slerp(q_ready, q_hit, s)
+    else:
+        k = s / SWING["windup_s"]          # 0 at ready, 1 at full cock
+        pos = vec.mad(p_ready, SWING["windup_offset"], k)
+        q_wind = vec.quat_from_mat(
+            vec.mat_mul(vec.rot_x(SWING["windup_pitch"] * D2R), ready_rotation()))
+        q = vec.quat_slerp(q_ready, q_wind, k)
+
+    if press:
+        pos = vec.mad(pos, IMPACT["normal"], -press)
+    return vec.mat_mul(vec.translate(pos), vec.mat_from_quat(q))
+
+
+def build_swing(scene, anim=None):
+    """Bake Stamp_Swing onto the rig.
+
+    The hands stay welded to their grips: each hand's world transform is the
+    stamp's transform times a constant grip offset, and the forearm is then
+    solved backwards from the hand. Wrist lag is the one place the arm is
+    allowed to drift from the hand, which is what gives the swing follow
+    through without the forearm geometry pulling apart at the wrist.
+    """
+    rig = scene.rig
+    anim = anim or Animation(SWING["name"], SWING["fps"])
+    fps = SWING["fps"]
+    n = SWING["frames"]
+
+    s_of = [piecewise(SWING["beats"], f) for f in range(n)]
+    press_of = [piecewise(SWING["press"], f) for f in range(n)]
+    poses = []
+
+    for f in range(n):
+        t = f / fps
+        s = s_of[f]
+        rigid = swing_stamp_rigid(s, press_of[f])
+        full = vec.mat_mul(rigid, vec.scale(RIG["stamp_scale"]))
+        anim.key_matrix(rig["stamp"], t, full)
+
+        # swing velocity in frames, used for wrist lag and grip squeeze
+        nxt = s_of[min(n - 1, f + 1)]
+        prv = s_of[max(0, f - 1)]
+        vel = (nxt - prv) * 0.5
+        # taper the lag to nothing at both ends so the first and last frames
+        # are exactly the ready stance -- the clip loops and blends cleanly
+        edge = min(1.0, min(f, n - 1 - f) / 2.0)
+        lag = max(-1.0, min(1.0, vel * 3.4)) * SWING["wrist_lag"] * D2R * edge
+        squeeze = SWING["grip_squeeze"] * max(0.0, min(1.0, s)) ** 2 * D2R
+
+        pose = {rig["stamp"]: full}
+        for side in ("R", "L"):
+            hand_world = vec.mat_mul(rigid, rig["grip_local"][side])
+            hand_local = vec.mat_mul(rig["hand_local"][side], vec.rot_x(-lag))
+            arm_world = vec.mat_mul(hand_world, vec.rigid_inverse(hand_local))
+            anim.key_matrix(rig["arm"][side], t, arm_world)
+            anim.key_matrix(rig["hand"][side], t, hand_local)
+            pose[rig["arm"][side]] = arm_world
+            pose[rig["hand"][side]] = hand_local
+            for node in rig["fingers"][side]:
+                m = vec.mat_mul(node.bind_local,
+                                vec.rot_x(squeeze * node.mirror_sign))
+                anim.key_matrix(node, t, m)
+                pose[node] = m
+        poses.append(pose)
+    anim.poses = poses
+    return anim
+
+
+def swing_report():
+    """Text summary of the timing, and the die-to-plane distance per frame."""
+    n = SWING["frames"]
+    rows = []
+    for f in range(n):
+        s = piecewise(SWING["beats"], f)
+        press = piecewise(SWING["press"], f)
+        m = swing_stamp_rigid(s, press)
+        face = (m[3], m[7], m[11])            # stamp origin == die face centre
+        gap = vec.dot(vec.sub(face, IMPACT["point"]), IMPACT["normal"])
+        rows.append((f, f / SWING["fps"], s, gap))
+    return rows
 
 
 # ---------------------------------------------------------------- previews
@@ -820,7 +1059,14 @@ def make_previews(scene, outdir, quick=False):
     os.makedirs(outdir, exist_ok=True)
     w, h = (640, 400) if quick else (1100, 690)
     sp = RIG["stamp_pos"]
-    mid = (sp[0], sp[1] + 0.13, sp[2] + 0.03)
+    mid = (sp[0], sp[1] + 0.11, sp[2] + 0.03)
+    stamp_world = None
+    for r in scene.roots:
+        for n in [r] + r.children:
+            if n.name == "Stamp_Exhibitfy":
+                stamp_world = n.matrix
+    if stamp_world is None:
+        stamp_world = vec.translate(sp)
 
     # name, camera, wireframe, only-these-root-nodes
     shots = [
@@ -835,9 +1081,13 @@ def make_previews(scene, outdir, quick=False):
         ("stamp_flank",
          Camera((sp[0] + 0.52, sp[1] + 0.10, sp[2] + 0.10), mid, fov_deg=36),
          False, ["Stamp_Exhibitfy"]),
+        # straight down the striking normal, with the tool's front as screen
+        # up -- the canonical way to read the die
         ("stamp_die_face",
-         Camera((sp[0] + 0.06, sp[1] - 0.42, sp[2] + 0.16), (sp[0], sp[1], sp[2]),
-                fov_deg=38), False, ["Stamp_Exhibitfy"]),
+         Camera(vec.xform_point(stamp_world, (0.0, -0.32, 0.0)),
+                vec.xform_point(stamp_world, (0.0, 0.0, 0.0)),
+                up=vec.norm(vec.xform_dir(stamp_world, (0.0, 0.0, 1.0))),
+                fov_deg=34), False, ["Stamp_Exhibitfy"]),
         ("hand_right_detail", Camera((-0.10, 0.20, -0.16), (0.13, -0.07, -0.44),
                                      fov_deg=34), False, None),
         ("hand_left_watch", Camera((-0.26, 0.10, -0.20), (-0.05, -0.19, -0.49),
@@ -873,6 +1123,69 @@ def make_previews(scene, outdir, quick=False):
 # -------------------------------------------------------------------- main
 
 
+def debug_paper_node(scene):
+    """A sheet of paper lying in the impact plane -- previews only.
+
+    Never added to the exported scene: the plane is shipped as the
+    `Impact_Plane` locator so the game can place its own surface and effects.
+    """
+    scene.material(Material("Paper_Debug", hex_srgb("#E9E7E1"), 0.0, 0.88,
+                            double_sided=True))
+    ny = vec.norm(IMPACT["normal"])
+    nz = vec.norm(vec.sub(IMPACT["front_hint"],
+                          vec.mul(ny, vec.dot(IMPACT["front_hint"], ny))))
+    nx = vec.cross(ny, nz)
+    m = M.Mesh("Debug_Paper", "Paper_Debug")
+    origin = vec.mad(IMPACT["point"], ny, -0.0012)
+    M.plate(m, origin, nz, nx, 0.30, 0.40, group=0)
+    return Node("Debug_Paper", meshes=[m])
+
+
+def render_swing(scene, anim, outdir, quick=False):
+    """Render every frame of the swing: an APNG plus a contact sheet."""
+    from tools.render import Camera, render
+
+    w, h = (300, 188) if quick else (440, 275)
+    cam = Camera((0, 0, 0), (0, -0.16, -1), fov_deg=62)
+    paper = debug_paper_node(scene)
+    scene.roots.append(paper)
+    saved = {}
+    for pose in anim.poses:
+        for node in pose:
+            saved.setdefault(id(node), (node, list(node.matrix)))
+
+    frames = []
+    t0 = time.time()
+    try:
+        for i, pose in enumerate(anim.poses):
+            for node, m in pose.items():
+                node.matrix = list(m)
+            frames.append(render(scene, cam, w, h))
+    finally:
+        for node, m in saved.values():
+            node.matrix = m
+        scene.roots.remove(paper)
+        scene.materials.pop("Paper_Debug", None)
+
+    apng = os.path.join(outdir, "stamp_swing.png")
+    write_apng(frames, apng, fps=anim.fps)
+
+    cols, gap = 6, 4
+    rows = (len(frames) + cols - 1) // cols
+    tw, th = w // 2, h // 2
+    sheet = Canvas(cols * tw + (cols + 1) * gap, rows * th + (rows + 1) * gap,
+                   (0.10, 0.11, 0.13))
+    for i, f in enumerate(frames):
+        small = f.resized(tw, th)
+        sheet.blit(small, gap + (i % cols) * (tw + gap),
+                   gap + (i // cols) * (th + gap))
+    sheet_path = os.path.join(outdir, "stamp_swing_frames.png")
+    sheet.save(sheet_path)
+    print("  %-20s %5.1fs  %s (+ contact sheet)"
+          % ("stamp_swing", time.time() - t0, apng))
+    return apng, sheet_path
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bates", default="000137",
@@ -890,6 +1203,12 @@ def main(argv=None):
 
     print("building scene...")
     scene = build_scene(args.bates)
+    anim = scene.animation(build_swing(scene))
+    plant = [r for r in swing_report() if r[3] <= 0.0]
+    print("  %s: %d frames @ %g fps (%.3fs), %d planted frame(s) %s"
+          % (anim.name, SWING["frames"], SWING["fps"],
+             SWING["frames"] / SWING["fps"], len(plant),
+             [r[0] for r in plant]))
 
     for name, canvas in scene.images.items():
         canvas.save(os.path.join(tex_dir, name + ".png"))
@@ -910,23 +1229,7 @@ def main(argv=None):
         print("rendering previews...")
         prev = os.path.join(args.out, "previews")
         make_previews(scene, prev, args.quick)
-
-        # second keyframe: same rig, different RIG numbers
-        from tools.render import Camera, render
-        saved = dict(RIG)
-        RIG.update(POSE_IMPACT)
-        try:
-            impact = build_scene(args.bates, images=scene.images)
-            t = time.time()
-            w, h = (640, 400) if args.quick else (1100, 690)
-            img = render(impact, Camera((0, 0, 0), (0, -0.16, -1), fov_deg=62),
-                         w, h)
-            img.save(os.path.join(prev, "pose_impact.png"))
-            print("  %-20s %5.1fs  %s/pose_impact.png"
-                  % ("pose_impact", time.time() - t, prev))
-        finally:
-            RIG.clear()
-            RIG.update(saved)
+        render_swing(scene, anim, prev, args.quick)
 
     print("done in %.1fs" % (time.time() - t0))
     return 0

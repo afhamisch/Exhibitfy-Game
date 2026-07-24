@@ -195,8 +195,11 @@ def shirt_mr(size=64):
 
 
 def stamp_die(size=1024, bates="000137", seed=5):
-    rubber = hex_srgb("#17181C")
-    rubber_hi = hex_srgb("#2C2E35")
+    # The face points down-and-away in every strike pose, so it lives in
+    # bounce light. The field is lifted off pure black and the type pushed to
+    # the hot end of the brand ramp, so it still reads when barely lit.
+    rubber = hex_srgb("#26282E")
+    rubber_hi = hex_srgb("#3A3D45")
     c = Canvas(size, size, rubber)
     rnd = random.Random(seed)
 
@@ -212,12 +215,12 @@ def stamp_die(size=1024, bates="000137", seed=5):
     c.round_rect(m, m, size - m, size - m, size * 0.045, rubber_hi, 0.55)
     # double rule border, ink coloured
     c.round_rect(m * 1.5, m * 1.5, size - m * 1.5, size - m * 1.5,
-                 size * 0.038, BRAND["orange"], 1.0)
+                 size * 0.038, hex_srgb("#FF6A32"), 1.0)
     c.round_rect(m * 1.5 + size * 0.018, m * 1.5 + size * 0.018,
                  size - m * 1.5 - size * 0.018, size - m * 1.5 - size * 0.018,
                  size * 0.028, rubber, 1.0)
     c.round_rect(m * 2.35, m * 2.35, size - m * 2.35, size - m * 2.35,
-                 size * 0.022, BRAND["orange"], 1.0)
+                 size * 0.022, hex_srgb("#FF6A32"), 1.0)
     c.round_rect(m * 2.35 + size * 0.011, m * 2.35 + size * 0.011,
                  size - m * 2.35 - size * 0.011, size - m * 2.35 - size * 0.011,
                  size * 0.018, rubber, 1.0)
@@ -225,31 +228,27 @@ def stamp_die(size=1024, bates="000137", seed=5):
     def raised(text, x, y, sz, tracking=0.10, align="center", condense=1.0,
                color=None):
         """Ink-coloured text with a bevel so it reads as raised rubber."""
-        color = color or BRAND["orange"]
-        glyphs.draw_text(c, text, x + sz * 0.045, y + sz * 0.045, sz,
-                         (0.0, 0.0, 0.0), tracking, align, 0.75, condense)
-        glyphs.draw_text(c, text, x - sz * 0.022, y - sz * 0.022, sz,
-                         BRAND["orange_hi"], tracking, align, 0.9, condense)
+        color = color or hex_srgb("#FF6A32")
+        # cast shadow into the rubber, then a lit top edge, then the face
+        glyphs.draw_text(c, text, x + sz * 0.050, y + sz * 0.050, sz,
+                         (0.02, 0.02, 0.025), tracking, align, 0.85, condense)
+        glyphs.draw_text(c, text, x - sz * 0.028, y - sz * 0.028, sz,
+                         hex_srgb("#FFA070"), tracking, align, 1.0, condense)
         glyphs.draw_text(c, text, x, y, sz, color, tracking, align, 1.0, condense)
 
     cx = size * 0.5
-    raised("EXHIBITFY", cx, size * 0.40, size * 0.20, 0.055, condense=0.92)
+    raised("EXHIBITFY", cx, size * 0.395, size * 0.225, 0.045, condense=0.90)
 
-    # divider rules
-    c.rect(size * 0.16, size * 0.445, size * 0.84, size * 0.463,
-           BRAND["orange"], 1.0)
+    # divider rule
+    c.rect(size * 0.15, size * 0.448, size * 0.85, size * 0.470,
+           hex_srgb("#FF6A32"), 1.0)
 
-    raised("EXHIBIT NO.", cx, size * 0.585, size * 0.085, 0.14)
+    raised("EXHIBIT NO.", cx, size * 0.575, size * 0.078, 0.15)
 
     # Bates number block on its own recessed panel (the rolling wheels)
-    c.round_rect(size * 0.17, size * 0.615, size * 0.83, size * 0.80,
-                 size * 0.02, (0.03, 0.03, 0.035), 0.85)
-    raised(bates, cx, size * 0.775, size * 0.145, 0.09)
-
-    # tiny maker's mark
-    glyphs.draw_text(c, "EXHIBITFY LEGAL TOOLS - MADE IN USA", cx,
-                     size * 0.895, size * 0.038, BRAND["orange_dk"], 0.16,
-                     "center", 0.85)
+    c.round_rect(size * 0.14, size * 0.610, size * 0.86, size * 0.845,
+                 size * 0.022, hex_srgb("#141519"), 0.9)
+    raised(bates, cx, size * 0.800, size * 0.175, 0.075)
 
     # ink pooling / wear so it doesn't look like vector art
     for _ in range(240):
@@ -333,6 +332,86 @@ def housing_plate(size=512, seed=13):
         x0, y0 = rnd.random() * size, rnd.random() * size
         c.line(x0, y0, x0 + rnd.uniform(-26, 26), y0 + rnd.uniform(-6, 6),
                rnd.uniform(0.7, 1.6), (0.6, 0.6, 0.62), rnd.uniform(0.05, 0.18))
+    return c
+
+
+def housing_plain(size=256, seed=31):
+    """Unbranded housing black: fine cast grain, micro-scratches, soft mottle.
+
+    A flat colour reads as plastic; this keeps the panels dark but alive.
+    """
+    c = Canvas(size, size, BRAND["black"])
+    rnd = random.Random(seed)
+
+    def grain(x, y, cur):
+        u, v = x / size, 1.0 - y / size
+        fine = fbm(u * 110.0, v * 110.0, 2, seed) - 0.5
+        broad = fbm(u * 6.0, v * 6.0, 4, seed + 4) - 0.5
+        f = 1.0 + fine * 0.30 + broad * 0.42
+        col = mix((cur[0] * f, cur[1] * f, cur[2] * f), BRAND["black_hi"],
+                  max(0.0, broad) * 0.28)
+        return col
+
+    c.shade_each(grain)
+    for _ in range(220):
+        x0, y0 = rnd.random() * size, rnd.random() * size
+        c.line(x0, y0, x0 + rnd.uniform(-30, 30), y0 + rnd.uniform(-8, 8),
+               rnd.uniform(0.6, 1.5), (0.32, 0.33, 0.36), rnd.uniform(0.05, 0.20))
+    return c
+
+
+def accent_paint(size=256, seed=37):
+    """Exhibitfy orange as painted metal: even coat, scuffs, rubbed edges."""
+    c = Canvas(size, size, BRAND["orange"])
+    rnd = random.Random(seed)
+
+    def coat(x, y, cur):
+        u, v = x / size, 1.0 - y / size
+        n = fbm(u * 9.0, v * 9.0, 4, seed) - 0.5
+        m = fbm(u * 70.0, v * 70.0, 2, seed + 6) - 0.5
+        col = mix(cur, BRAND["orange_hi"], max(0.0, n) * 0.45)
+        col = mix(col, BRAND["orange_dk"], max(0.0, -n) * 0.40)
+        f = 1.0 + m * 0.09
+        return (col[0] * f, col[1] * f, col[2] * f)
+
+    c.shade_each(coat)
+    for _ in range(150):
+        x0, y0 = rnd.random() * size, rnd.random() * size
+        c.line(x0, y0, x0 + rnd.uniform(-22, 22), y0 + rnd.uniform(-5, 5),
+               rnd.uniform(0.6, 1.6), (0.72, 0.70, 0.68), rnd.uniform(0.05, 0.22))
+    for _ in range(70):
+        x, y = rnd.random() * size, rnd.random() * size
+        c.circle(x, y, rnd.uniform(0.8, 2.6), BRAND["orange_dk"],
+                 rnd.uniform(0.08, 0.26), steps=8)
+    return c
+
+
+def rubber_grain(size=256, seed=43):
+    """Moulded rubber: matte, slightly uneven, faint mould texture."""
+    base = hex_srgb("#15161A")
+    c = Canvas(size, size, base)
+
+    def f(x, y, cur):
+        u, v = x / size, 1.0 - y / size
+        fine = fbm(u * 130.0, v * 130.0, 2, seed) - 0.5
+        broad = fbm(u * 12.0, v * 12.0, 3, seed + 2) - 0.5
+        k = 1.0 + fine * 0.34 + broad * 0.26
+        return (cur[0] * k, cur[1] * k, cur[2] * k)
+
+    c.shade_each(f)
+    return c
+
+
+def paint_mr(size=128, seed=47):
+    """Metallic-roughness for painted / moulded hard-surface parts."""
+    c = Canvas(size, size, (0.0, 0.30, 0.22))
+
+    def f(x, y, cur):
+        u, v = x / size, 1.0 - y / size
+        n = fbm(u * 18.0, v * 18.0, 3, seed)
+        return (0.0, 0.24 + n * 0.20, 0.14 + n * 0.24)
+
+    c.shade_each(f)
     return c
 
 
@@ -444,14 +523,14 @@ def steel_mr(size=256, seed=17):
     def f(x, y, cur):
         u, v = x / size, 1.0 - y / size
         n = fbm(u * 26.0, v * 4.0, 4, seed)
-        return (0.0, 0.22 + n * 0.34, 1.0 - max(0.0, (n - 0.7)) * 0.5)
+        return (0.0, 0.14 + n * 0.24, 1.0 - max(0.0, (n - 0.75)) * 0.35)
 
     c.shade_each(f)
     for _ in range(180):
         x0, y0 = rnd.random() * size, rnd.random() * size
         c.line(x0, y0, x0 + rnd.uniform(-40, 40), y0 + rnd.uniform(-4, 4),
-               rnd.uniform(0.6, 1.8), (0.0, rnd.uniform(0.45, 0.8), 1.0),
-               rnd.uniform(0.2, 0.6))
+               rnd.uniform(0.5, 1.4), (0.0, rnd.uniform(0.30, 0.58), 1.0),
+               rnd.uniform(0.15, 0.45))
     return c
 
 
@@ -480,6 +559,10 @@ def build_all(bates="000137"):
         "housing_mr": housing_mr(),
         "grip_basecolor": grip_rubber(),
         "wheel_digits": wheel_digits(number=bates),
+        "housing_plain_basecolor": housing_plain(),
+        "accent_basecolor": accent_paint(),
+        "rubber_basecolor": rubber_grain(),
+        "paint_mr": paint_mr(),
         "grip_mr": grip_mr(),
         "steel_basecolor": steel_basecolor(),
         "steel_mr": steel_mr(),

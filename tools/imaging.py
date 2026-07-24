@@ -8,6 +8,41 @@ import struct
 import zlib
 
 
+def png_chunk(tag, data):
+    out = struct.pack(">I", len(data)) + tag + data
+    return out + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+
+def write_apng(frames, path, fps=30.0, loops=0):
+    """Write an animated PNG -- lets the swing be reviewed as motion.
+
+    Every frame is a full-canvas update (dispose/blend = none/source), which
+    keeps the encoder trivial and the file robust in every viewer that
+    understands APNG. Non-APNG viewers just see frame 0.
+    """
+    assert frames, "no frames"
+    w, h = frames[0].w, frames[0].h
+    num = max(1, int(round(1000.0 / fps)))
+    out = b"\x89PNG\r\n\x1a\n"
+    out += png_chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+    out += png_chunk(b"acTL", struct.pack(">II", len(frames), loops))
+    seq = 0
+    for i, f in enumerate(frames):
+        data = zlib.compress(f.filtered_scanlines(), 9)
+        out += png_chunk(b"fcTL", struct.pack(">IIIIIHHBB", seq, w, h, 0, 0,
+                                              num, 1000, 0, 0))
+        seq += 1
+        if i == 0:
+            out += png_chunk(b"IDAT", data)
+        else:
+            out += png_chunk(b"fdAT", struct.pack(">I", seq) + data)
+            seq += 1
+    out += png_chunk(b"IEND", b"")
+    with open(path, "wb") as fh:
+        fh.write(out)
+    return path
+
+
 # ------------------------------------------------------------------ colour
 
 
@@ -264,7 +299,8 @@ class Canvas:
             self.px = out
 
     # ---------------------------------------------------------------- io
-    def to_png_bytes(self):
+    def filtered_scanlines(self):
+        """8-bit RGB rows with a per-row PNG filter chosen by lowest cost."""
         w, h = self.w, self.h
         raw = bytearray()
         prev = bytearray(w * 3)
@@ -275,7 +311,6 @@ class Canvas:
                 v = self.px[base + i]
                 v = 0.0 if v < 0.0 else (1.0 if v > 1.0 else v)
                 line[i] = int(v * 255.0 + 0.5)
-            # pick the cheaper of None/Sub/Up filters per scanline
             sub = bytearray(w * 3)
             up = bytearray(w * 3)
             for i in range(w * 3):
@@ -292,16 +327,50 @@ class Canvas:
             raw.append(ftype)
             raw += data
             prev = line
+        return bytes(raw)
 
-        def chunk(tag, data):
-            out = struct.pack(">I", len(data)) + tag + data
-            return out + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-
+    def to_png_bytes(self):
         png = b"\x89PNG\r\n\x1a\n"
-        png += chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
-        png += chunk(b"IDAT", zlib.compress(bytes(raw), 9))
-        png += chunk(b"IEND", b"")
+        png += png_chunk(b"IHDR",
+                         struct.pack(">IIBBBBB", self.w, self.h, 8, 2, 0, 0, 0))
+        png += png_chunk(b"IDAT", zlib.compress(self.filtered_scanlines(), 9))
+        png += png_chunk(b"IEND", b"")
         return png
+
+    def resized(self, w, h):
+        """Box-filtered downscale (used for contact sheets)."""
+        out = Canvas(w, h)
+        sx = self.w / w
+        sy = self.h / h
+        for y in range(h):
+            y0 = int(y * sy)
+            y1 = max(y0 + 1, int((y + 1) * sy))
+            for x in range(w):
+                x0 = int(x * sx)
+                x1 = max(x0 + 1, int((x + 1) * sx))
+                r = g = b = 0.0
+                n = 0
+                for yy in range(y0, min(y1, self.h)):
+                    row = yy * self.w * 3
+                    for xx in range(x0, min(x1, self.w)):
+                        i = row + xx * 3
+                        r += self.px[i]
+                        g += self.px[i + 1]
+                        b += self.px[i + 2]
+                        n += 1
+                if n:
+                    out.set(x, y, (r / n, g / n, b / n))
+        return out
+
+    def blit(self, other, x, y):
+        for j in range(other.h):
+            ty = y + j
+            if not (0 <= ty < self.h):
+                continue
+            for i in range(other.w):
+                tx = x + i
+                if 0 <= tx < self.w:
+                    self.set(tx, ty, other.get(i, j))
 
     def save(self, path):
         with open(path, "wb") as f:

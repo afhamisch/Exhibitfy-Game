@@ -52,16 +52,56 @@ class Node:
         return m
 
 
+class Animation:
+    """Baked TRS keyframes for a set of nodes.
+
+    Keys are baked every frame rather than sparsely: LINEAR interpolation
+    between dense keys reproduces the authored easing exactly, which matters
+    when the whole point is that the slam accelerates and the impact snaps.
+    """
+
+    def __init__(self, name, fps=30.0):
+        self.name = name
+        self.fps = fps
+        self.tracks = {}          # id(node) -> {"node":.., "t":[], path:[..]}
+
+    def key(self, node, time, translation=None, rotation=None, scale=None):
+        tr = self.tracks.setdefault(id(node), {"node": node, "t": [],
+                                               "translation": [],
+                                               "rotation": [], "scale": []})
+        tr["t"].append(float(time))
+        if translation is not None:
+            tr["translation"].append(tuple(float(v) for v in translation))
+        if rotation is not None:
+            prev = tr["rotation"][-1] if tr["rotation"] else None
+            tr["rotation"].append(vec.quat_shortest(prev, rotation))
+        if scale is not None:
+            tr["scale"].append(tuple(float(v) for v in scale))
+
+    def key_matrix(self, node, time, matrix):
+        t, q, s = vec.mat_to_trs(matrix)
+        self.key(node, time, t, q, s if abs(s[0] - 1.0) > 1e-6 else None)
+
+    @property
+    def duration(self):
+        return max((tr["t"][-1] for tr in self.tracks.values()), default=0.0)
+
+
 class Scene:
     def __init__(self, name="Scene"):
         self.name = name
         self.roots = []
         self.materials = {}
         self.images = {}
+        self.animations = []
 
     def add_root(self, node):
         self.roots.append(node)
         return node
+
+    def animation(self, anim):
+        self.animations.append(anim)
+        return anim
 
     def material(self, mat):
         self.materials[mat.name] = mat
@@ -307,12 +347,24 @@ def export_glb(scene, path, generator="exhibitfy-fpv-builder"):
         gltf["meshes"].append({"name": name, "primitives": prims})
         return len(gltf["meshes"]) - 1
 
+    node_index = {}
+
     def add_node(node):
         entry = {"name": node.name}
+        # TRS rather than a matrix: glTF forbids `matrix` on animated nodes,
+        # and every transform here is rotation + uniform scale + translation,
+        # so the decomposition is exact.
         if node.matrix != list(vec.IDENTITY):
-            entry["matrix"] = [float(x) for x in vec.to_gltf(node.matrix)]
+            t, q, s = vec.mat_to_trs(node.matrix)
+            if any(abs(v) > 1e-9 for v in t):
+                entry["translation"] = [float(v) for v in t]
+            if abs(q[3] - 1.0) > 1e-9 or any(abs(v) > 1e-9 for v in q[:3]):
+                entry["rotation"] = [float(v) for v in q]
+            if any(abs(v - 1.0) > 1e-9 for v in s):
+                entry["scale"] = [float(v) for v in s]
         gltf["nodes"].append(entry)
         my = len(gltf["nodes"]) - 1
+        node_index[id(node)] = my
         if node.meshes:
             mi = make_mesh(node.meshes, node.name + "_mesh")
             if mi is not None:
@@ -324,6 +376,44 @@ def export_glb(scene, path, generator="exhibitfy-fpv-builder"):
 
     for r in scene.roots:
         gltf["scenes"][0]["nodes"].append(add_node(r))
+
+    # ---- animations
+    if scene.animations:
+        gltf["animations"] = []
+        for anim in scene.animations:
+            samplers = []
+            channels = []
+            for tr in anim.tracks.values():
+                ni = node_index.get(id(tr["node"]))
+                if ni is None:
+                    continue
+                times = tr["t"]
+                tb = b"".join(struct.pack("<f", t) for t in times)
+                tv = buf.add(tb)
+                ta = accessor(tv, len(times), 5126, "SCALAR",
+                              [min(times)], [max(times)])
+                for chan_path, comps in (("translation", 3), ("rotation", 4),
+                                         ("scale", 3)):
+                    vals = tr[chan_path]
+                    if not vals:
+                        continue
+                    if len(vals) != len(times):
+                        raise ValueError("%s: %d %s keys for %d times"
+                                         % (tr["node"].name, len(vals),
+                                            chan_path, len(times)))
+                    vb = b"".join(struct.pack("<" + "f" * comps, *v)
+                                  for v in vals)
+                    vv = buf.add(vb)
+                    va = accessor(vv, len(vals), 5126,
+                                  "VEC3" if comps == 3 else "VEC4")
+                    samplers.append({"input": ta, "output": va,
+                                     "interpolation": "LINEAR"})
+                    channels.append({"sampler": len(samplers) - 1,
+                                     "target": {"node": ni,
+                                                "path": chan_path}})
+            gltf["animations"].append({"name": anim.name,
+                                       "samplers": samplers,
+                                       "channels": channels})
 
     gltf["bufferViews"] = buf.views
     gltf["buffers"] = [{"byteLength": len(buf.data)}]

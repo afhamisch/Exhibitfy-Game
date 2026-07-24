@@ -217,6 +217,108 @@ def rigid_inverse(m):
     ]
 
 
+def mat_to_trs(m):
+    """Decompose a rotation + uniform-scale + translation matrix.
+
+    Returns (translation, quaternion as (x, y, z, w), scale). glTF forbids a
+    `matrix` on animated nodes, so every node is exported as TRS.
+    """
+    t = (m[3], m[7], m[11])
+    cols = [(m[0], m[4], m[8]), (m[1], m[5], m[9]), (m[2], m[6], m[10])]
+    s = [length(c) for c in cols]
+    r = [norm(c) for c in cols]
+    # a reflected basis cannot be expressed as a rotation; fold the flip into
+    # the scale so the decomposition stays exact
+    det = dot(r[0], cross(r[1], r[2]))
+    if det < 0:
+        r[0] = mul(r[0], -1.0)
+        s[0] = -s[0]
+    return t, quat_from_axes(r[0], r[1], r[2]), tuple(s)
+
+
+def quat_from_axes(x, y, z):
+    """Quaternion (x, y, z, w) from orthonormal basis vectors (as columns)."""
+    m00, m01, m02 = x[0], y[0], z[0]
+    m10, m11, m12 = x[1], y[1], z[1]
+    m20, m21, m22 = x[2], y[2], z[2]
+    tr = m00 + m11 + m22
+    if tr > 0.0:
+        s = math.sqrt(tr + 1.0) * 2.0
+        w = 0.25 * s
+        qx = (m21 - m12) / s
+        qy = (m02 - m20) / s
+        qz = (m10 - m01) / s
+    elif m00 > m11 and m00 > m22:
+        s = math.sqrt(1.0 + m00 - m11 - m22) * 2.0
+        w = (m21 - m12) / s
+        qx = 0.25 * s
+        qy = (m01 + m10) / s
+        qz = (m02 + m20) / s
+    elif m11 > m22:
+        s = math.sqrt(1.0 + m11 - m00 - m22) * 2.0
+        w = (m02 - m20) / s
+        qx = (m01 + m10) / s
+        qy = 0.25 * s
+        qz = (m12 + m21) / s
+    else:
+        s = math.sqrt(1.0 + m22 - m00 - m11) * 2.0
+        w = (m10 - m01) / s
+        qx = (m02 + m20) / s
+        qy = (m12 + m21) / s
+        qz = 0.25 * s
+    l = math.sqrt(qx * qx + qy * qy + qz * qz + w * w) or 1.0
+    return (qx / l, qy / l, qz / l, w / l)
+
+
+def mat_from_quat(q, origin=(0.0, 0.0, 0.0)):
+    x, y, z, w = q
+    return mat_from_basis(
+        (1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w)),
+        (2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w)),
+        (2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)),
+        origin)
+
+
+def quat_slerp(a, b, t):
+    """Shortest-arc spherical interpolation."""
+    d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+    if d < 0.0:
+        b = (-b[0], -b[1], -b[2], -b[3])
+        d = -d
+    if d > 0.9995:
+        out = tuple(a[i] + (b[i] - a[i]) * t for i in range(4))
+    else:
+        th0 = math.acos(max(-1.0, min(1.0, d)))
+        th = th0 * t
+        s0 = math.sin(th0)
+        wa = math.sin(th0 - th) / s0
+        wb = math.sin(th) / s0
+        out = tuple(a[i] * wa + b[i] * wb for i in range(4))
+    l = math.sqrt(sum(v * v for v in out)) or 1.0
+    return tuple(v / l for v in out)
+
+
+def quat_from_mat(m):
+    """Quaternion from the rotation part of a 4x4 (columns must be unit)."""
+    return quat_from_axes((m[0], m[4], m[8]), (m[1], m[5], m[9]),
+                          (m[2], m[6], m[10]))
+
+
+def quat_dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+
+
+def quat_shortest(prev, q):
+    """Flip q so it takes the short way round from prev.
+
+    glTF interpolates rotation keys linearly then normalises, so neighbouring
+    keys must live on the same hemisphere or the motion spins the long way.
+    """
+    if prev is not None and quat_dot(prev, q) < 0.0:
+        return (-q[0], -q[1], -q[2], -q[3])
+    return q
+
+
 def to_gltf(m):
     """glTF wants column-major floats."""
     return [
