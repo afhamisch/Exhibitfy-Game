@@ -23,10 +23,12 @@ thickness and natural curl, rubber-hose limbs, and a face drawn on the page.
 
 Both clips are baked **every frame at 30 fps**.
 
-- **`Run`** — **20 frames, looping.** Frame 0 and frame `RUN_FRAMES` are the
-  same pose. Thigh swing with a knee that folds through the pass,
-  counter-swinging arms with trailing elbows, a bob that hits twice per stride,
-  forward lean, page flutter running against the body.
+- **`Run`** — **one full stride, looping.** Cadence sets the frame count, not
+  the phase: pleading 21, privilege 19, binder 31, stack 17 keys, and the last
+  key repeats frame 0 bit-identically. Every frequency multiplying `p` is a
+  whole number of strides, or the loop pops. Thigh swing with a knee that folds
+  through the pass, counter-swinging arms with trailing elbows, a bob that hits
+  twice per stride, forward lean, page flutter running against the body.
 - **`Stamped`** — **26 frames, one-shot.** Anticipation, page driven flat
   (squash on frame 4 — `hit = 4`), the Bates impression punches in with a
   **1.28× overshoot** (then 1.12×, then 1.0), and it settles limp on the ground.
@@ -146,7 +148,8 @@ done
 
 **Never assert a validator passed.** Paste the transcript. Check the reported
 triangle counts against the table above and the animation summary against
-`Run` 20 frames / `Stamped` 26 frames @ 30 fps.
+`Run` 21 / 19 / 31 / 17 keys (pleading / privilege / binder / stack) and
+`Stamped` 26 frames, both @ 30 fps.
 
 ## Related
 

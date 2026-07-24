@@ -79,7 +79,9 @@ appears, that is a finding.
 | binder | 2,700 |
 | stack | 1,856 |
 
-- `Run`: **20 frames @ 30 fps**, looping
+- `Run`: **@ 30 fps, looping, one stride** — pleading **21** keys (0.667 s),
+  privilege **19** (0.600 s), binder **31** (1.000 s), stack **17** (0.533 s).
+  A variant reporting 20 keys has regressed to the old cadence-warped bake.
 - `Stamped`: **26 frames @ 30 fps**, one-shot
 
 ### Environment — `build/environment/<piece>.glb`

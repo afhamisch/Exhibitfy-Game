@@ -397,9 +397,13 @@ even when small on screen.
 
 Both clips are baked every frame at 30 fps.
 
-**`Run`** — 20 frames, looping. Thigh swing with a knee that folds through the
-pass, counter-swinging arms with trailing elbows, a bob that hits twice per
-stride, forward lean, and page flutter running against the body.
+**`Run`** — one full stride, looping. Cadence sets how many 30 fps frames the
+stride takes rather than warping the phase inside a fixed count, so the cycle
+closes exactly on the clip boundary and the last key repeats frame 0: 21 keys
+for the pleading paper, 19 for privilege, 31 for the lumbering binder, 17 for
+the panicking stack. Thigh swing with a knee that folds through the pass,
+counter-swinging arms with trailing elbows, a bob that hits twice per stride,
+forward lean, and page flutter running against the body.
 
 **`Stamped`** — 26 frames, one-shot. Anticipation, then the page is driven flat
 (squash on frame 4), the Bates impression punches in with a 1.28× overshoot,

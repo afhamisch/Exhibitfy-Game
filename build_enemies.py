@@ -111,7 +111,7 @@ VARIANTS = {
     },
 }
 
-RUN_FRAMES = 20
+RUN_FRAMES = 20         # frames per stride at cadence 1.0; cadence scales it
 STAMP_FRAMES = 26
 FPS = 30.0
 
@@ -404,15 +404,30 @@ def _swing(deg, phase):
 
 
 def run_cycle(scene):
-    """Looping run. Frame 0 and frame RUN_FRAMES are the same pose."""
+    """Looping run. The last key repeats frame 0 exactly, so the seam is free.
+
+    A looping clip has two requirements the old bake did not meet.
+
+    The stride has to close on the clip boundary. Cadence used to warp the
+    phase inside a fixed 20 frames -- the cycle spanned TAU * cadence, so it
+    only closed when cadence happened to be a whole number. It did for the
+    pleading paper; it did not for anyone else, and the binder (0.66) snapped
+    its shin roughly 66 degrees every time the clip wrapped. Cadence now sets
+    how many 30 fps frames one stride takes instead, so the phase always
+    closes and the bake stays on the 30 fps grid.
+
+    And the last key has to repeat frame 0, or the wrap has no interval to
+    happen over: the final frame of motion would land in zero time and hitch.
+    """
     r = scene.rig
     cfg = r["cfg"]["run"]
     anim = Animation("Run", FPS)
     poses = []
-    n = RUN_FRAMES
-    for f in range(n):
+    # frames per stride at 30 fps -- fast variants take fewer, heavy ones more
+    n = max(4, int(round(RUN_FRAMES / cfg["cadence"])))
+    for f in range(n + 1):
         t = f / FPS
-        p = TAU * (f / n) * cfg["cadence"]
+        p = TAU * (f / n)
         pose = {}
 
         # --- hips: bob twice per stride, lean into the run, sway sideways
@@ -422,7 +437,11 @@ def run_cycle(scene):
             bob = cfg["bob"] * (0.5 - 0.5 * math.cos(2.0 * p)) ** 1.7
         sway = cfg["sway"] * math.sin(p)
         if cfg.get("dodge"):
-            sway += cfg["sway"] * 1.5 * math.sin(p * 0.5)
+            # A weave slower than one stride cannot live in a one-stride loop
+            # -- half a cycle does not close. The long evasive weave belongs to
+            # the AI heading (web/main.js does it); what stays here is the
+            # per-stride shimmy that sells the side-step.
+            sway += cfg["sway"] * 1.5 * math.sin(2.0 * p + 0.7)
         jitter = 0.004 * cfg["jitter"] * math.sin(p * 5.0 + 1.1)
         lean = cfg["lean"] + 3.0 * math.sin(2.0 * p) * cfg["jitter"] * 0.5
         pose[r["rig"]] = vec.mat_mul(
@@ -439,16 +458,19 @@ def run_cycle(scene):
         pose[r["body"]] = list(vec.IDENTITY)
 
         for si, (node, ang) in enumerate(r["extras"]):
-            # loose sheets lag the body -- reads as chaos, costs two curves
+            # Loose sheets lag the body -- reads as chaos, costs two curves.
+            # The frequencies are whole numbers of strides so they close on the
+            # loop; the chaos comes from the per-sheet phase k, not from
+            # fractional rates, which only ever bought a pop at the seam.
             b = node.bind_local
             k = 1.0 + 0.9 * si
             pose[node] = vec.mat_mul(
                 vec.mat_mul(vec.translate((
-                    b[3] + 0.012 * math.sin(p * 1.7 + k),
-                    b[7] + 0.014 * math.sin(p * 2.3 + k * 1.7),
+                    b[3] + 0.012 * math.sin(p * 2.0 + k),
+                    b[7] + 0.014 * math.sin(p * 3.0 + k * 1.7),
                     b[11])),
-                    vec.rot_z((ang + 8.0 * math.sin(p * 1.3 + k)) * D2R)),
-                vec.rot_x(11.0 * math.sin(p * 2.1 + k) * D2R))
+                    vec.rot_z((ang + 8.0 * math.sin(p + k)) * D2R)),
+                vec.rot_x(11.0 * math.sin(p * 2.0 + k) * D2R))
 
         # --- legs: thigh swings, knee folds on the way through
         for side, ph in (("L", 0.0), ("R", math.pi)):
@@ -687,8 +709,8 @@ def main(argv=None):
         st = scene.stats()
         print("  %-9s %-24s %5d tris  %s (%.0f KB)  [%s %df, %s %df]"
               % (name, cfg["label"], st["triangles"], os.path.basename(glb),
-                 os.path.getsize(glb) / 1024.0, run.name, RUN_FRAMES,
-                 hit.name, STAMP_FRAMES))
+                 os.path.getsize(glb) / 1024.0, run.name, len(run.poses),
+                 hit.name, len(hit.poses)))
         if not args.no_preview:
             preview(scene, [run, hit], os.path.join(args.out, "previews"),
                     name, args.quick)

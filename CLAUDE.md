@@ -87,7 +87,7 @@ view is ~11k.
 | Clip | Frames | fps | Notes |
 |---|---:|---:|---|
 | `Stamp_Swing` | **23** | 30 | 0.767 s. 15 animated nodes, 31 channels, 23 keys each. Impact frames 11–13, trigger on 11. Frames 0 and 22 bit-identical. |
-| `Run` | **20** | 30 | Looping; frame 0 == last frame. |
+| `Run` | **per variant** | 30 | Looping, one full stride: pleading 21 · privilege 19 · binder 31 · stack 17 keys. Last key repeats frame 0 bit-identically. |
 | `Stamped` | **26** | 30 | One-shot. Squash on frame 4, Bates impression at 1.28× overshoot. |
 
 The office kit is static.
@@ -102,6 +102,17 @@ pleading 38    privilege 27    binder 20    stack 44
 
 **Never normalize these toward each other.** They encode personality — the
 binder is heavy and barely swings, the stack is panicking and flails.
+
+**The run cycle must close on the clip boundary.** `Run` spans exactly one
+stride: `p = TAU * f / n`, where **cadence sets `n`** (frames per stride at
+30 fps), never the phase. Every frequency multiplying `p` must be a **whole
+number** of strides, and the clip emits `n + 1` keys so the last repeats frame
+0 — otherwise the wrap has no interval to happen over.
+
+Warping the phase by cadence inside a fixed frame count is what used to leave
+the binder snapping its shin ~66° every time the clip looped. Anything slower
+than one stride — a long evasive weave — cannot be baked here at all; it
+belongs to the runtime AI.
 
 **Elbow flexion is derived from shoulder phase, never independently keyed:**
 

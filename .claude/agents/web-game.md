@@ -98,6 +98,21 @@ Hit resolution fires once per swing, at `swingImpact` — when the die is
 actually planted, not on mousedown. Keep it that way; it is what makes the hit
 feel connected to the animation.
 
+## The enemy variants
+
+All four are wired up, one of each, through the `VARIANTS` table in `main.js`.
+
+Its speeds are **derived, not invented**: each tracks the `cadence` and `stride`
+baked into that variant's `Run` clip in `build_enemies.py`, so the feet keep
+pace with the ground instead of skating. If you retune a variant's run in the
+Python build, retune the matching multiplier here — and if you change one here
+for feel, say so, because it decouples the two.
+
+The privilege paper's long evasive weave lives on the AI heading rather than in
+its clip, and has to. A weave slower than one stride cannot be baked into a
+one-stride loop: half a cycle does not close, so it pops at the seam. Anything
+with a period longer than a stride belongs here, not in the bake.
+
 ## Documented limits — do not silently "fix"
 
 These are deliberate for this slice and are written down in `web/README.md`:

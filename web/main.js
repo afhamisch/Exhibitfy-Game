@@ -34,11 +34,31 @@ const CFG = {
   strikeRadius: 1.05,     // metres
   enemyRadius: 0.26,
 
-  enemyCount: 4,
-  enemySpeed: 2.45,
+  enemySpeed: 2.45,       // the pleading paper; the rest scale off it
   enemyFlee: 7.0,         // starts running when the player is this close
   enemyTurn: 3.2,
 };
+
+// The four variants, tuned from what build_enemies.py actually baked rather
+// than invented here. Ground speed tracks cadence x stride, so the feet keep
+// pace with the clip instead of skating: the binder lumbers at half the
+// pleading paper's speed because its stride is both shorter and slower, and
+// the stack outruns you because its is neither.
+//
+// `weave` is the privilege paper's long evasive side-step. It cannot be baked
+// into a one-stride loop -- half a cycle does not close -- so it lives here,
+// on the heading, where it also does something the clip never could: make it
+// genuinely harder to hit.
+const VARIANTS = {
+  pleading:  { file: 'enemy_pleading.glb',  speed: 1.00, flee: 1.00, turn: 1.00, radius: 1.00 },
+  privilege: { file: 'enemy_privilege.glb', speed: 0.92, flee: 1.30, turn: 1.25, radius: 0.97,
+               weave: { rate: 2.3, amp: 0.85 } },
+  binder:    { file: 'enemy_binder.glb',    speed: 0.49, flee: 0.80, turn: 0.55, radius: 1.16 },
+  stack:     { file: 'enemy_stack.glb',     speed: 1.36, flee: 1.15, turn: 1.35, radius: 1.04 },
+};
+
+// One of each, so every silhouette is on the floor to be told apart.
+const ROSTER = ['pleading', 'privilege', 'binder', 'stack'];
 
 // The office is assembled from 4 m modules. Each corridor rectangle below is
 // walkable floor; the player is clamped to their union, which is far more
@@ -182,7 +202,7 @@ const els = {
 };
 
 const state = {
-  ready: false, score: 0,
+  ready: false, score: 0, t: 0,
   swinging: false, swingT: 0, hitDone: false,
   enemies: [],
   keys: Object.create(null),
@@ -190,6 +210,8 @@ const state = {
 
 // exposed for tuning and debugging from the console
 window.__bates = state;
+state.CFG = CFG;                    // live-tunable: __bates.CFG.walk = 6
+state.VARIANTS = VARIANTS;
 state.scene = scene;
 state.camera = camera;
 state.viewScene = viewScene;
@@ -202,17 +224,20 @@ function place(obj, x, z, rot = 0) {
 }
 
 async function boot() {
-  const [hallG, cornerG, doorG, viewG, enemyG, ...propGs] = await Promise.all([
+  const kinds = [...new Set(ROSTER)];
+  const [hallG, cornerG, doorG, viewG, ...rest] = await Promise.all([
     load(`${ASSETS}/environment/hallway_straight.glb`),
     load(`${ASSETS}/environment/hallway_corner.glb`),
     load(`${ASSETS}/environment/doorway.glb`),
     load(`${ASSETS}/exhibitfy_fpv_arms.glb`),
-    load(`${ASSETS}/enemies/enemy_pleading.glb`),
     load(`${ASSETS}/environment/file_cabinet.glb`),
     load(`${ASSETS}/environment/banker_boxes.glb`),
     load(`${ASSETS}/environment/desk_chair.glb`),
     load(`${ASSETS}/environment/reception_counter.glb`),
+    ...kinds.map((k) => load(`${ASSETS}/enemies/${VARIANTS[k].file}`)),
   ]);
+  const propGs = rest.slice(0, 4);
+  const enemyGs = Object.fromEntries(kinds.map((k, i) => [k, rest[4 + i]]));
   const props = {
     file_cabinet: propGs[0].scene,
     banker_boxes: propGs[1].scene,
@@ -243,23 +268,26 @@ async function boot() {
   state.swing = swing;
 
   // ---- enemies
-  for (let i = 0; i < CFG.enemyCount; i++) {
-    const g = enemyG.scene.clone(true);
+  ROSTER.forEach((kind, i) => {
+    const src = enemyGs[kind];
+    const v = VARIANTS[kind];
+    const g = src.scene.clone(true);
     const spawn = LAYOUT.spawns[i % LAYOUT.spawns.length];
     place(g, spawn[0], spawn[1], Math.random() * Math.PI * 2);
     scene.add(g);
     const mixer = new THREE.AnimationMixer(g);
-    const runClip = THREE.AnimationClip.findByName(enemyG.animations, 'Run');
-    const hitClip = THREE.AnimationClip.findByName(enemyG.animations, 'Stamped');
+    const runClip = THREE.AnimationClip.findByName(src.animations, 'Run');
+    const hitClip = THREE.AnimationClip.findByName(src.animations, 'Stamped');
     const run = mixer.clipAction(runClip);
     run.play();
     const hit = mixer.clipAction(hitClip);
     hit.setLoop(THREE.LoopOnce, 1);
     hit.clampWhenFinished = true;
     state.enemies.push({
-      root: g, mixer, run, hit, alive: true, heading: g.rotation.y, dead: 0,
+      kind, v, root: g, mixer, run, hit, alive: true,
+      heading: g.rotation.y, dead: 0, phase: i * 1.7,
     });
-  }
+  });
 
   state.ready = true;
   els.loading.hidden = true;
@@ -307,7 +335,6 @@ function resolveHit() {
   camera.getWorldDirection(fwd);
   fwd.y = 0; fwd.normalize();
   strike.copy(camera.position).addScaledVector(fwd, CFG.strikeAhead);
-  const range = CFG.strikeRadius + CFG.enemyRadius;
 
   let best = null, bestD = Infinity;
   for (const e of state.enemies) {
@@ -315,7 +342,8 @@ function resolveHit() {
     tmpV.copy(e.root.position).sub(strike);
     tmpV.y = 0;
     const d = tmpV.length();
-    if (d > range) continue;
+    // the binder is a wider target than a single sheet, and reads that way
+    if (d > CFG.strikeRadius + CFG.enemyRadius * e.v.radius) continue;
     if (d < bestD) { bestD = d; best = e; }
   }
   state.lastProbe = { at: performance.now(), nearest: bestD, hit: !!best };
@@ -381,20 +409,26 @@ function updateEnemies(dt) {
     tmpV.copy(e.root.position).sub(camera.position);
     tmpV.y = 0;
     const dist = tmpV.length();
+    const flee = CFG.enemyFlee * e.v.flee;
+    const fleeing = dist < flee;
 
     let want = e.heading;
-    if (dist < CFG.enemyFlee) {
+    if (fleeing) {
       want = Math.atan2(tmpV.x, tmpV.z);        // face directly away
+      // the privilege paper does not flee honestly -- it weaves
+      if (e.v.weave) want += Math.sin(state.t * e.v.weave.rate + e.phase) * e.v.weave.amp;
     } else {
-      want = e.heading + Math.sin(performance.now() * 0.0004 + e.root.id) * 0.5;
+      want = e.heading + Math.sin(state.t * 0.4 + e.phase) * 0.5;
     }
     // shortest-arc turn
     let diff = ((want - e.heading + Math.PI) % (Math.PI * 2)) - Math.PI;
     if (diff < -Math.PI) diff += Math.PI * 2;
-    e.heading += THREE.MathUtils.clamp(diff, -CFG.enemyTurn * dt, CFG.enemyTurn * dt);
+    const turn = CFG.enemyTurn * e.v.turn;
+    e.heading += THREE.MathUtils.clamp(diff, -turn * dt, turn * dt);
 
     // the enemy model runs towards -Z, so heading is its facing directly
-    const sp = dist < CFG.enemyFlee ? CFG.enemySpeed : CFG.enemySpeed * 0.42;
+    const base = CFG.enemySpeed * e.v.speed;
+    const sp = fleeing ? base : base * 0.42;
     const dx = -Math.sin(e.heading) * sp * dt;
     const dz = -Math.cos(e.heading) * sp * dt;
     const mv = resolveMove(e.root.position, dx, dz);
@@ -404,7 +438,7 @@ function updateEnemies(dt) {
     e.root.position.x += mv.dx;
     e.root.position.z += mv.dz;
     e.root.rotation.y = e.heading;
-    e.mixer.update(dt * (dist < CFG.enemyFlee ? 1.0 : 0.55));
+    e.mixer.update(dt * (fleeing ? 1.0 : 0.55));
   }
 }
 
@@ -424,6 +458,7 @@ function updateSwing(dt) {
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
+  state.t += dt;
   if (state.ready && controls.isLocked) {
     updatePlayer(dt);
     updateSwing(dt);

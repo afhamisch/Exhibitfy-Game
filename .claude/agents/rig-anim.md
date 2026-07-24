@@ -32,7 +32,7 @@ key times, unit quaternions, and that quaternion keys take the short way round.
 | Clip | Build | Frames | fps | Loop |
 |---|---|---:|---:|---|
 | `Stamp_Swing` | viewmodel | **23** (0.767 s) | 30 | frames 0 and 22 bit-identical |
-| `Run` | enemies | **20** | 30 | frame 0 == frame `RUN_FRAMES` |
+| `Run` | enemies | **21 / 19 / 31 / 17** | 30 | last key repeats frame 0 |
 | `Stamped` | enemies | **26** | 30 | one-shot |
 
 `Stamp_Swing` animates **15 nodes** — the stamp, both arms, both hands and all
