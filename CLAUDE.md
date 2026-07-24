@@ -155,6 +155,7 @@ three-quarter view before flagging any lean.
 | `tools-lib` | The shared `tools/` package |
 | `glb-validate` | Export integrity and budgets (read-only) |
 | `visual-qa` | Rendered previews (read-only) |
+| `web-game` | `web/main.js` — the playable browser prototype |
 
 ## Layout
 
@@ -178,4 +179,7 @@ tools/
   blender_stamp_swing.py   Blender-side timeline/action setup
 build/                outputs (committed)
   enemies/  environment/
+web/                  playable browser prototype (Three.js, vendored)
+  main.js             player, enemies, layout, swing timing, HUD
+  vendor/three/       vendored r160 — never edited, no CDN
 ```
