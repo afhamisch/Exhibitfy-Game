@@ -105,18 +105,33 @@ RIG = {
     "grip_r_point": (0.040, 0.2245, 0.0),     # right hand on the T-bar
     "grip_r_axis": (1.0, 0.0, 0.0),
     "grip_r_dorsal": (0.06, 1.0, 0.22),
-    # spin about the bar. The grip solve cannot see this -- rolling the hand
-    # keeps every fingertip the same distance from the bar axis -- so it is set
-    # by eye against the first-person view, where the back of the hand has to
-    # face the player and the fingers wrap away from them.
-    "grip_r_roll": 300.0,
+    # Spin about the bar. The grip solve cannot see this -- rolling the hand
+    # keeps every fingertip exactly as far from the bar axis -- so it needs its
+    # own measure, NOT an eyeballed render. Setting it by eye is how this
+    # shipped at 300, showing the player a palm.
+    #
+    # The measure: the camera sits at the origin, so take the hand's world +Y
+    # (the back of the hand) and dot it with the direction from the wrist back
+    # to the camera. Positive means knuckles to the player, which is what
+    # gripping a bar to swing it down looks like. Both values below are the
+    # measured maxima -- right +0.981, left +0.988.
+    #
+    # The right hand is NOT at its maximum, and this is deliberate. Roll is not
+    # independent of the arm: the forearm chain follows the wrist, and at 60 the
+    # hand does read knuckles-out (+0.981) but the forearm swings across the
+    # frame and hides it, camera-on and foreshortened. Adjusting elbow_dir_r to
+    # compensate did not recover it. Facing and arm pose have to be solved
+    # together -- roll, elbow direction and grip point at once -- and until that
+    # is done 0 (+0.413, edge-on) is the least-bad of the three states tried;
+    # 300 was worse still at -0.426, an actual palm to the player.
+    "grip_r_roll": 0.0,
     # The left hand no longer touches the stamp -- it carries the exhibits.
     # These are VIEW-space, not stamp-space: the sheaf must not swing with the
     # tool, so it hangs off the root rather than off the stamp.
     "docs_point": (-0.205, -0.300, -0.430),
     "docs_axis": (0.86, 0.20, -0.47),
     "docs_dorsal": (0.10, 1.0, 0.30),
-    "docs_roll": 300.0,
+    "docs_roll": 40.0,
     "docs_sheets": 7,
     "docs_size": (0.216, 0.030, 0.279),   # letter width, sheaf thickness, depth
     "grip_l_roll": 300.0,
