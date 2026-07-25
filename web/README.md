@@ -6,11 +6,10 @@ viewmodel with its `Stamp_Swing` clip, all four paper enemies out of the
 shared-texture `enemies.glb`, and the modular office kit. No geometry is
 authored here.
 
-https://github.com/afhamisch/Exhibitfy-Game/raw/main/web/screenshots/gameplay_demo.webm
-
-A full run, captured from the prototype itself: chasing the four documents
-down, stamping them, watching them file themselves into the binder, and the
-wake screen when the last one lands.
+**[▶ Watch a full run](screenshots/gameplay_demo.webm)** (11.5 s) — captured
+from the prototype itself: chasing the four documents down, stamping them,
+watching them file themselves into the binder, and the wake screen when the
+last one lands.
 
 ![corridor](screenshots/prototype_corridor.png)
 
@@ -49,7 +48,12 @@ landing page.
 You fell asleep assembling a trial binder. Chase the paperwork down and stamp
 it — Bates numbering is how exhibits get indexed, so a stamped document isn't
 destroyed, it's **filed**: it flattens, takes the impression, then files itself
-into the binder you're carrying. Get all four in and the dream lets go.
+into the binder you're carrying.
+
+You have **90 seconds** before you wake up. Get all four in and the binder is
+complete; run the clock out and you wake with it unfinished, which is the only
+way to lose. The chaotic stack is the one that costs you — at 3.33 m/s it is
+faster than your walk, so it has to be sprinted down or cornered.
 
 ## How it works
 
@@ -143,7 +147,7 @@ adopted quietly.
 
 ## Known limits of this slice
 
-- No sound, no score persistence, no fail state — you cannot lose, only finish.
+- No sound and no score persistence.
 - Enemies path by fleeing and wall-sliding, not by navmesh — they can get
   briefly stuck grinding a corner before they turn out of it.
 - One of each variant spawns, and that is the whole roster — there is no wave
