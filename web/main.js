@@ -785,7 +785,10 @@ controls.addEventListener('unlock', () => {
   // would mean rescheduling the crossfade chain from scratch on every pause.
   if (!state.done) musicTo(MUSIC.level * 0.35, 0.4);
 });
-document.getElementById('again').addEventListener('click', () => location.reload());
+document.getElementById('again').addEventListener('click', () => {
+  restart();
+  controls.lock();          // the click is the gesture; spend it
+});
 addEventListener('keydown', (e) => {
   state.keys[e.code] = true;
   // Mute. This is going to get shown in a room with other people in it.
@@ -878,6 +881,9 @@ function redact() {
   e.root.traverse((o) => {
     if (!o.isMesh || !o.material) return;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
+    // Keep what was there. Restarting has to put the document back, and by the
+    // time it does, the only reference to the original material is this one.
+    if (o.userData.mat0 === undefined) o.userData.mat0 = o.material;
     o.material = (Array.isArray(o.material) ? mats : mats).map((m) => {
       if (/Face|Limb|Glove|Shoe|Ring/i.test(m.name)) return m;   // keep the face
       const c = m.clone();
@@ -1059,9 +1065,11 @@ async function startBonus() {
 
   let g, clips;
   try {
-    const gltf = await load(BOSS_GLB);
-    g = gltf.scene;
-    clips = gltf.animations;
+    // Fetched once per page, not once per bonus round: a player who restarts
+    // and qualifies again has already paid for this.
+    if (!state.bossGltf) state.bossGltf = await load(BOSS_GLB);
+    g = state.bossGltf.scene.clone(true);
+    clips = state.bossGltf.animations;
   } catch (err) {
     // The bonus is a reward, not a requirement: if it will not load, award the
     // case that was already won rather than stranding the player in an empty
@@ -1495,6 +1503,116 @@ state.VERDICTS = VERDICTS;
 state.SPECIALS = SPECIALS;
 
 /**
+ * Put the office back and deal another round, without a page load.
+ *
+ * "File another binder" used to be `location.reload()`, which re-fetched about
+ * 12 MB to rebuild a scene that was already sitting in memory: several seconds
+ * of black screen between two rounds of a ninety-second game, and on a
+ * projector's wifi rather longer than that. Everything below is scene state,
+ * so all of it can simply be wound back.
+ *
+ * The invariant to keep: anything a round mutates has to be listed here. That
+ * is the cost of not reloading, and it is why the pods, the decals and the
+ * redaction materials are all handled explicitly rather than trusted to come
+ * back on their own.
+ */
+function restart() {
+  // ---- the boss and any objections leave with the round that made them
+  if (state.boss) {
+    scene.remove(state.boss.root);
+    state.boss = null;
+  }
+  for (const o of state.objections) scene.remove(o.root);
+  state.objections.length = 0;
+
+  // ---- the documents go back to their spawns, un-redacted
+  state.enemies.forEach((e, i) => {
+    const spawn = LAYOUT.spawns[i % LAYOUT.spawns.length];
+    e.root.position.set(spawn[0], 0, spawn[1]);
+    e.root.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    e.root.scale.copy(e.baseScale);
+    e.root.visible = true;
+    e.heading = e.root.rotation.y;
+    e.alive = true;
+    e.filed = false;
+    e.dead = 0;
+    if (e.redacted) {
+      // Restore the material the redaction replaced, and drop the clone it
+      // made -- the GPU keeps every texture it is handed until told otherwise,
+      // and a restart per round would accumulate them.
+      e.root.traverse((o) => {
+        if (!o.isMesh || o.userData.mat0 === undefined) return;
+        for (const m of [].concat(o.material)) {
+          if (![].concat(o.userData.mat0).includes(m)) m.dispose();
+        }
+        o.material = o.userData.mat0;
+      });
+      e.redacted = false;
+    }
+    e.hit.stop();
+    e.run.reset().play();
+  });
+
+  // ---- ink pods come back standing, beacons lit
+  for (const p of state.pods) {
+    p.live = true;
+    p.cooldown = 0;
+    p.root.visible = true;
+    if (p.beacon) p.beacon.visible = true;
+  }
+
+  // ---- the carpet is clean again, but the numbering carries on: the stamp
+  // does not rewind just because you woke up
+  for (const d of DECALS.list) {
+    scene.remove(d);
+    d.material.map.dispose();
+    d.material.dispose();
+  }
+  DECALS.list.length = 0;
+
+  // ---- counters
+  Object.assign(state, {
+    score: 0, filed: 0, done: false, clock: CFG.dreamTime,
+    swinging: false, swingT: 0, hitDone: false, swingDry: false,
+    ink: CFG.inkMax, dryStamps: 0,
+    struck: 0, overruled: 0, sustained: 0, nextObj: CFG.objFirst,
+    redactions: 0, overRedacted: 0, privilegeSaved: false, waived: false,
+    misses: 0, closing: 0, closeBroken: 0,
+    phase: 'case', bossHits: 0, bonusWon: false, bonusGranted: false,
+    caseWon: false, timeLeft: 0, kick: 0, shake: 0, rolled: false,
+  });
+  state.round = (state.round || 0) + 1;   // fences timers owned by the last one
+  if (state.swing) state.swing.stop();
+
+  // ---- back to the door you came in by
+  camera.position.set(0, CFG.eyeHeight, 1.2);
+  camera.rotation.set(0, 0, 0);
+  camera.fov = VIEW_FOV;
+  camera.updateProjectionMatrix();
+  if (state.arms) state.arms.position.y = state.armsBaseY;
+
+  // ---- chrome
+  els.wake.classList.remove('on');
+  els.wake.hidden = true;
+  els.banner.classList.remove('on');
+  els.warn.classList.remove('on');
+  els.score.classList.remove('struck');
+  els.scoreLabel.textContent = 'FILED';
+  els.clockLabel.textContent = 'until you wake';
+  els.clock.classList.remove('low');
+  updateHud();
+  updateInk();
+  updateClock(0);
+
+  // The bed was faded out and switched off by finish(); start it again from
+  // the top rather than trying to resume a chain that has already ended.
+  MUSIC.on = false;
+  startMusic();
+  musicTo(MUSIC.level, 0.8);
+}
+state.restart = restart;
+
+/**
  * The dream lets go — either because the binder is closed, or because the night
  * ran out and closed it for you. Either way you are due in court.
  */
@@ -1511,7 +1629,16 @@ function finish(complete, fromBonus) {
   // pull the bed down so the sting lands in the clear, then let it go
   musicTo(MUSIC.level * 0.28, 0.5);
   sfx.sting(complete);
-  setTimeout(() => { musicTo(0, 2.2); MUSIC.on = false; }, 900);
+  // Tagged with the round it belongs to. Restarting inside this 900 ms is easy
+  // -- the wake screen is up and the button is right there -- and an untagged
+  // timeout would then switch off a bed the new round had just started, once,
+  // unreproducibly, and only for players who click fast.
+  const round = state.round;
+  setTimeout(() => {
+    if (state.round !== round) return;
+    musicTo(0, 2.2);
+    MUSIC.on = false;
+  }, 900);
 
   const total = state.enemies.length;
   const v = endingFor(state, total);
