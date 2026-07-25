@@ -73,6 +73,21 @@
   #overlay .note { margin-top: 16px; font-size: 11px; opacity: .45; }
   #loading { font-size: 13px; opacity: .7; }
 
+  /* how long you stay asleep */
+  #wakeclock {
+    position: fixed; right: 20px; top: 16px; text-align: right;
+    pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  }
+  #wakeclock .t {
+    font-size: 30px; font-weight: 700; letter-spacing: .02em;
+    font-variant-numeric: tabular-nums; transition: color .4s ease;
+  }
+  #wakeclock .t.low { color: var(--orange); }
+  #wakeclock .l {
+    opacity: .6; font-size: 11px; letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+
   /* wake screen — fades up from the dream rather than cutting */
   #wake {
     position: fixed; inset: 0; z-index: 6; display: flex;
@@ -103,15 +118,19 @@
   <div class="score">FILED <b id="score">0 / 4</b></div>
   <div class="sub" id="remaining">4 documents at large</div>
 </div>
+<div id="wakeclock" hidden>
+  <div class="t" id="clock">1:30</div>
+  <div class="l">until you wake</div>
+</div>
 
 <!-- The dream lets go once the binder is complete. -->
 <div id="wake" hidden>
   <div class="card">
-    <div class="tag">Exhibit binder complete</div>
+    <div class="tag" id="wake-tag">Exhibit binder complete</div>
     <h1>You wake up.</h1>
-    <p>The desk lamp is still on. The coffee is cold. Every page in front of
-       you is stamped, numbered and in order — and you have absolutely no
-       memory of doing it.</p>
+    <p id="wake-body">The desk lamp is still on. The coffee is cold. Every page
+       in front of you is stamped, numbered and in order — and you have
+       absolutely no memory of doing it.</p>
     <div class="again" id="again">File another binder</div>
   </div>
 </div>

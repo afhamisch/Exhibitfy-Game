@@ -44,6 +44,11 @@ const CFG = {
   // files itself into the binder you are carrying.
   fileDelay: 0.90,        // Stamped runs 0.833 s; let it land first
   fileTime: 0.55,         // then the flight into the binder
+
+  // You do not get to stay asleep forever. The dream is the clock: run it out
+  // and you wake with the binder unfinished, which is the only way to lose.
+  dreamTime: 90,
+  dreamPanic: 20,         // the countdown goes orange under this
 };
 
 // The four variants, tuned from what build_enemies.py actually baked rather
@@ -215,10 +220,14 @@ const els = {
   score: document.getElementById('score'),
   remaining: document.getElementById('remaining'),
   wake: document.getElementById('wake'),
+  wakeTag: document.getElementById('wake-tag'),
+  wakeBody: document.getElementById('wake-body'),
+  clock: document.getElementById('clock'),
+  clockBox: document.getElementById('wakeclock'),
 };
 
 const state = {
-  ready: false, score: 0, filed: 0, done: false, t: 0,
+  ready: false, score: 0, filed: 0, done: false, t: 0, clock: CFG.dreamTime,
   swinging: false, swingT: 0, hitDone: false,
   enemies: [],
   keys: Object.create(null),
@@ -325,12 +334,12 @@ els.overlay.addEventListener('click', () => {
 });
 controls.addEventListener('lock', () => {
   els.overlay.style.display = 'none';
-  els.hud.hidden = els.reticle.hidden = false;
+  els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = false;
 });
 controls.addEventListener('unlock', () => {
   // once the binder is closed the wake screen owns the view, not the menu
   if (!state.done) els.overlay.style.display = 'flex';
-  els.hud.hidden = els.reticle.hidden = true;
+  els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = true;
 });
 document.getElementById('again').addEventListener('click', () => location.reload());
 addEventListener('keydown', (e) => { state.keys[e.code] = true; });
@@ -391,10 +400,31 @@ function updateHud() {
     : inFlight > 0 ? 'filing…' : 'binder complete';
 }
 
-/** Last exhibit filed: the binder is closed, so the dream lets go. */
-function finish() {
+function updateClock(dt) {
+  if (state.done) return;
+  state.clock = Math.max(0, state.clock - dt);
+  const s = Math.ceil(state.clock);
+  els.clock.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  els.clock.classList.toggle('low', state.clock <= CFG.dreamPanic);
+  if (state.clock === 0) finish(false);
+}
+
+/**
+ * The dream lets go — either because the binder is closed, or because it ran
+ * out of time and closed on you.
+ */
+function finish(complete) {
   if (state.done) return;
   state.done = true;
+  els.wakeTag.textContent = complete
+    ? 'Exhibit binder complete' : 'You ran out of night';
+  els.wakeBody.textContent = complete
+    ? 'The desk lamp is still on. The coffee is cold. Every page in front of '
+      + 'you is stamped, numbered and in order — and you have absolutely no '
+      + 'memory of doing it.'
+    : `The desk lamp is still on. The coffee is cold. ${state.filed} of `
+      + `${state.enemies.length} exhibits made it into the binder; the rest are `
+      + 'still loose somewhere in the pile. Trial is Monday.';
   els.wake.hidden = false;
   // let the last document land before the room dissolves
   setTimeout(() => {
@@ -458,7 +488,7 @@ function updateEnemies(dt) {
           e.root.visible = false;
           state.filed += 1;
           updateHud();
-          if (state.filed === state.enemies.length) finish();
+          if (state.filed === state.enemies.length) finish(true);
         }
       }
       continue;
@@ -517,6 +547,7 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   state.t += dt;
   if (state.ready && controls.isLocked) {
+    updateClock(dt);
     updatePlayer(dt);
     updateSwing(dt);
     updateEnemies(dt);
