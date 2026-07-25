@@ -123,6 +123,13 @@ score is no longer monotonic, so the round is a total you defend rather than a
 counter you fill, and holding ink back becomes a real decision — your last swing
 either files a new exhibit or overrules the objection walking at you.
 
+In the bonus round the same objection costs **4 seconds off the ruling clock**
+instead of an exhibit. The binder is closed and the case is already won by the
+time you get in there, so an objection that could still strike it would be the
+game taking back a prize it had just awarded — one test run ended on "Adverse
+inference" after the verdict had been decided. The bonus has its own currency,
+which is time, so that is what it charges.
+
 Overrule one by stamping it, same verb, and it costs the same ink. The window is
 the standoff band between the range you can stamp one at (~2.4 m) and the range
 at which it strikes (1.0 m): about a second for hearsay, 0.7 s for 403. All
@@ -335,5 +342,5 @@ reachable and warns if a layout edit walls one in.
   briefly stuck grinding a corner before they turn out of it.
 - One of each variant spawns, and that is the whole roster — there is no wave
   system, respawn, or difficulty curve.
-- Collision is the walkable-rectangle set, so props (desks, boxes) do not block
-  you — you walk through them.
+- Collision is rectangles — the walkable set minus the prop boxes — not the wall
+  meshes, so it is correct at the corridor scale and square at the millimetre.

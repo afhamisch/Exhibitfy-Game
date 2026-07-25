@@ -125,6 +125,8 @@ const CFG = {
   bossRadius: 0.62,       // a big target, and it reads that way
   bossReach: 1.35,        // reaching you means the motion is GRANTED
   bossObjEvery: 8.0,      // it calls objections in its own defence
+  // What one costs if it lands in there. Seconds, not exhibits: see sustain().
+  objBonusCost: 4.0,
   bossKnockback: 0.55,    // metres a stamp drives it back, so hits read
 
   // How far a footstep carries. The longest sightline the layout can produce is
@@ -1147,13 +1149,26 @@ function updateObjections(dt) {
 
 /** An objection reached the binder and was sustained. */
 function sustain(e) {
-  const n = Math.min(state.filed, e.o.strikes);
-  state.filed -= n;
-  state.struck += n;
   state.sustained += 1;
   e.hit.reset().play();
   sfx.sustained();
   state.shake = 1;
+
+  // The bonus is a round you can only lose the bonus in. An objection landing
+  // during it used to strike exhibits out of a binder that was already closed
+  // and already won -- a run ended on "Adverse inference" after the case had
+  // been decided, which reads as the game taking back a prize it awarded.
+  // In here the currency is the ruling clock, so that is what it costs.
+  if (state.phase === 'bonus') {
+    state.clock = Math.max(0, state.clock - CFG.objBonusCost);
+    warn(`${e.o.label} sustained — ${CFG.objBonusCost}s off the ruling`);
+    updateHud();
+    return;
+  }
+
+  const n = Math.min(state.filed, e.o.strikes);
+  state.filed -= n;
+  state.struck += n;
   warn(n > 0
     ? `${e.o.label} sustained — ${n} exhibit${n === 1 ? '' : 's'} struck`
     : `${e.o.label} sustained — nothing in the binder to strike`);
