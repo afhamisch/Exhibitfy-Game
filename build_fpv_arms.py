@@ -404,6 +404,9 @@ def build_finger(name, root, radius, phal, splay, bends, side_uv, suffix=""):
     return nodes[0]
 
 
+KNUCKLE_X = [f[1][0] for f in FINGERS]
+
+
 def build_palm(side_uv):
     m = M.Mesh("Palm", MAT["skin"])
     n = HAND["palm_sides"]
@@ -420,7 +423,7 @@ def build_palm(side_uv):
         y = -0.005 * t * t
         z = L * t
         # knuckle ridge: the back of the hand swells just before the fingers
-        ridge = math.exp(-((t - 0.88) ** 2) / 0.012) * 0.0055
+        ridge = math.exp(-((t - 0.88) ** 2) / 0.012) * 0.0072
         prof = M.profile_super(n, w * 0.5, th * 0.5, 2.25)
         ring = []
         for (px, py) in prof:
@@ -430,7 +433,16 @@ def build_palm(side_uv):
             hypo = math.exp(-((t - 0.45) ** 2) / 0.055) * \
                 max(0.0, px / (w * 0.5)) * max(0.0, -py / (th * 0.5)) * 0.006
             grow = 1.0 + (thenar + hypo) / max(1e-5, th * 0.5)
-            dorsal = ridge * max(0.0, py / (th * 0.5))
+            # Four knuckles, not one swell. The ridge used to run flat across
+            # the whole hand, so the fingers emerged from an unbroken mass and
+            # the back of the hand read as a mitten. Lobing it on the finger
+            # roots puts a valley between each pair, which is the articulation
+            # the silhouette was missing.
+            lobe = 0.0
+            for _fx in KNUCKLE_X:
+                lobe += math.exp(-((px - _fx) ** 2) / 0.000075)
+            dorsal = (ridge * max(0.0, py / (th * 0.5))
+                      * (0.42 + 0.78 * min(1.0, lobe)))
             ring.append((px - thenar * 0.9, y + py * grow + dorsal, z))
         # close the seam
         ring[-1] = ring[0]
