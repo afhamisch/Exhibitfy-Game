@@ -126,10 +126,11 @@ const DEMO = () => {
       // The reach numbers it is sitting between: a stamp lands 1.05 m ahead of
       // the eye with a 1.05 m radius, so a 0.62 m boss is hittable out to
       // 2.72 m, and reaching 1.35 m of the player means summary judgment is
-      // granted. 1.85-2.35 is inside the first and clear of the second.
+      // granted. 2.05-2.55 is inside the first and clear of the second.
       const band = kind === 'pod' ? [0.5, 0.0]
         : kind === 'boss' ? [2.55, 2.05]
         : kind === 'objection' ? [2.20, 1.60] : [1.5, 0.0];
+      let side = null;
       if (dist > band[0]) {
         s.keys.KeyW = true;
         // The exhibits flee at up to 3.3 m/s and the walk is 3.1, so anything
@@ -137,29 +138,44 @@ const DEMO = () => {
         if (dist > band[0] + 0.9) s.keys.ShiftLeft = true;
       } else if (dist < band[1]) {
         s.keys.KeyS = true;
+        // Give ground in a circle, not a straight line. Backing straight away
+        // from the motion works until there is a wall behind you, and then the
+        // fight is lost from full retreat: two runs got seven of eight pages
+        // and were reached in a corner holding the last one.
+        if (kind === 'boss') side = (Math.floor(s.t / 2.2) % 2) ? 'KeyA' : 'KeyD';
       }
-      // Progress watchdog. The bot walks a straight line at whatever it is
-      // chasing and the office is a corridor kit, so anything around a corner
-      // is unreachable: resolveMove slides it along the wall and W does
-      // nothing. One capture spent 39 s pinned at x=-11.1 with the motion two
-      // rooms away and the distance stuck at 10.29 m -- an unwinnable bonus
-      // round recorded in full. If the range is not coming down, strafe, and
-      // alternate sides so a wrong guess is corrected rather than repeated.
+      // Stuck watchdog, measured on the bot's own displacement rather than on
+      // the range to the target. The bot walks a straight line at whatever it
+      // is chasing and the office is a corridor kit, so anything around a
+      // corner is unreachable: resolveMove slides it along the wall and W does
+      // nothing at all. One capture spent 39 s pinned at x=-11.1 with the
+      // motion two rooms away, recording an unwinnable bonus round in full.
+      //
+      // Displacement is the honest signal. Range is not: a paper fleeing at
+      // 3.3 m/s from a 3.1 m/s walk holds its distance perfectly while both
+      // are moving, which is not stuck and must not trigger a sidestep.
       if (this.strafe > 0) {
         this.strafe -= 1;
-        s.keys[this.strafeKey] = true;
-      } else {
-        if (this.mark == null) { this.mark = dist; this.marked = 24; }
+        side = this.strafeKey;
+      } else if (s.keys.KeyW) {
+        const px = s.camera.position.x, pz = s.camera.position.z;
+        if (!this.mark) { this.mark = [px, pz]; this.marked = 20; }
         if (--this.marked <= 0) {
-          if (dist > this.mark - 0.35 && dist > band[0]) {
-            this.strafe = 22;
+          // A second of walking is 3.1 m and a second of sprinting is 5. Under
+          // half a metre means a wall, not slow progress.
+          if (Math.hypot(px - this.mark[0], pz - this.mark[1]) < 0.5) {
+            this.strafe = 20;
             this.flip = !this.flip;
             this.strafeKey = this.flip ? 'KeyA' : 'KeyD';
+            side = this.strafeKey;
           }
-          this.mark = dist;
-          this.marked = 24;
+          this.mark = [px, pz];
+          this.marked = 20;
         }
+      } else {
+        this.mark = null;
       }
+      if (side) s.keys[side] = true;
       // Give up on a target that is not resolving, or one bad decision pins the
       // bot on the same document for the rest of the capture.
       this.held = (this.held || 0) + 1;
