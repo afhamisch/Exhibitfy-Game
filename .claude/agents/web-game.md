@@ -102,6 +102,15 @@ feel connected to the animation.
 
 All four are wired up, one of each, through the `VARIANTS` table in `main.js`.
 
+They come from a **single** `build/enemies/enemies.glb`, not the four
+per-variant files — those cannot share a texture, and shipping all four cost
+1.12 MB in duplicated page, face and Bates maps. Each variant is the subtree
+`Enemy_<kind>`; clone that, not the whole scene. Clips are `<kind>_Run` and
+`<kind>_Stamped`, and the nodes inside are prefixed `<kind>_` so the mixer binds
+each clip to its own instance. Do not "simplify" those names away — three.js
+binds tracks by node name, and the collision is silent at load and only shows
+up as one enemy driving another's limbs.
+
 Its speeds are **derived, not invented**: each tracks the `cadence` and `stride`
 baked into that variant's `Run` clip in `build_enemies.py`, so the feet keep
 pace with the ground instead of skating. If you retune a variant's run in the

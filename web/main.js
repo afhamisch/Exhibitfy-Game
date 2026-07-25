@@ -50,15 +50,23 @@ const CFG = {
 // on the heading, where it also does something the clip never could: make it
 // genuinely harder to hit.
 const VARIANTS = {
-  pleading:  { file: 'enemy_pleading.glb',  speed: 1.00, flee: 1.00, turn: 1.00, radius: 1.00 },
-  privilege: { file: 'enemy_privilege.glb', speed: 0.92, flee: 1.30, turn: 1.25, radius: 0.97,
+  pleading:  { speed: 1.00, flee: 1.00, turn: 1.00, radius: 1.00 },
+  privilege: { speed: 0.92, flee: 1.30, turn: 1.25, radius: 0.97,
                weave: { rate: 2.3, amp: 0.85 } },
-  binder:    { file: 'enemy_binder.glb',    speed: 0.49, flee: 0.80, turn: 0.55, radius: 1.16 },
-  stack:     { file: 'enemy_stack.glb',     speed: 1.36, flee: 1.15, turn: 1.35, radius: 1.04 },
+  binder:    { speed: 0.49, flee: 0.80, turn: 0.55, radius: 1.16 },
+  stack:     { speed: 1.36, flee: 1.15, turn: 1.35, radius: 1.04 },
 };
 
 // One of each, so every silhouette is on the floor to be told apart.
 const ROSTER = ['pleading', 'privilege', 'binder', 'stack'];
+
+// All four come out of one GLB. The per-variant files are the art deliverable
+// and still ship, but four self-contained files cannot share a texture: the
+// page, face and Bates maps were 1.12 MB of duplicated pixels across them.
+// Inside the combined file each variant is the subtree `Enemy_<kind>`, its
+// nodes prefixed `<kind>_` so three.js binds each clip to its own enemy, and
+// its clips are named `<kind>_Run` / `<kind>_Stamped`.
+const ENEMIES_GLB = `${ASSETS}/enemies/enemies.glb`;
 
 // The office is assembled from 4 m modules. Each corridor rectangle below is
 // walkable floor; the player is clamped to their union, which is far more
@@ -224,20 +232,17 @@ function place(obj, x, z, rot = 0) {
 }
 
 async function boot() {
-  const kinds = [...new Set(ROSTER)];
-  const [hallG, cornerG, doorG, viewG, ...rest] = await Promise.all([
+  const [hallG, cornerG, doorG, viewG, enemyG, ...propGs] = await Promise.all([
     load(`${ASSETS}/environment/hallway_straight.glb`),
     load(`${ASSETS}/environment/hallway_corner.glb`),
     load(`${ASSETS}/environment/doorway.glb`),
     load(`${ASSETS}/exhibitfy_fpv_arms.glb`),
+    load(ENEMIES_GLB),
     load(`${ASSETS}/environment/file_cabinet.glb`),
     load(`${ASSETS}/environment/banker_boxes.glb`),
     load(`${ASSETS}/environment/desk_chair.glb`),
     load(`${ASSETS}/environment/reception_counter.glb`),
-    ...kinds.map((k) => load(`${ASSETS}/enemies/${VARIANTS[k].file}`)),
   ]);
-  const propGs = rest.slice(0, 4);
-  const enemyGs = Object.fromEntries(kinds.map((k, i) => [k, rest[4 + i]]));
   const props = {
     file_cabinet: propGs[0].scene,
     banker_boxes: propGs[1].scene,
@@ -269,15 +274,18 @@ async function boot() {
 
   // ---- enemies
   ROSTER.forEach((kind, i) => {
-    const src = enemyGs[kind];
     const v = VARIANTS[kind];
-    const g = src.scene.clone(true);
+    const proto = enemyG.scene.getObjectByName(`Enemy_${kind}`);
+    if (!proto) throw new Error(`Enemy_${kind} missing from ${ENEMIES_GLB}`);
+    // clone the subtree, not the whole file -- child names come with it, which
+    // is what lets the mixer bind this variant's clips to this instance
+    const g = proto.clone(true);
     const spawn = LAYOUT.spawns[i % LAYOUT.spawns.length];
     place(g, spawn[0], spawn[1], Math.random() * Math.PI * 2);
     scene.add(g);
     const mixer = new THREE.AnimationMixer(g);
-    const runClip = THREE.AnimationClip.findByName(src.animations, 'Run');
-    const hitClip = THREE.AnimationClip.findByName(src.animations, 'Stamped');
+    const runClip = THREE.AnimationClip.findByName(enemyG.animations, `${kind}_Run`);
+    const hitClip = THREE.AnimationClip.findByName(enemyG.animations, `${kind}_Stamped`);
     const run = mixer.clipAction(runClip);
     run.play();
     const hit = mixer.clipAction(hitClip);

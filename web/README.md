@@ -2,8 +2,9 @@
 
 A first-person slice of **Tom Rexington, Esq.: Bates & Destroy**, in the
 browser. Everything it renders is loaded from the GLBs in `../build` — the FPV
-viewmodel with its `Stamp_Swing` clip, all four paper enemies with `Run` and
-`Stamped`, and the modular office kit. No geometry is authored here.
+viewmodel with its `Stamp_Swing` clip, all four paper enemies out of the
+shared-texture `enemies.glb`, and the modular office kit. No geometry is
+authored here.
 
 ![corridor](screenshots/prototype_corridor.png)
 
@@ -105,18 +106,24 @@ does something the clip never could: make the thing genuinely harder to hit.
 |---|---|
 | Page + script | 21.5 KB |
 | Three.js (vendored) | 820 KB on disk, ~180 KB gzipped over the wire |
-| Assets actually fetched | 5.2 MB (viewmodel, all four enemies, seven kit pieces) |
+| Assets actually fetched | 4.05 MB (viewmodel, all four enemies, seven kit pieces) |
 
-**5.2 MB is more than a landing page should pay**, and it grew that way when
-all four enemies were wired up — they are 2.9 MB of it, because each GLB embeds
-its own page, face and Bates PNGs rather than sharing them. The viewmodel is
-another 1.2 MB, again mostly embedded textures.
+The enemies used to be 2.9 MB of that, as four self-contained GLBs. They could
+not share a texture, so `paper_pleading` shipped three times and the face and
+Bates maps four times each — **1.12 MB of byte-identical pixels**. They now come
+from one `enemies.glb` (1.86 MB, six unique images instead of fourteen), which
+is one request instead of four and one GPU upload of each map instead of four.
+The per-variant files still ship as the art deliverable; the prototype just
+does not fetch them.
 
-Nothing here is geometry: the whole kit is ~14k triangles. So the fix is
-textures, not models — sharing the paper maps across the four enemy files,
-dropping the authored resolution, or switching to KTX2/Basis. Any one of those
-would cut the download several-fold. Until then, treat an embed as something to
-lazy-load behind a click, which is what the overlay already does.
+Nothing here is geometry — the whole kit is ~14k triangles, and all four
+enemies together are 7,340. What is left is genuinely textures: the viewmodel
+is 1.2 MB of embedded PNGs and the six enemy maps are most of the rest. The
+next real cut is authored resolution (the page maps are 1024², the rest 512²),
+weighed against the legal headers staying readable at distance. KTX2/Basis
+would beat both, but it needs a third-party encoder, which the pipeline's
+standard-library-only rule does not allow — that one has to be raised, not
+adopted quietly.
 
 ## Known limits of this slice
 

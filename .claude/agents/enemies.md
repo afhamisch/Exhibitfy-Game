@@ -144,7 +144,17 @@ Validate every GLB you rebuilt and **paste the actual output**:
 for v in pleading privilege binder stack; do
   python -m tools.validate_glb build/enemies/enemy_$v.glb
 done
+python -m tools.validate_glb build/enemies/enemies.glb
 ```
+
+The build also writes a combined **`enemies.glb`**: all four variants in one
+file so the shared page, face and Bates maps are embedded once instead of four
+times (1.12 MB saved). `absorb()` prefixes every node `<variant>_` and renames
+the clips `<variant>_Run` / `<variant>_Stamped` on the way in — three.js binds
+tracks by node name, so without that, four subtrees all calling their root
+`Rig` let a clip drive the wrong enemy. If you add or rename a node, the
+per-variant files are unaffected, but check the combined file still reports
+unique names and 6 images.
 
 **Never assert a validator passed.** Paste the transcript. Check the reported
 triangle counts against the table above and the animation summary against

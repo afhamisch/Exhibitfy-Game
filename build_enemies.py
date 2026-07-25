@@ -678,6 +678,40 @@ def ground_node(scene):
 # -------------------------------------------------------------------- main
 
 
+def absorb(combined, scene, variant):
+    """Fold one variant into the shared-texture file.
+
+    Four self-contained GLBs cannot share bytes: `paper_pleading` ships three
+    times and `faces` and `stamp_mark` four times each, 1.12 MB of identical
+    pixels. `Scene.images` and `.materials` are keyed by name, so merging the
+    dicts dedupes them for free.
+
+    Node names have to be made unique first. glTF targets animation channels by
+    node index, but three.js binds its tracks by **name** -- four subtrees all
+    calling their root `Rig` would leave a clip free to drive the wrong enemy.
+    This is the same bug the viewmodel hit with ten duplicate node names, and
+    it only shows up at runtime, so prefix on the way in. Renaming here is safe
+    because the per-variant GLB has already been written, and the animation
+    tracks hold node references rather than names.
+    """
+    def rename(node):
+        node.name = "%s_%s" % (variant, node.name)
+        for c in node.children:
+            rename(c)
+
+    for root in scene.roots:
+        # the root is already Enemy_<variant>, so only its descendants collide
+        for child in root.children:
+            rename(child)
+        combined.add_root(root)
+    for anim in scene.animations:
+        anim.name = "%s_%s" % (variant, anim.name)
+        combined.animation(anim)
+    combined.materials.update(scene.materials)
+    combined.images.update(scene.images)
+    return combined
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bates", default="000137")
@@ -697,6 +731,7 @@ def main(argv=None):
     for name, canvas in images.items():
         canvas.save(os.path.join(tex_dir, name + ".png"))
 
+    combined = Scene("Enemies")
     names = [args.only] if args.only else list(VARIANTS)
     for name in names:
         cfg = VARIANTS[name]
@@ -714,6 +749,16 @@ def main(argv=None):
         if not args.no_preview:
             preview(scene, [run, hit], os.path.join(args.out, "previews"),
                     name, args.quick)
+        absorb(combined, scene, name)
+
+    if len(names) > 1:
+        combined.prune()
+        glb = os.path.join(args.out, "enemies.glb")
+        export_glb(combined, glb)
+        print("  %-9s %-24s %5d tris  %s (%.0f KB)  [%d clips]"
+              % ("combined", "All four, shared textures",
+                 combined.stats()["triangles"], os.path.basename(glb),
+                 os.path.getsize(glb) / 1024.0, len(combined.animations)))
 
     print("done in %.1fs" % (time.time() - t0))
     return 0

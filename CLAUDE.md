@@ -77,6 +77,13 @@ animation. 8–15k is the usual mobile viewmodel allowance.
 
 **Enemies:** pleading 1,392 · privilege 1,392 · binder 2,700 · stack 1,856.
 
+Each ships as its own GLB, plus a combined `enemies.glb` (7,340 tris, all eight
+clips, six shared images) for runtimes that would otherwise fetch the same page,
+face and Bates maps four times — 1.12 MB of duplicate pixels. In the combined
+file every node is prefixed `<variant>_` and clips are `<variant>_Run` /
+`<variant>_Stamped`, because three.js binds animation tracks **by node name**
+and four subtrees all calling their root `Rig` would cross-bind.
+
 **Environment:** hallway_straight 1,166 · hallway_corner 1,742 · doorway 2,016 ·
 desk_chair 3,110 · file_cabinet 3,080 · banker_boxes 1,546 ·
 reception_counter 1,600. **Kit total 14,260**; a corridor run with props in
