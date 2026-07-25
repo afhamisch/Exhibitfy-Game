@@ -240,6 +240,7 @@ state.VARIANTS = VARIANTS;
 state.scene = scene;
 state.camera = camera;
 state.viewScene = viewScene;
+state.viewCamera = viewCamera;
 state.THREE = THREE;
 
 function place(obj, x, z, rot = 0) {
@@ -284,6 +285,7 @@ async function boot() {
   // of forearm along the bottom. At -0.055 the watch and the exhibits read and
   // the stamp handle still sits below the crosshair.
   arms.position.set(0.035, -0.055, -0.02);
+  state.armsBaseY = arms.position.y;       // the impact kick dips from here
   viewScene.add(arms);
   const armMixer = new THREE.AnimationMixer(arms);
   const swingClip = THREE.AnimationClip.findByName(viewG.animations, 'Stamp_Swing')
@@ -334,11 +336,144 @@ boot().catch((err) => {
     'Could not load assets — serve the repo root, not web/ (see web/README.md). ' + err;
 });
 
+// ---------------------------------------------------------------- audio
+// Synthesized on a WebAudio graph at play time -- the repo ships no sound
+// files, and the pipeline's no-assets rule holds here too. The context is
+// created on the pointer-lock click, which is the user gesture browsers
+// require before they will open an audio device.
+let AC = null, master = null;
+
+function initAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  master = AC.createGain();
+  master.gain.value = 0.32;
+  master.connect(AC.destination);
+}
+
+function envGain(t0, attack, peak, decay) {
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(peak, t0 + attack);
+  g.gain.exponentialRampToValueAtTime(0.0008, t0 + attack + decay);
+  g.connect(master);
+  return g;
+}
+
+function noiseBuf() {
+  if (noiseBuf.b) return noiseBuf.b;
+  const b = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return (noiseBuf.b = b);
+}
+
+function playNoise(t0, dur, type, f0, f1, peak, q = 1.0) {
+  const src = AC.createBufferSource();
+  src.buffer = noiseBuf();
+  const flt = AC.createBiquadFilter();
+  flt.type = type;
+  flt.Q.value = q;
+  flt.frequency.setValueAtTime(f0, t0);
+  flt.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t0 + dur);
+  src.connect(flt).connect(envGain(t0, 0.008, peak, dur));
+  src.start(t0);
+  src.stop(t0 + dur + 0.05);
+}
+
+function playTone(t0, dur, type, f0, f1, peak) {
+  const o = AC.createOscillator();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t0);
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
+  o.connect(envGain(t0, 0.004, peak, dur));
+  o.start(t0);
+  o.stop(t0 + dur + 0.05);
+}
+
+const sfx = {
+  swing() {                                  // air, pitched down as it travels
+    if (!AC) return;
+    playNoise(AC.currentTime, 0.16, 'bandpass', 900, 260, 0.5, 0.8);
+  },
+  stamp(hit) {
+    if (!AC) return;
+    const t = AC.currentTime;
+    playTone(t, 0.11, 'sine', 120, 42, 0.9);           // the floor takes it
+    playNoise(t, 0.05, 'lowpass', 3200, 700, 0.55);    // die click
+    if (hit) playNoise(t + 0.02, 0.14, 'highpass', 1200, 2600, 0.4); // paper slap
+  },
+  file() {                                   // riffle up, land in the binder
+    if (!AC) return;
+    const t = AC.currentTime;
+    playNoise(t, 0.22, 'bandpass', 500, 2400, 0.3, 1.4);
+    playTone(t + 0.20, 0.09, 'triangle', 660, 660, 0.25);
+  },
+  tick() {
+    if (!AC) return;
+    playTone(AC.currentTime, 0.03, 'square', 1900, 1500, 0.06);
+  },
+  sting(win) {
+    if (!AC) return;
+    const t = AC.currentTime;
+    const seq = win ? [523.25, 659.25, 784.0] : [392.0, 311.13, 261.63];
+    seq.forEach((f, i) => playTone(t + i * 0.16, 0.30, 'triangle', f, f, 0.22));
+  },
+};
+
+// ------------------------------------------------------ the stamped carpet
+// Every swing plants a Bates impression where the die lands, and the number
+// wheel advances with each one -- the die in the GLB reads 000137, so the
+// carpet starts there. Misses stamp the office; that is half the joke, and it
+// also teaches the strike range better than any tutorial text.
+const DECALS = { max: 40, list: [], serial: 137 };
+const decalGeo = new THREE.PlaneGeometry(0.42, 0.21);
+
+function batesTexture(serial) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.strokeStyle = g.fillStyle = 'rgba(224, 58, 21, 0.92)';
+  g.lineWidth = 7;
+  g.strokeRect(10, 10, 236, 108);
+  g.textAlign = 'center';
+  g.font = '700 34px system-ui, sans-serif';
+  g.fillText('EXHIBITFY', 128, 52);
+  g.font = '700 44px ui-monospace, monospace';
+  g.fillText(String(serial).padStart(6, '0'), 128, 100);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function stampCarpet(x, z, yaw) {
+  if (!insideWalk(x, z)) return;           // no carpet there, no impression
+  const mat = new THREE.MeshBasicMaterial({
+    map: batesTexture(DECALS.serial++), transparent: true, depthWrite: false,
+  });
+  const m = new THREE.Mesh(decalGeo, mat);
+  // XYZ euler applies the in-plane spin (z) before laying the plane flat (x)
+  m.rotation.set(-Math.PI / 2, 0, yaw + (Math.random() - 0.5) * 0.5);
+  m.position.set(x, 0.004, z);
+  m.renderOrder = 2;
+  scene.add(m);
+  DECALS.list.push(m);
+  if (DECALS.list.length > DECALS.max) {
+    const old = DECALS.list.shift();
+    scene.remove(old);
+    old.material.map.dispose();
+    old.material.dispose();
+  }
+}
+state.DECALS = DECALS;
+
 // ---------------------------------------------------------------- input
 els.overlay.addEventListener('click', () => {
   if (state.ready && !state.done) controls.lock();
 });
 controls.addEventListener('lock', () => {
+  initAudio();
   els.overlay.style.display = 'none';
   els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = false;
 });
@@ -361,6 +496,7 @@ function startSwing() {
   state.swingT = 0;
   state.hitDone = false;
   state.swing.reset().play();
+  sfx.swing();
 }
 
 // ---------------------------------------------------------------- hits
@@ -386,7 +522,7 @@ function resolveHit() {
     if (d < bestD) { bestD = d; best = e; }
   }
   state.lastProbe = { at: performance.now(), nearest: bestD, hit: !!best };
-  if (!best) return;
+  if (!best) return false;
   best.alive = false;
   best.dead = 0;
   best.restPos.copy(best.root.position);
@@ -394,6 +530,7 @@ function resolveHit() {
   best.hit.reset().play();
   state.score += 1;
   updateHud();
+  return true;
 }
 
 function updateHud() {
@@ -412,6 +549,11 @@ function updateClock(dt) {
   const s = Math.ceil(state.clock);
   els.clock.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   els.clock.classList.toggle('low', state.clock <= CFG.dreamPanic);
+  // the wake clock becomes audible once it goes orange
+  if (s !== state.lastTickS) {
+    state.lastTickS = s;
+    if (state.clock > 0 && state.clock <= CFG.dreamPanic) sfx.tick();
+  }
   if (state.clock === 0) finish(false);
 }
 
@@ -422,6 +564,7 @@ function updateClock(dt) {
 function finish(complete) {
   if (state.done) return;
   state.done = true;
+  sfx.sting(complete);
   els.wakeTag.textContent = complete
     ? 'Exhibit binder complete' : 'You ran out of night';
   els.wakeBody.textContent = complete
@@ -493,6 +636,7 @@ function updateEnemies(dt) {
           e.filed = true;
           e.root.visible = false;
           state.filed += 1;
+          sfx.file();
           updateHud();
           if (state.filed === state.enemies.length) finish(true);
         }
@@ -507,7 +651,13 @@ function updateEnemies(dt) {
 
     let want = e.heading;
     if (fleeing) {
-      want = Math.atan2(tmpV.x, tmpV.z);        // face directly away
+      // Face directly away. The model runs towards its local -Z, so a node at
+      // heading h moves along (-sin h, -cos h); to travel along +tmpV (player
+      // to enemy, extended) the heading must negate both components. With the
+      // un-negated atan2 every "fleeing" document marched straight into the
+      // stamp -- measured 2.39 m closing to 0.82 m over four stationary
+      // seconds before this sign flip, and 2.74 m opening to 4.46 m after.
+      want = Math.atan2(-tmpV.x, -tmpV.z);
       // the privilege paper does not flee honestly -- it weaves
       if (e.v.weave) want += Math.sin(state.t * e.v.weave.rate + e.phase) * e.v.weave.amp;
     } else {
@@ -540,7 +690,14 @@ function updateSwing(dt) {
   state.swingT += dt;
   if (!state.hitDone && state.swingT >= CFG.swingImpact) {
     state.hitDone = true;
-    resolveHit();
+    const hit = resolveHit();      // leaves `strike` at the impact point
+    sfx.stamp(hit);
+    stampCarpet(strike.x, strike.z, camera.rotation.y);
+    state.kick = 1;
+    if (hit) {
+      els.reticle.classList.add('hit');
+      setTimeout(() => els.reticle.classList.remove('hit'), 130);
+    }
   }
   if (state.swingT >= CFG.swingDuration) {
     state.swinging = false;
@@ -559,6 +716,16 @@ function animate() {
     updateEnemies(dt);
   }
   if (state.armMixer) state.armMixer.update(dt);
+
+  // impact kick: a pinch of world FOV and a dip of the arms, decaying fast.
+  // The world camera's fov is otherwise never touched, so writing it only
+  // while the kick is live cannot fight the resize handler.
+  if (state.kick) {
+    state.kick = state.kick < 0.002 ? 0 : state.kick * Math.exp(-9 * dt);
+    camera.fov = 70 + state.kick * 2.4;
+    camera.updateProjectionMatrix();
+    if (state.arms) state.arms.position.y = state.armsBaseY - state.kick * 0.010;
+  }
 
   renderer.render(scene, camera);
   renderer.autoClear = false;         // draw the viewmodel over the world

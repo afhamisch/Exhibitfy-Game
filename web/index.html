@@ -32,6 +32,10 @@
   }
   #reticle::before { left: 50%; top: 0; width: 2px; height: 100%; margin-left: -1px; }
   #reticle::after  { top: 50%; left: 0; height: 2px; width: 100%; margin-top: -1px; }
+  /* hit confirm: a quick orange pop, driven from resolveHit */
+  #reticle { transition: transform .18s ease-out, opacity .18s ease-out; }
+  #reticle.hit { transform: scale(1.55); opacity: 1; transition: none; }
+  #reticle.hit::before, #reticle.hit::after { background: var(--orange); }
 
   #hud {
     position: fixed; left: 18px; top: 16px; pointer-events: none;
