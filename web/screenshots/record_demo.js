@@ -23,6 +23,9 @@ const FPS = 20;
 const SECONDS = Number(process.argv[2] || 60);
 const FRAMES = Math.round(FPS * SECONDS);
 const TAIL = Math.round(FPS * 2.5);
+// How many runs to record before settling. The bot wins the bonus round about
+// one in three, so recording once means usually recording a loss.
+const TRIES = Number(process.argv[3] || 1);
 const W = 960, H = 600;
 
 const STUB = () => {
@@ -128,7 +131,7 @@ const DEMO = () => {
       // 2.72 m, and reaching 1.35 m of the player means summary judgment is
       // granted. 2.05-2.55 is inside the first and clear of the second.
       const band = kind === 'pod' ? [0.5, 0.0]
-        : kind === 'boss' ? [2.55, 2.05]
+        : kind === 'boss' ? [2.55, 2.30]
         : kind === 'objection' ? [2.20, 1.60] : [1.5, 0.0];
       let side = null;
       if (dist > band[0]) {
@@ -200,21 +203,24 @@ const DEMO = () => {
       if (kind !== 'pod' && aligned && dist < (kind === 'boss' ? 2.55 : 2.3)
           && this.cool <= 0 && s.ink >= cost) {
         this.click(redact ? 2 : 0);
-        // swingRefire is 0.54 s, so 13 frames is as fast as the stamp can be
-        // worked. Eight pages inside a 40 s bonus does not have 20 to spare.
-        this.cool = redact ? 12 : 13;
+        // swingRefire is 0.54 s -- 10.8 frames -- so 11 is as fast as the stamp
+        // can physically be worked, and a shorter fight is a fight the motion
+        // has less time to corner you in.
+        this.cool = redact ? 12 : 11;
       }
       return kind;
     },
   };
 };
 
-(async () => {
-  const browser = await chromium.launch({
-    executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-    args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader',
-           '--no-sandbox', '--disable-dev-shm-usage', '--hide-scrollbars'],
-  });
+/**
+ * One recorded run, frames written to `framesPath`. Returns how it ended.
+ *
+ * The bot wins the bonus round about one run in three -- the motion is not
+ * scripted and a corridor corner at the wrong moment ends it on seven pages of
+ * eight -- so a capture is an attempt, not a result, and the caller retries.
+ */
+async function record(browser, framesPath) {
   const page = await browser.newPage({ viewport: { width: W, height: H } });
   const errs = [];
   page.on('pageerror', e => errs.push('pageerror: ' + e.message));
@@ -248,7 +254,6 @@ const DEMO = () => {
   });
   await page.evaluate(DEMO);
 
-  const framesPath = `${OUT}/frames.mjpeg`;
   const fd = fs.openSync(framesPath, 'w');
   const t0 = Date.now();
   const seen = {};
@@ -275,21 +280,53 @@ const DEMO = () => {
   console.log('capture', ((Date.now() - t0) / 1000).toFixed(0) + 's wall, '
     + shot + ' frames = ' + (shot / FPS).toFixed(1) + 's of footage');
   console.log('frames spent on:', JSON.stringify(seen));
-  console.log('final:', JSON.stringify(await page.evaluate(() => ({
+  const out = await page.evaluate(() => ({
     filed: window.__bates.filed, phase: window.__bates.phase,
     done: window.__bates.done, clock: Math.round(window.__bates.clock),
     redactions: window.__bates.redactions, bossHits: window.__bates.bossHits,
     pagesLeft: window.__bates.boss ? window.__bates.boss.pages : null,
     bonusWon: window.__bates.bonusWon, dryStamps: window.__bates.dryStamps,
     overruled: window.__bates.overruled, struck: window.__bates.struck,
-    ending: document.getElementById('wake-tag').textContent.trim() }))));
+    ending: document.getElementById('wake-tag').textContent.trim() }));
+  console.log('final:', JSON.stringify(out));
   console.log('errors:', JSON.stringify(errs));
+  await page.close();
+  return Object.assign(out, { frames: shot, errs });
+}
+
+(async () => {
+  const browser = await chromium.launch({
+    executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+    args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader',
+           '--no-sandbox', '--disable-dev-shm-usage', '--hide-scrollbars'],
+  });
+
+  // Keep going until a run wins the bonus round, and keep the best attempt if
+  // none does -- a reel that ends on summary judgment being granted is still a
+  // reel that ends on an ending, which is the whole point of the re-record.
+  let best = null;
+  for (let a = 1; a <= TRIES; a++) {
+    console.log(`--- attempt ${a}/${TRIES}`);
+    const path = `${OUT}/frames_${a}.mjpeg`;
+    const r = await record(browser, path);
+    r.path = path;
+    if (!best || r.bonusWon > best.bonusWon
+        || (r.bonusWon === best.bonusWon && r.bossHits > best.bossHits)) {
+      if (best) fs.unlinkSync(best.path);
+      best = r;
+    } else {
+      fs.unlinkSync(path);
+    }
+    if (best.bonusWon) break;
+  }
   await browser.close();
+  console.log('kept:', best.ending, `${best.bossHits}/8 pages,`,
+    `${(best.frames / FPS).toFixed(1)}s`);
 
   const webm = `${OUT}/bates_demo.webm`;
   execFileSync(FFMPEG, ['-hide_banner', '-loglevel', 'error',
     '-f', 'image2pipe', '-c:v', 'mjpeg', '-r', String(FPS),
-    '-i', 'file:' + framesPath,
+    '-i', 'file:' + best.path,
     '-c:v', 'libvpx', '-b:v', '2500k',
     '-pix_fmt', 'yuv420p', '-y', webm], { stdio: 'inherit' });
   console.log('wrote', webm,
