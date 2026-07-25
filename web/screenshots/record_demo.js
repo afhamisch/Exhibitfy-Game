@@ -16,8 +16,13 @@ const { execFileSync } = require('child_process');
 const FFMPEG = '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
 const OUT = __dirname;
 const FPS = 20;
-const SECONDS = Number(process.argv[2] || 35);
+// A ceiling, not a length: the capture stops TAIL frames after the run ends, so
+// the reel finishes on the ending screen instead of cutting off mid-fight. A
+// full run -- four exhibits, the hold, then eight pages of summary judgment --
+// is around 45 s of game time, so give it room and let the ending stop it.
+const SECONDS = Number(process.argv[2] || 60);
 const FRAMES = Math.round(FPS * SECONDS);
+const TAIL = Math.round(FPS * 2.5);
 const W = 960, H = 600;
 
 const STUB = () => {
@@ -72,16 +77,24 @@ const DEMO = () => {
 
       if (!this.lockOn) {
         let pick = null;
-        if (s.boss && s.boss.alive) pick = { ref: s.boss, kind: 'boss' };
-        if (!pick) {
-          const o = s.objections.filter(x => x.alive)[0];
-          if (o) pick = { ref: o, kind: 'objection' };
-        }
-        if (!pick && s.ink < s.CFG.inkPerSwing) {
+        // Ink outranks everything, including the boss. Eight pages need eight
+        // wet swings and the bonus starts with barely two in the barrel, so
+        // topping up at two swings left -- rather than at zero -- is the
+        // difference between numbering the motion and dry-stamping at it while
+        // it walks in. Refilling first was the whole reason the last capture
+        // never finished the fight.
+        const floor = s.phase === 'bonus'
+          ? s.CFG.inkPerSwing * 2 : s.CFG.inkPerSwing;
+        if (s.ink < floor) {
           const p = s.pods.filter(x => x.live).sort((a, b) =>
             a.home.distanceTo(s.camera.position)
             - b.home.distanceTo(s.camera.position))[0];
           if (p) pick = { ref: p, kind: 'pod' };
+        }
+        if (!pick && s.boss && s.boss.alive) pick = { ref: s.boss, kind: 'boss' };
+        if (!pick) {
+          const o = s.objections.filter(x => x.alive)[0];
+          if (o) pick = { ref: o, kind: 'objection' };
         }
         if (!pick) {
           const e = s.enemies.filter(x => x.alive).sort((a, b) =>
@@ -98,18 +111,26 @@ const DEMO = () => {
       const t = kind === 'pod' ? this.lockOn.ref.home : this.lockOn.ref.root.position;
       const { dist, aligned } = this.aim(t.x, t.z);
       s.keys.KeyS = false;
-      const stopAt = kind === 'pod' ? 0.5 : kind === 'boss' ? 2.5
-        : kind === 'objection' ? 1.8 : 1.5;
-      if (dist > stopAt) {
+      // Two thresholds, not one. The things that come at you have to be held in
+      // a BAND: `close` is where the bot stops advancing, `back` is where it
+      // gives ground. With a single threshold at 2.5 m the bot advanced to 2.5
+      // and then reversed at 3.1 m/s from a boss walking at 1.15, so the motion
+      // never got inside the 2.72 m the stamp can actually reach and the fight
+      // was unwinnable -- it walked backwards for the whole bonus round.
+      //
+      // The reach numbers it is sitting between: a stamp lands 1.05 m ahead of
+      // the eye with a 1.05 m radius, so a 0.62 m boss is hittable out to
+      // 2.72 m, and reaching 1.35 m of the player means summary judgment is
+      // granted. 1.85-2.35 is inside the first and clear of the second.
+      const band = kind === 'pod' ? [0.5, 0.0]
+        : kind === 'boss' ? [2.35, 1.85]
+        : kind === 'objection' ? [2.20, 1.60] : [1.5, 0.0];
+      if (dist > band[0]) {
         s.keys.KeyW = true;
         // The exhibits flee at up to 3.3 m/s and the walk is 3.1, so anything
         // not already in range has to be sprinted down or it is never caught.
-        if (dist > 2.6) s.keys.ShiftLeft = true;
-      } else if (kind === 'boss' || kind === 'objection') {
-        // Back off rather than standing in its path. Both of these close on the
-        // player, and standing still at stamping range just means being reached:
-        // the first capture got one page of eight in before summary judgment was
-        // granted, because the bot never retreated.
+        if (dist > band[0] + 0.9) s.keys.ShiftLeft = true;
+      } else if (dist < band[1]) {
         s.keys.KeyS = true;
       }
       // Give up on a target that is not resolving, or one bad decision pins the
@@ -117,15 +138,21 @@ const DEMO = () => {
       this.held = (this.held || 0) + 1;
       if (this.held > 140) { this.lockOn = null; this.held = 0; }
 
-      if (kind !== 'pod' && aligned && dist < 2.3 && this.cool <= 0
-          && s.ink >= s.CFG.inkPerRedact) {
-        // Redaction does not file anything -- it only blacks the pages out. The
-        // privileged memo therefore takes two actions in order: redact it, then
-        // stamp the redacted version to get it into the binder. Stamping first
-        // is the mistake the game is built around.
-        const redact = kind === 'privilege' && !this.lockOn.ref.redacted;
+      // Redaction does not file anything -- it only blacks the pages out. The
+      // privileged memo therefore takes two actions in order: redact it, then
+      // stamp the redacted version to get it into the binder. Stamping first is
+      // the mistake the game is built around.
+      const redact = kind === 'privilege' && !this.lockOn.ref.redacted;
+      // A swing with less than inkPerSwing in the barrel still swings -- it just
+      // files nothing. Gate on the cost of the action being taken, so the bot
+      // never spends its turn on a dry stamp it could have spent on a pod.
+      const cost = redact ? s.CFG.inkPerRedact : s.CFG.inkPerSwing;
+      if (kind !== 'pod' && aligned && dist < (kind === 'boss' ? 2.5 : 2.3)
+          && this.cool <= 0 && s.ink >= cost) {
         this.click(redact ? 2 : 0);
-        this.cool = redact ? 12 : 20;
+        // swingRefire is 0.54 s, so 13 frames is as fast as the stamp can be
+        // worked. Eight pages inside a 40 s bonus does not have 20 to spare.
+        this.cool = redact ? 12 : 13;
       }
       return kind;
     },
@@ -175,12 +202,19 @@ const DEMO = () => {
   const fd = fs.openSync(framesPath, 'w');
   const t0 = Date.now();
   const seen = {};
+  let shot = 0, after = -1;
   for (let i = 0; i < FRAMES; i++) {
     const kind = await page.evaluate(() => window.__demo.tick());
     seen[kind] = (seen[kind] || 0) + 1;
     await page.evaluate(() => window.__step());
     const buf = await page.screenshot({ type: 'jpeg', quality: 82 });
     fs.writeSync(fd, buf);
+    shot += 1;
+    // The wake screen fades up over 1.1 s. Hold it long enough to read the
+    // verdict and then stop -- an earlier cut ran to a fixed frame count and
+    // left 13 s of nobody playing on the end of the reel.
+    if (kind === 'done') { if (after < 0) after = 0; else after += 1; }
+    if (after >= TAIL) break;
     if (i % 50 === 0) {
       const el = (Date.now() - t0) / 1000;
       console.log(`  frame ${i}/${FRAMES}  ${el.toFixed(0)}s  ` +
@@ -188,13 +222,17 @@ const DEMO = () => {
     }
   }
   fs.closeSync(fd);
-  console.log('capture', ((Date.now() - t0) / 1000).toFixed(0) + 's');
+  console.log('capture', ((Date.now() - t0) / 1000).toFixed(0) + 's wall, '
+    + shot + ' frames = ' + (shot / FPS).toFixed(1) + 's of footage');
   console.log('frames spent on:', JSON.stringify(seen));
   console.log('final:', JSON.stringify(await page.evaluate(() => ({
     filed: window.__bates.filed, phase: window.__bates.phase,
     done: window.__bates.done, clock: Math.round(window.__bates.clock),
-    redactions: window.__bates.redactions,
-    overruled: window.__bates.overruled, struck: window.__bates.struck }))));
+    redactions: window.__bates.redactions, bossHits: window.__bates.bossHits,
+    pagesLeft: window.__bates.boss ? window.__bates.boss.pages : null,
+    bonusWon: window.__bates.bonusWon, dryStamps: window.__bates.dryStamps,
+    overruled: window.__bates.overruled, struck: window.__bates.struck,
+    ending: document.getElementById('wake-tag').textContent.trim() }))));
   console.log('errors:', JSON.stringify(errs));
   await browser.close();
 
