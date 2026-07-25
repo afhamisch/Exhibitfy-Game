@@ -2,14 +2,22 @@
 
 A first-person slice of **Tom Rexington, Esq.: Bates & Destroy**, in the
 browser. Everything it renders is loaded from the GLBs in `../build` — the FPV
-viewmodel with its `Stamp_Swing` clip, all four paper enemies out of the
-shared-texture `enemies.glb`, and the modular office kit. No geometry is
-authored here.
+viewmodel with its `Stamp_Swing` clip, the seven paper enemies out of the
+shared-texture `enemies.glb`, the boss out of `enemy_motion.glb`, and the
+modular office kit. No geometry is authored here.
 
-**[▶ Watch a full run](screenshots/gameplay_demo.webm)** (11.5 s) — captured
-from the prototype itself: chasing the four documents down, stamping them,
-watching them file themselves into the binder, and the wake screen when the
-last one lands.
+**[▶ Watch a full run](screenshots/gameplay_demo.webm)** (35 s, silent) —
+chasing the four documents down, redacting the privileged one before stamping
+it, overruling two objections, closing the binder, and the Motion for Summary
+Judgment that turns up when you close it early.
+
+The capture harness stubs `requestAnimationFrame` and steps the page one frame
+at a time. It has to: this renders on SwiftShader at a few frames a second, so
+recording in real time gives choppy slow motion. The game clamps its delta with
+`Math.min(dt, 0.05)`, so one step is always exactly 50 ms of game time — a fixed
+20 fps timestep, and footage that plays at true speed however long the capture
+took. It is driven by a bot rather than a scripted camera path, so it cannot
+desync from enemies that move on their own.
 
 ![corridor](screenshots/prototype_corridor.png)
 

@@ -1,0 +1,209 @@
+// Record a demo of the prototype.
+//
+// SwiftShader renders a few frames a second, so recording in real time gives
+// choppy slow-motion footage. Instead: stub requestAnimationFrame so the page
+// only advances when we say so, and capture one frame per step. The game already
+// clamps its delta with Math.min(dt, 0.05), so one step is always exactly 50 ms
+// of game time -- a fixed 20 fps timestep for free, and the result plays back at
+// true speed however long the capture actually took.
+//
+// Frames are JPEG because this ffmpeg build has an mjpeg decoder and no png one,
+// concatenated into one file because it has no pipe protocol either.
+const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+const fs = require('fs');
+const { execFileSync } = require('child_process');
+
+const FFMPEG = '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
+const OUT = __dirname;
+const FPS = 20;
+const SECONDS = Number(process.argv[2] || 35);
+const FRAMES = Math.round(FPS * SECONDS);
+const W = 960, H = 600;
+
+const STUB = () => {
+  window.__q = [];
+  window.requestAnimationFrame = (cb) => { window.__q.push(cb); return window.__q.length; };
+  window.cancelAnimationFrame = () => {};
+  window.__step = () => {
+    const q = window.__q.slice();
+    window.__q.length = 0;
+    for (const cb of q) cb(performance.now());
+    return q.length;
+  };
+};
+
+// A bot, not a cinematic: it plays the game, which shows the mechanics off
+// better than a scripted camera path and cannot desync from the enemies.
+const DEMO = () => {
+  const s = window.__bates;
+  window.__demo = {
+    cool: 0,
+    aim(tx, tz) {
+      const dx = tx - s.camera.position.x, dz = tz - s.camera.position.z;
+      const want = Math.atan2(-dx, -dz);
+      let d = ((want - s.camera.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+      if (d < -Math.PI) d += Math.PI * 2;
+      s.camera.rotation.y += Math.max(-0.11, Math.min(0.11, d * 0.28));
+      const dist = Math.hypot(dx, dz);
+      // Aim at the middle of a standing sheet, and clamp the pitch: looking
+      // straight at the base of something 1.5 m away points the camera at the
+      // carpet, and the footage is then mostly floor.
+      let drop = -Math.atan2(s.CFG.eyeHeight - 1.05, Math.max(0.8, dist));
+      drop = Math.max(-0.26, Math.min(0.06, drop));
+      s.camera.rotation.x += (drop - s.camera.rotation.x) * 0.16;
+      return { dist, aligned: Math.abs(d) < 0.16 };
+    },
+    click(button) {
+      const el = document.querySelector('canvas');
+      el.dispatchEvent(new MouseEvent('mousedown', { button, bubbles: true }));
+      el.dispatchEvent(new MouseEvent('mouseup', { button, bubbles: true }));
+    },
+    tick() {
+      s.keys.KeyW = false; s.keys.ShiftLeft = false;
+      if (this.cool > 0) this.cool -= 1;
+      if (s.done) return 'done';
+
+      // Stick to a target until it is gone. Re-picking the nearest every frame
+      // makes it dither between two documents and never close on either.
+      const live = (x) => x && (x.alive !== false);
+      if (this.lockOn && !live(this.lockOn.ref)) this.lockOn = null;
+      if (this.lockOn && this.lockOn.kind === 'pod'
+          && (!this.lockOn.ref.live || s.ink >= s.CFG.inkMax)) this.lockOn = null;
+
+      if (!this.lockOn) {
+        let pick = null;
+        if (s.boss && s.boss.alive) pick = { ref: s.boss, kind: 'boss' };
+        if (!pick) {
+          const o = s.objections.filter(x => x.alive)[0];
+          if (o) pick = { ref: o, kind: 'objection' };
+        }
+        if (!pick && s.ink < s.CFG.inkPerSwing) {
+          const p = s.pods.filter(x => x.live).sort((a, b) =>
+            a.home.distanceTo(s.camera.position)
+            - b.home.distanceTo(s.camera.position))[0];
+          if (p) pick = { ref: p, kind: 'pod' };
+        }
+        if (!pick) {
+          const e = s.enemies.filter(x => x.alive).sort((a, b) =>
+            a.root.position.distanceTo(s.camera.position)
+            - b.root.position.distanceTo(s.camera.position))[0];
+          if (e) pick = { ref: e, kind: e.kind };
+        }
+        this.lockOn = pick;
+        this.held = 0;
+      }
+      if (!this.lockOn) { s.keys.KeyW = true; return 'idle'; }
+
+      const kind = this.lockOn.kind;
+      const t = kind === 'pod' ? this.lockOn.ref.home : this.lockOn.ref.root.position;
+      const { dist, aligned } = this.aim(t.x, t.z);
+      s.keys.KeyS = false;
+      const stopAt = kind === 'pod' ? 0.5 : kind === 'boss' ? 2.5
+        : kind === 'objection' ? 1.8 : 1.5;
+      if (dist > stopAt) {
+        s.keys.KeyW = true;
+        // The exhibits flee at up to 3.3 m/s and the walk is 3.1, so anything
+        // not already in range has to be sprinted down or it is never caught.
+        if (dist > 2.6) s.keys.ShiftLeft = true;
+      } else if (kind === 'boss' || kind === 'objection') {
+        // Back off rather than standing in its path. Both of these close on the
+        // player, and standing still at stamping range just means being reached:
+        // the first capture got one page of eight in before summary judgment was
+        // granted, because the bot never retreated.
+        s.keys.KeyS = true;
+      }
+      // Give up on a target that is not resolving, or one bad decision pins the
+      // bot on the same document for the rest of the capture.
+      this.held = (this.held || 0) + 1;
+      if (this.held > 140) { this.lockOn = null; this.held = 0; }
+
+      if (kind !== 'pod' && aligned && dist < 2.3 && this.cool <= 0
+          && s.ink >= s.CFG.inkPerRedact) {
+        // Redaction does not file anything -- it only blacks the pages out. The
+        // privileged memo therefore takes two actions in order: redact it, then
+        // stamp the redacted version to get it into the binder. Stamping first
+        // is the mistake the game is built around.
+        const redact = kind === 'privilege' && !this.lockOn.ref.redacted;
+        this.click(redact ? 2 : 0);
+        this.cool = redact ? 12 : 20;
+      }
+      return kind;
+    },
+  };
+};
+
+(async () => {
+  const browser = await chromium.launch({
+    executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+    args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader',
+           '--no-sandbox', '--disable-dev-shm-usage', '--hide-scrollbars'],
+  });
+  const page = await browser.newPage({ viewport: { width: W, height: H } });
+  const errs = [];
+  page.on('pageerror', e => errs.push('pageerror: ' + e.message));
+  page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+
+  await page.addInitScript(STUB);
+  await page.goto('http://127.0.0.1:8123/web/index.html', { waitUntil: 'load' });
+
+  for (let i = 0; i < 500; i++) {
+    await page.evaluate(() => window.__step());
+    if (await page.evaluate(() => !!(window.__bates && window.__bates.ready))) break;
+    await page.waitForTimeout(60);
+  }
+  console.log('ready:', await page.evaluate(() => !!window.__bates.ready));
+
+  let locked = false;
+  for (let i = 0; i < 20 && !locked; i++) {
+    await page.mouse.click(W / 2, H / 2);
+    for (let k = 0; k < 6; k++) await page.evaluate(() => window.__step());
+    locked = await page.evaluate(() => document.pointerLockElement !== null);
+    if (!locked) await page.waitForTimeout(200);
+  }
+  console.log('locked:', locked);
+  await page.evaluate(() => {
+    window.__bates.muted = true;
+    if (window.__bates.MUSIC) window.__bates.MUSIC.on = false;
+    // Capture-only: the first objection is due at 22 s and a competent run
+    // closes the binder before then, so it would never appear on camera. Pulled
+    // forward so the reel shows the mechanic. Nothing else is altered.
+    window.__bates.nextObj = 7;
+  });
+  await page.evaluate(DEMO);
+
+  const framesPath = `${OUT}/frames.mjpeg`;
+  const fd = fs.openSync(framesPath, 'w');
+  const t0 = Date.now();
+  const seen = {};
+  for (let i = 0; i < FRAMES; i++) {
+    const kind = await page.evaluate(() => window.__demo.tick());
+    seen[kind] = (seen[kind] || 0) + 1;
+    await page.evaluate(() => window.__step());
+    const buf = await page.screenshot({ type: 'jpeg', quality: 82 });
+    fs.writeSync(fd, buf);
+    if (i % 50 === 0) {
+      const el = (Date.now() - t0) / 1000;
+      console.log(`  frame ${i}/${FRAMES}  ${el.toFixed(0)}s  ` +
+        `${(el / Math.max(1, i)).toFixed(2)}s/frame  doing=${kind}`);
+    }
+  }
+  fs.closeSync(fd);
+  console.log('capture', ((Date.now() - t0) / 1000).toFixed(0) + 's');
+  console.log('frames spent on:', JSON.stringify(seen));
+  console.log('final:', JSON.stringify(await page.evaluate(() => ({
+    filed: window.__bates.filed, phase: window.__bates.phase,
+    done: window.__bates.done, clock: Math.round(window.__bates.clock),
+    redactions: window.__bates.redactions,
+    overruled: window.__bates.overruled, struck: window.__bates.struck }))));
+  console.log('errors:', JSON.stringify(errs));
+  await browser.close();
+
+  const webm = `${OUT}/bates_demo.webm`;
+  execFileSync(FFMPEG, ['-hide_banner', '-loglevel', 'error',
+    '-f', 'image2pipe', '-c:v', 'mjpeg', '-r', String(FPS),
+    '-i', 'file:' + framesPath,
+    '-c:v', 'libvpx', '-b:v', '2500k',
+    '-pix_fmt', 'yuv420p', '-y', webm], { stdio: 'inherit' });
+  console.log('wrote', webm,
+    (fs.statSync(webm).size / 1048576).toFixed(2) + ' MB');
+})().catch(e => { console.error('FAILED:', e); process.exit(1); });
