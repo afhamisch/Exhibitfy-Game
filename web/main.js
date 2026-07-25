@@ -277,7 +277,13 @@ async function boot() {
 
   // ---- viewmodel: authored in view space, so it drops straight in
   const arms = viewG.scene;
-  arms.position.set(0.035, -0.075, -0.02);   // clear of the crosshair
+  // Clear of the crosshair, but not so low that the carrying arm is guillotined
+  // by the bottom edge. The viewmodel is authored and previewed at 62 deg and
+  // drawn here at 70, which crops it tighter than the previews imply; at -0.075
+  // that put the left hand ~60 mm below the frame and left a disembodied wedge
+  // of forearm along the bottom. At -0.055 the watch and the exhibits read and
+  // the stamp handle still sits below the crosshair.
+  arms.position.set(0.035, -0.055, -0.02);
   viewScene.add(arms);
   const armMixer = new THREE.AnimationMixer(arms);
   const swingClip = THREE.AnimationClip.findByName(viewG.animations, 'Stamp_Swing')

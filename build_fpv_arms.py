@@ -113,47 +113,83 @@ RIG = {
     # The measure: the camera sits at the origin, so take the hand's world +Y
     # (the back of the hand) and dot it with the direction from the wrist back
     # to the camera. Positive means knuckles to the player, which is what
-    # gripping a bar to swing it down looks like. Both values below are the
-    # measured maxima -- right +0.981, left +0.988.
+    # gripping a bar to swing it down looks like. It is a necessary measure and
+    # not a sufficient one -- see below, where the best-scoring roll is also the
+    # worst-looking one.
     #
-    # 0 already satisfies the written brief: the thumb sits 14.8 mm nearer the
-    # camera than the fingertips (thumb near side, fingers wrapping the far
-    # side) and facing is +0.413, inside the "slightly inward/away" band. The
-    # higher-scoring rolls -- 105 scores best on paper -- fail a criterion the
-    # scorer does not encode. grip_frame lands grip_point on the bar, and
-    # grip_point is ~80 mm from the wrist, so rolling SWINGS THE WRIST AROUND
-    # THE BAR. Past about 30 deg the wrist arrives near the camera and the
-    # forearm fills the frame from sheer proximity; re-aiming elbow_dir_r does
-    # not recover it, because the elbow is not what moved.
+    # grip_frame lands grip_point on the bar, and grip_point is ~80 mm from the
+    # wrist, so rolling SWINGS THE WRIST AROUND THE BAR rather than spinning the
+    # hand in place. Roll therefore drags the whole forearm with it, and past
+    # ~30 the hand stopped reading. The old note blamed proximity -- the wrist
+    # arriving near the eye -- and prescribed moving grip_r_point or stamp_pos
+    # outward. Both halves of that are wrong, and were measured before being
+    # believed:
     #
-    # To go past 30, move the stamp -- grip_r_point or stamp_pos -- so the
-    # rolled wrist lands further from the eye. That is the real solve.
+    #   Proximity is not the binding constraint. What hides the hand is the
+    #   FOREARM OCCLUDING IT. Rolling swings the wrist up and over, so the
+    #   forearm ends up draped between the eye and the fist, and no amount of
+    #   distance changes that -- it is an angle, not a range.
     #
-    # The right hand is NOT at its maximum, and this is deliberate. Roll is not
-    # independent of the arm: the forearm chain follows the wrist, and at 60 the
-    # hand does read knuckles-out (+0.981) but the forearm swings across the
-    # frame and hides it, camera-on and foreshortened. Adjusting elbow_dir_r to
-    # compensate did not recover it. Facing and arm pose have to be solved
-    # together -- roll, elbow direction and grip point at once -- and until that
-    # is done 0 (+0.413, edge-on) is the least-bad of the three states tried;
-    # 300 was worse still at -0.426, an actual palm to the player.
-    "grip_r_roll": 0.0,
-    # The left hand no longer touches the stamp -- it carries the exhibits.
-    # These are VIEW-space, not stamp-space: the sheaf must not swing with the
-    # tool, so it hangs off the root rather than off the stamp.
+    #   Moving the stamp outward makes it worse, not better. Depth-buffering the
+    #   fist against its own forearm, at roll 45, as stamp_pos slides out:
+    #       shipped   1379 px visible     -30 mm   1130 px     -60 mm   951 px
+    #   The wrist does land further from the eye, exactly as predicted; the tool
+    #   simply shrinks faster than the pose improves.
+    #
+    # What does lift the ceiling is elbow_dir_r -- the one thing the old note
+    # explicitly ruled out ("re-aiming elbow_dir_r does not recover it"). Swung
+    # outboard it takes the forearm off the sight line. At roll 30 that is the
+    # difference between 728 px of visible fist and 1443, on identical geometry.
+    #
+    # So: roll 35, stamp where it was, elbow re-aimed. Measured against the
+    # shipped one-handed pose at roll 0:
+    #
+    #                       roll 0    roll 35 + new elbow
+    #   facing              +0.413    +0.828   knuckles to the player
+    #   visible fist      1290 px   1498 px    16% more hand on screen
+    #   nearest vertex    272.8 mm  298.9 mm   26 mm more clearance, not less
+    #   thumb vs fingers    -1.0 mm  +27.5 mm  thumb near side, fingers far
+    #
+    # Facing alone is a trap and this is where it was nearly shipped: roll 55
+    # scores +0.988, better than the +0.981 recorded as this hand's maximum, and
+    # is visibly worse -- the forearm covers the knuckles and only fingertips
+    # survive. Score the hand you can SEE, not the one you have posed.
+    "grip_r_roll": 35.0,
+    # The left hand does not touch the stamp -- it carries the exhibits. These
+    # are VIEW-space, not stamp-space: the arm hangs off the root, so the sheaf
+    # rides the hand and braces, but never inherits the swing.
     "docs_point": (-0.205, -0.300, -0.430),
     "docs_axis": (0.86, 0.20, -0.47),
     "docs_dorsal": (0.10, 1.0, 0.30),
     "docs_roll": 40.0,
     "docs_sheets": 7,
     "docs_size": (0.216, 0.030, 0.279),   # letter width, sheaf thickness, depth
+    # clearance the digits keep off the sheaf, and how far past that they close
+    "docs_grip_pad": 0.0034,
+    "docs_tighten": 0.0,
+    # Where the sheaf sits relative to the wrapped grip axis, in hand space:
+    # +X off the forearm, +Z forward. The solver wraps a cylinder and a slab
+    # 279 mm deep is not one, so the near edge is nudged out to sit ON the axis
+    # rather than 9 mm behind it, and the whole stack is shifted clear of the
+    # forearm -- letter paper is 216 mm wide and the arm passes down one side.
+    #
+    # Residual contact is about 1.5 mm and does not tune away: a fist's bore is
+    # a hole, and a slab 279 mm deep has to be threaded through it, so the
+    # digits cross the paper plane wherever the stack sits. At that depth it
+    # reads as the paper denting under the grip, which is what paper does.
+    "docs_offset": (0.015, 0.0, 0.009),
     "grip_l_roll": 300.0,
     "grip_l_point": (-0.0955, 0.0281, 0.0347),  # left hand on the foregrip
     "grip_l_axis": (0.888, 0.363, -0.283),
     "grip_l_dorsal": (-0.14, 1.0, 0.32),
     # forearms: direction from wrist back to the elbow, and length
     "forearm_len": 0.278,
-    "elbow_dir_r": (0.44, -0.80, 0.41),
+    # Swung outboard and flattened, so the forearm no longer runs up the line of
+    # sight between the eye and the fist. This is the half of the grip solve
+    # that roll cannot do: facing says which way the hand is turned, this says
+    # whether the player can see it. It is what actually lifted the roll
+    # ceiling -- see grip_r_roll for the numbers.
+    "elbow_dir_r": (0.90, -0.44, 0.00),
     "elbow_dir_l": (-0.42, -0.82, 0.39),
     "forearm_bow_r": (0.026, -0.016, 0.024),
     "forearm_bow_l": (-0.026, -0.020, 0.022),
@@ -419,7 +455,7 @@ def build_finger(name, root, radius, phal, splay, bends, side_uv, suffix=""):
 
 KNUCKLE_X = [f[1][0] for f in FINGERS]
 
-SIDES = ("R",)          # one-handed, right only
+SIDES = ("R", "L")      # swinging hand, then the carrying hand
 
 
 def build_palm(side_uv):
@@ -941,22 +977,34 @@ def build_documents(name="Exhibits"):
     normal, +Z running away from the hand. The hand grips the near edge, so the
     stack extends forward and the fingers close on a slab about as thick as the
     bar the foregrip used to be.
+
+    The origin is the gripped edge, NOT the wrist: the caller hangs this off
+    HAND["grip_point"], which is the one point the finger solver actually wraps.
+    Build it around the wrist instead and the fingers close on air in front of
+    the paper while the slab runs back through the palm -- which is exactly what
+    it used to do, 6 to 8 cm of it.
     """
     w, th, d = RIG["docs_size"]
     n = RIG["docs_sheets"]
     node = Node(name)
     mesh = M.Mesh("Exhibit_Stack", MAT["paper"])
     rnd = random.Random(4021)
+    t = th / n * 0.72
     for i in range(n):
         # each sheet fanned a little, so the stack reads as paper not a block
         f = i / max(1, n - 1) - 0.5
-        y = -th * 0.5 + th * (i / max(1, n - 1))
+        # span exactly `th`: the sheet is placed by its BASE, so the top one has
+        # to start a sheet-thickness short of the top or the stack ends up
+        # th + t deep and hanging off centre -- 3 mm of paper that the grip was
+        # never solved against, all of it on one side.
+        y = -th * 0.5 + (th - t) * (i / max(1, n - 1))
         sx = rnd.uniform(-0.004, 0.004) + f * 0.010
         sz = rnd.uniform(-0.006, 0.010)
         yaw = rnd.uniform(-0.9, 0.9) + f * 2.4
         c, sn = math.cos(yaw * D2R), math.sin(yaw * D2R)
-        t = th / n * 0.72
-        corners = [(-w * 0.5, 0.0), (w * 0.5, 0.0), (w * 0.5, -d), (-w * 0.5, -d)]
+        # wound so the ring keeps its original orientation in XZ -- the caps
+        # below take their winding from it, so reversing it inverts the normals
+        corners = [(-w * 0.5, d), (w * 0.5, d), (w * 0.5, 0.0), (-w * 0.5, 0.0)]
         pts = []
         for (px, pz) in corners:
             rx = px * c - pz * sn + sx
@@ -1037,9 +1085,9 @@ def build_scene(bates="000137", images=None):
     def dir_world(d):
         return vec.norm(vec.xform_dir(stamp_world, d))
 
-    # Strict first person: the right hand and forearm only. The carrying arm
-    # and the watch it wore are gone with it -- the brief asks for no left hand
-    # in frame, and the watch cannot be shown without one.
+    # Both arms: the right swings the tool, the left carries the exhibits and
+    # wears the watch. SIDES drives this loop and the swing bake together, so
+    # the limb count is one tuple rather than two loops to keep in step.
     arms = []
     for side in SIDES:
         if side == "R":
@@ -1066,10 +1114,14 @@ def build_scene(bates="000137", images=None):
                   HAND["grip_point"][2])
             elbow_dir = RIG["elbow_dir_l"]
             bow = RIG["forearm_bow_l"]
-            # carrying hand: closes on the sheaf, relaxed rather than locked
-            bar_r = RIG["docs_size"][1] * 0.58
-            tighten = {"Index": -0.0008, "Middle": -0.0012,
-                       "Ring": -0.0010, "Pinky": -0.0006}
+            # Carrying hand: closes on the sheaf, relaxed rather than locked.
+            # The solver wraps a cylinder but the sheaf is a slab, so the radius
+            # is measured off its half-thickness plus a pad -- an arbitrary
+            # fraction of the thickness puts the digits inside the paper, since
+            # the binding contact is the near EDGE, not the flat.
+            bar_r = RIG["docs_size"][1] * 0.5 + RIG["docs_grip_pad"]
+            tighten = dict.fromkeys(("Index", "Middle", "Ring", "Pinky"),
+                                    RIG["docs_tighten"])
             thumb = {"curl": (34.0, 28.0), "splay": -50.0, "twist": -26.0,
                      "pitch": -16.0}
             roll = RIG["docs_roll"]
@@ -1091,9 +1143,14 @@ def build_scene(bates="000137", images=None):
         if side == "L":
             twisted, ts, _pts = frame_info
             arm_node.add(build_watch(path_at, twisted, ts))
+            # Parented to the HAND, at the grip point. Off the arm it stayed put
+            # while the hand counter-rotated through the brace, so the paper
+            # slid inside its own grip; at the wrist it missed the fingers by
+            # 6-8 cm. gp is what the finger solver wrapped, so it is what the
+            # paper has to sit on.
             docs = build_documents()
-            docs.matrix = vec.mat_mul(vec.rigid_inverse(arm_world), hand_world)
-            arm_node.add(docs)
+            docs.matrix = vec.translate(vec.add(gp, RIG["docs_offset"]))
+            hand.add(docs)
 
         root.add(arm_node)
         arms.append(arm_node)
@@ -1328,8 +1385,11 @@ def make_previews(scene, outdir, quick=False):
                 fov_deg=34), False, ["Stamp_Exhibitfy"]),
         ("hand_right_detail", Camera((-0.10, 0.20, -0.16), (0.13, -0.07, -0.44),
                                      fov_deg=34), False, None),
-        ("hand_left_watch", Camera((-0.26, 0.10, -0.20), (-0.05, -0.19, -0.49),
-                                   fov_deg=34), False, None),
+        # Framed on the carrying hand itself. The old aim was set when the sheaf
+        # hung off the wrist and pointed at where it used to be, which is now
+        # empty space with a corner of the stamp in it.
+        ("hand_left_watch", Camera((-0.30, 0.06, -0.14), (-0.20, -0.24, -0.45),
+                                   fov_deg=42), False, None),
     ]
     made = []
     all_roots = list(scene.roots)
