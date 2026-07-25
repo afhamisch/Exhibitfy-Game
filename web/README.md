@@ -127,6 +127,7 @@ does something the clip never could: make the thing genuinely harder to hit.
 | Page + script | 21.5 KB |
 | Three.js (vendored) | 820 KB on disk, ~180 KB gzipped over the wire |
 | Assets actually fetched | 4.05 MB (viewmodel, all four enemies, seven kit pieces) |
+| Music bed | 381 KB fetched — one of the two encodings, never both |
 
 The enemies used to be 2.9 MB of that, as four self-contained GLBs. They could
 not share a texture, so `paper_pleading` shipped three times and the face and
@@ -145,9 +146,29 @@ would beat both, but it needs a third-party encoder, which the pipeline's
 standard-library-only rule does not allow — that one has to be raised, not
 adopted quietly.
 
+## Sound
+
+Effects are synthesized on a WebAudio graph at play time — swing, stamp, the
+riffle of a document filing itself, the wake clock, and a sting per ending.
+There are no effect samples to ship.
+
+The music bed is a file, `audio/calm_loop.*`, 31.2 s stereo. It ships twice
+because no single encoding covers every browser: Opus-in-Ogg (381 KB) and
+AAC-in-M4A (521 KB). The page asks `canPlayType` which it prefers and fetches
+only that one, falling back to the other if the decode throws — Chromium builds
+without the proprietary codecs cannot read AAC, and Safari only grew Opus
+support recently.
+
+It is not looped with `source.loop`. The track is level across the wrap but does
+not butt-join at sample level, so plain looping steps 0.178 across the seam
+every 31.2 s; consecutive passes are equal-power crossfaded instead, which
+measures 0.019 at the join for about a decibel of level through the overlap.
+
 ## Known limits of this slice
 
-- No sound and no score persistence.
+- No score persistence.
+- The bed is one 31.2 s loop with no variation and no reaction to the clock
+  running down.
 - Enemies path by fleeing and wall-sliding, not by navmesh — they can get
   briefly stuck grinding a corner before they turn out of it.
 - One of each variant spawns, and that is the whole roster — there is no wave

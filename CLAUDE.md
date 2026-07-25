@@ -13,6 +13,12 @@ dependency-free Python. No DCC app, no third-party packages.
 Shared code lives in `tools/`. `build/` is committed so the assets are usable
 as-is.
 
+One exception to "everything is generated": `web/audio/calm_loop.*` is an
+authored music track, not pipeline output. It is the only binary asset in the
+repo that no script can reproduce, so it cannot be regenerated if lost — the
+game's sound effects, by contrast, are synthesized in the browser at play time
+and ship as no files at all.
+
 ## Non-negotiables
 
 ### Standard library only
@@ -219,6 +225,7 @@ tools/
 build/                outputs (committed)
   enemies/  environment/
 web/                  playable browser prototype (Three.js, vendored)
-  main.js             player, enemies, layout, swing timing, HUD
+  main.js             player, enemies, layout, swing timing, HUD, audio
+  audio/calm_loop.*   music bed, shipped as Ogg/Opus + M4A/AAC
   vendor/three/       vendored r160 — never edited, no CDN
 ```

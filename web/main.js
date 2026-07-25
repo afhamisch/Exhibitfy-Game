@@ -325,6 +325,11 @@ async function boot() {
     });
   });
 
+  // Decode the bed while the menu is up, so the first click starts it
+  // instantly. Failure here is not fatal -- loadMusic warns and leaves
+  // MUSIC.buf null, and every music call no-ops on that.
+  await loadMusic();
+
   state.ready = true;
   els.loading.hidden = true;
   els.go.hidden = false;
@@ -337,10 +342,13 @@ boot().catch((err) => {
 });
 
 // ---------------------------------------------------------------- audio
-// Synthesized on a WebAudio graph at play time -- the repo ships no sound
-// files, and the pipeline's no-assets rule holds here too. The context is
-// created on the pointer-lock click, which is the user gesture browsers
-// require before they will open an audio device.
+// Effects are synthesized on a WebAudio graph at play time -- no sound files
+// for those. The music bed IS a file, in audio/, shipped as Opus-in-Ogg and
+// AAC-in-M4A because no single encoding covers every browser.
+//
+// The context is constructed early and starts suspended, which is allowed
+// without a gesture and lets the music decode during loading; the pointer-lock
+// click only has to resume() it.
 let AC = null, master = null;
 
 function initAudio() {
@@ -349,6 +357,9 @@ function initAudio() {
   master = AC.createGain();
   master.gain.value = 0.32;
   master.connect(AC.destination);
+  MUSIC.gain = AC.createGain();
+  MUSIC.gain.gain.value = MUSIC.level;
+  MUSIC.gain.connect(master);
 }
 
 function envGain(t0, attack, peak, decay) {
@@ -421,6 +432,96 @@ const sfx = {
   },
 };
 
+// ------------------------------------------------------------ music bed
+// The track is level across the wrap -- head and tail RMS agree to within 2%
+// over 0.9 s -- but it does not butt-join at sample level: the last sample
+// sits at +0.334 and the first at +0.220, so source.loop = true steps 0.178
+// across the join, every 31.2 s, forever.
+//
+// So each pass is its own source and consecutive passes are equal-power
+// crossfaded over the join. Rendered offline and measured, that takes the
+// worst sample-to-sample jump at the join from 0.178 down to 0.019, and costs
+// 0.9 to 1.4 dB of level through the 0.9 s overlap -- around the threshold of
+// audibility, against a step that is not. The overlap also shortens the loop
+// period to d - xfade and plays that much material twice, neither of which
+// reads on an ambient bed.
+const MUSIC = {
+  gain: null, buf: null, nextAt: 0, on: false,
+  level: 0.5,             // sits under the effects, which peak near 0.9
+  xfade: 0.9,
+};
+
+const FADE_N = 64;
+const FADE_IN = new Float32Array(FADE_N);
+const FADE_OUT = new Float32Array(FADE_N);
+for (let i = 0; i < FADE_N; i++) {
+  const t = (i / (FADE_N - 1)) * Math.PI * 0.5;
+  FADE_IN[i] = Math.sin(t);          // sin/cos keeps the sum at constant power
+  FADE_OUT[i] = Math.cos(t);
+}
+
+async function loadMusic() {
+  initAudio();
+  // Ask the browser which encoding it wants rather than guessing: Chromium
+  // builds without the proprietary codecs cannot decode AAC, and Safari only
+  // grew Opus support recently. Whichever it names, the other is the fallback.
+  const probe = document.createElement('audio');
+  const order = probe.canPlayType('audio/ogg; codecs=opus')
+    ? ['calm_loop.ogg', 'calm_loop.m4a'] : ['calm_loop.m4a', 'calm_loop.ogg'];
+  for (const name of order) {
+    try {
+      const bytes = await fetch(`audio/${name}`).then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${name}`);
+        return r.arrayBuffer();
+      });
+      MUSIC.buf = await AC.decodeAudioData(bytes);
+      MUSIC.file = name;
+      return;
+    } catch (err) {
+      console.warn(`music: ${name} unusable —`, err.message || err);
+    }
+  }
+  console.warn('music: no encoding decoded here; running with effects only');
+}
+
+function scheduleMusicPass(startAt) {
+  const d = MUSIC.buf.duration;
+  const xf = Math.min(MUSIC.xfade, d * 0.25);
+  const src = AC.createBufferSource();
+  src.buffer = MUSIC.buf;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0, startAt);
+  g.gain.setValueCurveAtTime(FADE_IN, startAt, xf);
+  g.gain.setValueAtTime(1, startAt + xf);
+  g.gain.setValueCurveAtTime(FADE_OUT, startAt + d - xf, xf);
+  src.connect(g).connect(MUSIC.gain);
+  src.start(startAt);
+  src.stop(startAt + d + 0.05);
+  MUSIC.nextAt = startAt + d - xf;        // the next pass overlaps by xf
+}
+
+/** Keep roughly two seconds of the bed queued ahead of the playhead. */
+function pumpMusic() {
+  if (!MUSIC.on || !MUSIC.buf || !AC) return;
+  while (MUSIC.nextAt < AC.currentTime + 2.0) scheduleMusicPass(MUSIC.nextAt);
+}
+
+function startMusic() {
+  if (!MUSIC.buf || MUSIC.on) return;
+  MUSIC.on = true;
+  MUSIC.nextAt = AC.currentTime + 0.05;
+  pumpMusic();
+}
+
+function musicTo(level, sec) {
+  if (!MUSIC.gain || !AC) return;
+  const g = MUSIC.gain.gain;
+  g.cancelScheduledValues(AC.currentTime);
+  g.setValueAtTime(g.value, AC.currentTime);
+  g.linearRampToValueAtTime(level, AC.currentTime + sec);
+}
+state.MUSIC = MUSIC;
+
 // ------------------------------------------------------ the stamped carpet
 // Every swing plants a Bates impression where the die lands, and the number
 // wheel advances with each one -- the die in the GLB reads 000137, so the
@@ -474,6 +575,8 @@ els.overlay.addEventListener('click', () => {
 });
 controls.addEventListener('lock', () => {
   initAudio();
+  startMusic();
+  musicTo(MUSIC.level, 0.6);
   els.overlay.style.display = 'none';
   els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = false;
 });
@@ -481,6 +584,9 @@ controls.addEventListener('unlock', () => {
   // once the binder is closed the wake screen owns the view, not the menu
   if (!state.done) els.overlay.style.display = 'flex';
   els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = true;
+  // the bed keeps running under the menu, just further back. Stopping it
+  // would mean rescheduling the crossfade chain from scratch on every pause.
+  if (!state.done) musicTo(MUSIC.level * 0.35, 0.4);
 });
 document.getElementById('again').addEventListener('click', () => location.reload());
 addEventListener('keydown', (e) => { state.keys[e.code] = true; });
@@ -564,7 +670,10 @@ function updateClock(dt) {
 function finish(complete) {
   if (state.done) return;
   state.done = true;
+  // pull the bed down so the sting lands in the clear, then let it go
+  musicTo(MUSIC.level * 0.28, 0.5);
   sfx.sting(complete);
+  setTimeout(() => { musicTo(0, 2.2); MUSIC.on = false; }, 900);
   els.wakeTag.textContent = complete
     ? 'Exhibit binder complete' : 'You ran out of night';
   els.wakeBody.textContent = complete
@@ -716,6 +825,7 @@ function animate() {
     updateEnemies(dt);
   }
   if (state.armMixer) state.armMixer.update(dt);
+  pumpMusic();
 
   // impact kick: a pinch of world FOV and a dip of the arms, decaying fast.
   // The world camera's fov is otherwise never touched, so writing it only
