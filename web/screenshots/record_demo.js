@@ -65,6 +65,7 @@ const DEMO = () => {
     },
     tick() {
       s.keys.KeyW = false; s.keys.ShiftLeft = false;
+      s.keys.KeyA = false; s.keys.KeyD = false;
       if (this.cool > 0) this.cool -= 1;
       if (s.done) return 'done';
 
@@ -104,6 +105,8 @@ const DEMO = () => {
         }
         this.lockOn = pick;
         this.held = 0;
+        this.mark = null;                // new target, new progress baseline
+        this.strafe = 0;
       }
       if (!this.lockOn) { s.keys.KeyW = true; return 'idle'; }
 
@@ -123,7 +126,7 @@ const DEMO = () => {
       // 2.72 m, and reaching 1.35 m of the player means summary judgment is
       // granted. 1.85-2.35 is inside the first and clear of the second.
       const band = kind === 'pod' ? [0.5, 0.0]
-        : kind === 'boss' ? [2.35, 1.85]
+        : kind === 'boss' ? [2.55, 2.05]
         : kind === 'objection' ? [2.20, 1.60] : [1.5, 0.0];
       if (dist > band[0]) {
         s.keys.KeyW = true;
@@ -132,6 +135,28 @@ const DEMO = () => {
         if (dist > band[0] + 0.9) s.keys.ShiftLeft = true;
       } else if (dist < band[1]) {
         s.keys.KeyS = true;
+      }
+      // Progress watchdog. The bot walks a straight line at whatever it is
+      // chasing and the office is a corridor kit, so anything around a corner
+      // is unreachable: resolveMove slides it along the wall and W does
+      // nothing. One capture spent 39 s pinned at x=-11.1 with the motion two
+      // rooms away and the distance stuck at 10.29 m -- an unwinnable bonus
+      // round recorded in full. If the range is not coming down, strafe, and
+      // alternate sides so a wrong guess is corrected rather than repeated.
+      if (this.strafe > 0) {
+        this.strafe -= 1;
+        s.keys[this.strafeKey] = true;
+      } else {
+        if (this.mark == null) { this.mark = dist; this.marked = 24; }
+        if (--this.marked <= 0) {
+          if (dist > this.mark - 0.35 && dist > band[0]) {
+            this.strafe = 22;
+            this.flip = !this.flip;
+            this.strafeKey = this.flip ? 'KeyA' : 'KeyD';
+          }
+          this.mark = dist;
+          this.marked = 24;
+        }
       }
       // Give up on a target that is not resolving, or one bad decision pins the
       // bot on the same document for the rest of the capture.
@@ -147,7 +172,7 @@ const DEMO = () => {
       // files nothing. Gate on the cost of the action being taken, so the bot
       // never spends its turn on a dry stamp it could have spent on a pod.
       const cost = redact ? s.CFG.inkPerRedact : s.CFG.inkPerSwing;
-      if (kind !== 'pod' && aligned && dist < (kind === 'boss' ? 2.5 : 2.3)
+      if (kind !== 'pod' && aligned && dist < (kind === 'boss' ? 2.55 : 2.3)
           && this.cool <= 0 && s.ink >= cost) {
         this.click(redact ? 2 : 0);
         // swingRefire is 0.54 s, so 13 frames is as fast as the stamp can be
