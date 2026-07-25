@@ -13,6 +13,11 @@
     --ink: #14161a;
   }
   * { box-sizing: border-box; }
+  /* The `hidden` attribute is only a UA rule of `display: none`, so any styled
+     selector here outranks it: `#overlay .go { display: inline-block }` beat it
+     outright, and CLICK TO PLAY sat there during loading and on devices that
+     cannot play at all. Attribute wins from now on. */
+  [hidden] { display: none !important; }
   html, body {
     margin: 0; height: 100%; overflow: hidden;
     background: var(--ink); color: #f2f1ec;
@@ -133,6 +138,26 @@
   #overlay .note { margin-top: 16px; font-size: 11px; opacity: .45; }
   #loading { font-size: 13px; opacity: .7; }
 
+  /* the device cannot run it — say so instead of going black */
+  #blocked h2 {
+    margin: 0 0 10px; font-size: 18px; color: var(--orange);
+  }
+  #blocked p { margin: 0 0 14px; font-size: 13px; opacity: .75; line-height: 1.6; }
+  #blocked a {
+    display: inline-block; padding: 10px 22px; border: 1px solid #383c44;
+    border-radius: 3px; color: #f2f1ec; text-decoration: none;
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+  }
+  #blocked a:hover { background: #1c1f24; }
+
+  /* A blocked phone is the one case where the card is read on a small screen,
+     so it has to fit one. */
+  @media (max-width: 520px) {
+    #overlay .card { padding: 22px 18px; }
+    #overlay h1 { font-size: 21px; }
+    #overlay table { display: none; }
+  }
+
   /* how long you stay asleep */
   #wakeclock {
     position: fixed; right: 20px; top: 16px; text-align: right;
@@ -217,8 +242,13 @@
     </table>
     <div id="loading">Loading assets…</div>
     <div class="go" id="go" hidden>Click to play</div>
-    <div class="note">Chase the paperwork down and stamp it. Do not stamp the
-      privileged one — redact that.</div>
+    <div id="blocked" hidden>
+      <h2 id="blocked-head"></h2>
+      <p id="blocked-body"></p>
+      <a href="./screenshots/gameplay_demo.webm">Watch the 31-second demo</a>
+    </div>
+    <div class="note" id="note">Chase the paperwork down and stamp it. Do not
+      stamp the privileged one — redact that.</div>
   </div>
 </div>
 
@@ -232,6 +262,66 @@
   }
 }
 </script>
-<script type="module" src="./main.js"></script>
+<!--
+  Capability gate, ahead of main.js on purpose.
+
+  This is a mouse-and-keyboard game in the strong sense: the stamp is aimed
+  with pointer lock, which a touchscreen does not have and cannot emulate.
+  Without this check a phone got a black screen, no explanation, and about
+  12 MB of GLB charged to its data plan on the way there -- so the test runs
+  before the module is fetched, not inside it.
+
+  WebGL is checked in the same place because it fails the same way: main.js
+  constructs a WebGLRenderer at the top level, and if that throws, every line
+  after it -- including anything that could have reported the problem -- never
+  runs.
+-->
+<script>
+(function () {
+  // An unsupported media query reports `not all`, and reading .matches on one
+  // returns false. Treating that as "no mouse" would lock out the older
+  // desktop browsers this is meant to let through, so unsupported means yes.
+  const q = matchMedia('(pointer: fine)');
+  const fine = q.media === 'not all' ? true : q.matches;
+  const lock = 'pointerLockElement' in document
+            || 'webkitPointerLockElement' in document;
+  let gl = false;
+  try {
+    const c = document.createElement('canvas');
+    gl = !!(window.WebGLRenderingContext
+            && (c.getContext('webgl2') || c.getContext('webgl')));
+  } catch (e) {
+    gl = false;
+  }
+
+  if (fine && lock && gl) {
+    const s = document.createElement('script');
+    s.type = 'module';
+    s.src = './main.js';
+    document.body.appendChild(s);
+    return;
+  }
+
+  const head = document.getElementById('blocked-head');
+  const body = document.getElementById('blocked-body');
+  if (!fine || !lock) {
+    head.textContent = 'This one needs a mouse.';
+    body.textContent = 'The Bates stamp is aimed with the mouse pointer '
+      + 'locked to the screen, and you move with the keyboard. A touchscreen '
+      + 'has neither, so there is no honest way to play it on a phone or '
+      + 'tablet. Open it on a laptop or desktop and it will work.';
+  } else {
+    head.textContent = 'WebGL is switched off.';
+    body.textContent = 'The office, the paperwork and the stamp are all 3D, '
+      + 'and this browser will not give the page a 3D context. It is usually '
+      + 'hardware acceleration turned off in the browser settings, or a very '
+      + 'old browser.';
+  }
+  document.getElementById('loading').hidden = true;
+  document.getElementById('note').hidden = true;
+  document.getElementById('blocked').hidden = false;
+  document.getElementById('overlay').style.cursor = 'default';
+})();
+</script>
 </body>
 </html>

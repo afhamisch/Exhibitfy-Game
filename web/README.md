@@ -57,6 +57,19 @@ No internet connection is needed. Three.js r160 is vendored into
 third-party CDN dependency — which also matters if this ends up embedded on a
 landing page.
 
+**It needs a mouse, a keyboard and WebGL**, and over anything but `localhost`
+it needs **HTTPS** — pointer lock is refused outside a secure context, and
+pointer lock is not a nicety here, it is the aiming. A small gate in
+`index.html` checks all of that *before* `main.js` is fetched and says which
+one failed, so a phone gets a sentence and a link to the demo video rather than
+a black screen and 12 MB off its data plan.
+
+Deploying is just static files: `build/` and `web/` uploaded together, with
+`build/` kept as a sibling of `web/` because `main.js` fetches `../build`.
+There is no server code, no build step and no database, so any static host
+works — the only host-side requirements are HTTPS and serving `.glb`, `.webm`,
+`.ogg` and `.m4a` rather than 404ing on the extension.
+
 ## Controls
 
 | | |
