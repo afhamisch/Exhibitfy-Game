@@ -48,7 +48,7 @@ FACE_ZONE = (0.20, 0.36, 0.80, 0.76)   # u0, t0, u1, t1 in front-page space
 
 def pleading_page(size=1024, seed=11, case="000137", privileged=False,
                   density=1.0, title="SUPERIOR COURT OF THE STATE",
-                  face_zone=FACE_ZONE, objection=False):
+                  face_zone=FACE_ZONE, objection=False, motion=False):
     """Generic pleading paper: numbered left margin, caption block, text bars.
 
     Legible as "a legal document" at gameplay distance, which is the whole
@@ -177,6 +177,37 @@ def pleading_page(size=1024, seed=11, case="000137", privileged=False,
                              "center", a, 0.90, 0.0, -0.26)
         glyphs.draw_text(c, "MOVE TO STRIKE", cx, fy(0.955), H * 0.034,
                          PAPER["white"], 0.16, "center", 1.0, 0.95)
+
+    if motion:
+        # The boss. A motion for summary judgment is the document that ends
+        # cases without a trial, so it is the only thing in the game that
+        # outranks the binder -- and it is read at twice the scale of an
+        # exhibit, which is why this is heavier and plainer than the pleadings:
+        # a blue backing sheet down the spine the way a real motion is bound,
+        # a black caption bar, and nothing decorative competing with it.
+        c.rect(size * 0.02, fy(0.010), size * 0.075, fy(0.988),
+               PAPER["board"], 1.0)
+        c.rect(size * 0.075, fy(0.010), size * 0.088, fy(0.988),
+               PAPER["ink"], 0.55)
+        c.rect(size * 0.10, fy(0.040), size * 0.98, fy(0.125),
+               PAPER["ink"], 0.92)
+        glyphs.draw_text(c, "SUMMARY JUDGMENT", size * 0.545, fy(0.108),
+                         H * 0.058, PAPER["white"], 0.13, "center", 1.0, 0.93)
+        glyphs.draw_text(c, "NO GENUINE DISPUTE OF MATERIAL FACT",
+                         size * 0.545, fy(0.150), H * 0.026,
+                         PAPER["ink_soft"], 0.12, "center", 1.0, 0.95)
+        # a page-count block, because the whole boss fight is that it has pages
+        c.rect(size * 0.70, fy(0.905), size * 0.965, fy(0.972),
+               PAPER["red"], 0.14)
+        for (x0, y0, x1, y1) in ((0.70, 0.905, 0.965, 0.913),
+                                 (0.70, 0.964, 0.965, 0.972),
+                                 (0.70, 0.905, 0.706, 0.972),
+                                 (0.959, 0.905, 0.965, 0.972)):
+            c.rect(size * x0, fy(y0), size * x1, fy(y1), PAPER["red"], 0.85)
+        glyphs.draw_text(c, "PAGES", size * 0.833, fy(0.930), H * 0.022,
+                         PAPER["red"], 0.18, "center", 1.0, 0.95)
+        glyphs.draw_text(c, "UNNUMBERED", size * 0.833, fy(0.960), H * 0.028,
+                         PAPER["red"], 0.10, "center", 1.0, 0.92)
 
     # ---- honest wear: fold line, a few specks, softened corners
     c.rect(0, fy(0.50), size, fy(0.503), PAPER["shade"], 0.35)
@@ -388,4 +419,9 @@ def build_all(bates="000137"):
         "paper_objection": pleading_page(seed=59, case=bates, density=0.85,
                                          title="IN LIMINE",
                                          objection=True),
+        # The boss. Kept out of the combined enemies file by build_enemies, so
+        # this map only ships to a player who earned the bonus round.
+        "paper_motion": pleading_page(seed=71, case=bates, density=1.35,
+                                      title="NOTICE OF MOTION",
+                                      motion=True),
     }

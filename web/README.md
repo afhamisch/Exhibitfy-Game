@@ -104,6 +104,29 @@ round carries on. Without the hold, filing the fourth exhibit ended the round on
 the same frame, which cancelled the whole point of objections: they could
 pressure the middle of a round but never touch a finished binder.
 
+### The bonus round
+
+Closing the binder used to buy nothing — beat the clock by a minute and you got
+the same screen as someone who scraped it. Close it with **32 seconds still on
+the clock** and opposing counsel moves for **summary judgment** instead: a boss
+round on a fresh 40-second clock.
+
+The motion has **eight pages** and a Bates stamp is exactly the tool for that, so
+the only health bar in the game is really a page count. Each stamp numbers a page
+and knocks it back half a metre; it keeps calling objections in its own defence.
+Number all eight and the motion is denied — **Lawyer of the Year**, the one
+ending above `Verdict for the defense`.
+
+You can only lose the *bonus*, never the case: the binder was closed before any
+of it began, so if the motion reaches you summary judgment is granted, the round
+ends, and the verdict on the binder still stands. The endings say so explicitly,
+because losing a round you were awarded for winning otherwise reads as a
+punishment.
+
+`enemy_motion.glb` is fetched **on qualification, not at boot** — 664 KB is too
+much to charge every player to discover they were too slow. If it fails to load
+the case is awarded rather than leaving the player in an empty round.
+
 ### The verdict
 
 You do not win or lose so much as get a ruling, graded on how much of the binder
@@ -228,9 +251,13 @@ measures 0.019 at the join for about a decibel of level through the overlap.
   running down.
 - Nothing can damage *you* — objections cost you exhibits, not health, so there
   is no reason to retreat from anything except to buy time.
-- One round, one layout, four documents, no waves and no difficulty curve beyond
-  the objections arriving. A fast player can close the binder before the first
-  one spawns at 22 s and never meet the mechanic at all.
+- One layout, four documents, no waves and no difficulty curve beyond the
+  objections arriving. A fast player can still close the binder before the first
+  one spawns at 22 s — that now earns the bonus round rather than skipping
+  content, but it does mean the objections themselves can go unmet.
+- The boss only walks at you and calls objections. It has no attack of its own
+  beyond arriving, so the fight is a kiting exercise rather than a pattern to
+  learn.
 - Objections path by hunting and wall-sliding like the exhibits, so they grind
   corners the same way.
 - Enemies path by fleeing and wall-sliding, not by navmesh — they can get

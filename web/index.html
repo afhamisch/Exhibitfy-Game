@@ -61,6 +61,23 @@
   }
   #warn.on { opacity: 1; }
 
+  /* phase card — the motion is filed */
+  #banner {
+    position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%);
+    pointer-events: none; text-align: center; white-space: nowrap;
+    opacity: 0; transition: opacity .5s ease-out;
+  }
+  #banner.on { opacity: 1; }
+  #banner .t {
+    font-size: 34px; font-weight: 700; letter-spacing: .02em;
+    color: var(--orange); text-shadow: 0 3px 10px rgba(0,0,0,.95);
+  }
+  #banner .s {
+    margin-top: 8px; font-size: 13px; letter-spacing: .22em;
+    text-transform: uppercase; opacity: .85;
+    text-shadow: 0 2px 6px rgba(0,0,0,.95);
+  }
+
   /* ink gauge — bottom left, out of the viewmodel's way */
   #inkbox {
     position: fixed; left: 18px; bottom: 18px; width: 190px;
@@ -158,17 +175,21 @@
 <div id="app"></div>
 <div id="reticle" hidden></div>
 <div id="hud" hidden>
-  <div class="score">FILED <b id="score">0 / 4</b></div>
+  <div class="score"><span id="score-label">FILED</span> <b id="score">0 / 4</b></div>
   <div class="sub" id="remaining">4 documents at large</div>
 </div>
 <div id="warn"></div>
+<div id="banner">
+  <div class="t" id="banner-title">Motion for summary judgment</div>
+  <div class="s" id="banner-sub">Stamp every page</div>
+</div>
 <div id="inkbox" hidden>
   <div class="track"><div id="inkfill"></div></div>
   <div id="inklabel">Stamp ink</div>
 </div>
 <div id="wakeclock" hidden>
   <div class="t" id="clock">1:30</div>
-  <div class="l">until you wake</div>
+  <div class="l" id="clock-label">until you wake</div>
 </div>
 
 <!-- The dream lets go, and the binder you assembled is what you take to court. -->

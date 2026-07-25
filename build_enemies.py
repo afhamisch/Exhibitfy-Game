@@ -64,6 +64,7 @@ MAT = {
     "shoe": "Shoe_Black",
     "ring": "Binder_Rings",
     "objection": "Paper_Objection",
+    "motion": "Paper_Motion",
 }
 
 # ---------------------------------------------------------------- variants
@@ -161,10 +162,34 @@ VARIANTS = {
     },
 }
 
-# The four that are exhibits, and the three that are objections. Nothing else
-# in this file should hard-code either list.
+VARIANTS["motion"] = {
+    # The boss, and the only thing in the game that outranks the binder: a
+    # motion for summary judgment ends a case without ever reaching trial.
+    #
+    # It is big and slow and it does not flee, because it does not have to. The
+    # smug face is the point -- it is the one document here that believes it has
+    # already won. Seven pages of its own stock, so the thing you are fighting
+    # is visibly a document with pages, which is the whole fight: the prototype
+    # gives it a page count instead of a one-stamp death.
+    "label": "Motion for Summary Judgment",
+    "paper": "motion",
+    "stock": ("motion",),
+    "sheets": 7,
+    "scale": 2.05,
+    "run": {"cadence": 0.58, "stride": 30.0, "bob": 0.078, "lean": 8.0,
+            "sway": 0.016, "flutter": 4.0, "jitter": 0.2, "arm": 24.0,
+            "thud": 1.0},
+    "face": "smug",
+}
+
+# The four that are exhibits, the three that are objections, and the boss.
+# Nothing else in this file should hard-code any of these lists.
 EXHIBITS = ("pleading", "privilege", "binder", "stack")
 OBJECTIONS = ("hearsay", "character", "rule403")
+# Deliberately NOT in the combined enemies.glb. Most players never earn the
+# bonus round, and the boss is 3 MB of page maps they should not have to fetch
+# to find that out -- the prototype loads enemy_motion.glb on qualification.
+BOSS = ("motion",)
 
 RUN_FRAMES = 20         # frames per stride at cadence 1.0; cadence scales it
 STAMP_FRAMES = 26
@@ -340,6 +365,9 @@ def build_enemy(variant, cfg, images):
     def mat_for(key):
         return obj_mat if key == "objection" else MAT[key]
 
+    if cfg["paper"] == "motion" or "motion" in cfg.get("stock", ()):
+        scene.material(Material(MAT["motion"], (1, 1, 1, 1), 0.0, 0.80,
+                                "paper_motion"))
     scene.material(Material(MAT["face"], (1, 1, 1, 1), 0.0, 0.90, "faces"))
     scene.material(Material(MAT["mark"], (1, 1, 1, 1), 0.0, 0.86, "stamp_mark"))
     scene.material(Material(MAT["limb"], hex_srgb("#23252B"), 0.0, 0.62))
@@ -693,12 +721,16 @@ def stamped(scene):
 # ---------------------------------------------------------------- previews
 
 
-def preview(scene, anims, outdir, name, quick=False):
+def preview(scene, anims, outdir, name, quick=False, scale=1.0):
     from tools.render import Camera, render
 
     os.makedirs(outdir, exist_ok=True)
     w, h = (240, 300) if quick else (330, 410)
-    cam = Camera((0.78, 0.60, 1.35), (0.0, 0.33, 0.0), fov_deg=34)
+    # Pull the camera back in proportion to the variant, so every preview frames
+    # its subject the same way. This was a fixed rig set for a 1.0-scale sheet,
+    # which cropped the boss at 2.05 down to its shins.
+    cam = Camera((0.78 * scale, 0.60 * scale, 1.35 * scale),
+                 (0.0, 0.33 * scale, 0.0), fov_deg=34)
     ground = ground_node(scene)
     scene.roots.append(ground)
     made = []
@@ -826,8 +858,9 @@ def main(argv=None):
                  hit.name, len(hit.poses)))
         if not args.no_preview:
             preview(scene, [run, hit], os.path.join(args.out, "previews"),
-                    name, args.quick)
-        absorb(combined, scene, name)
+                    name, args.quick, cfg["scale"])
+        if name not in BOSS:
+            absorb(combined, scene, name)
 
     if len(names) > 1:
         combined.prune()

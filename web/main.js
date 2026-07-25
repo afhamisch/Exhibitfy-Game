@@ -105,6 +105,26 @@ const CFG = {
   // irrelevant. Now the binder has to be HELD. An objection that lands during
   // the hold takes an exhibit back out and the round carries on.
   closeHold: 3.0,
+
+  // ---- the bonus round, and the reason to be fast
+  //
+  // Closing the binder early used to buy nothing: the round simply ended, so a
+  // player who beat the clock by a minute got the same screen as one who
+  // scraped it. Beat it by BONUS_AT and opposing counsel files a motion for
+  // summary judgment instead -- a bonus round you can only lose the bonus in,
+  // never the case you already won.
+  bonusAt: 32,            // seconds that must still be on the clock
+  bonusTime: 40,          // and how long you get for the motion
+  // The boss does not die to one stamp; it has pages, and a Bates stamp is
+  // exactly the tool for that. This is the only health bar in the game and it
+  // is really a page count.
+  bossPages: 8,
+  bossSpeed: 1.15,        // slow -- it does not need to hurry
+  bossTurn: 1.3,
+  bossRadius: 0.62,       // a big target, and it reads that way
+  bossReach: 1.35,        // reaching you means the motion is GRANTED
+  bossObjEvery: 8.0,      // it calls objections in its own defence
+  bossKnockback: 0.55,    // metres a stamp drives it back, so hits read
 };
 
 // The four variants, tuned from what build_enemies.py actually baked rather
@@ -307,8 +327,12 @@ const els = {
   hud: document.getElementById('hud'),
   reticle: document.getElementById('reticle'),
   score: document.getElementById('score'),
+  scoreLabel: document.getElementById('score-label'),
   remaining: document.getElementById('remaining'),
   warn: document.getElementById('warn'),
+  banner: document.getElementById('banner'),
+  bannerTitle: document.getElementById('banner-title'),
+  bannerSub: document.getElementById('banner-sub'),
   inkBox: document.getElementById('inkbox'),
   inkFill: document.getElementById('inkfill'),
   inkLabel: document.getElementById('inklabel'),
@@ -317,6 +341,7 @@ const els = {
   wakeHead: document.getElementById('wake-head'),
   wakeBody: document.getElementById('wake-body'),
   clock: document.getElementById('clock'),
+  clockLabel: document.getElementById('clock-label'),
   clockBox: document.getElementById('wakeclock'),
 };
 
@@ -327,6 +352,8 @@ const state = {
   enemies: [], pods: [], objections: [],
   struck: 0, overruled: 0, sustained: 0, nextObj: CFG.objFirst,
   closing: 0, closeBroken: 0,
+  phase: 'case',          // 'case' -> 'bonus' -> done
+  boss: null, bossHits: 0, bonusWon: false, caseWon: false, timeLeft: 0,
   keys: Object.create(null),
 };
 
@@ -405,6 +432,7 @@ async function boot() {
     g.position.set(x, 0, z);
     scene.add(g);
     state.pods.push({ root: g, home: new THREE.Vector3(x, 0, z),
+                      beacon: g.getObjectByName('Pod_Beacon'),
                       live: true, cooldown: 0, phase: i * 1.4 });
   });
 
@@ -725,6 +753,9 @@ state.DECALS = DECALS;
 state.OBJECTIONS = OBJECTIONS;
 state.insideWalk = insideWalk;          // for tuning from the console
 state.spawnObjection = spawnObjection;      // for tuning from the console
+// `startBonus` is a hoisted function declaration so this is safe here; BOSS_GLB
+// is a const declared with it further down and must NOT be touched from up here.
+state.startBonus = startBonus;              // for tuning from the console
 
 // ---------------------------------------------------------------- input
 els.overlay.addEventListener('click', () => {
@@ -918,6 +949,156 @@ function sustain(e) {
   updateHud();
 }
 
+// ------------------------------------------------------------- bonus round
+
+const BOSS_GLB = `${ASSETS}/enemies/enemy_motion.glb`;
+
+/** Centre of the walkable rectangle furthest from the player, clear of pods. */
+function bossSpawnPoint() {
+  let best = { x: camera.position.x, z: camera.position.z }, bestD = -1;
+  for (const r of WALK) {
+    const x = (r.x0 + r.x1) * 0.5;
+    const z = (r.z0 + r.z1) * 0.5;
+    if (!insideWalk(x, z)) continue;
+    const d = Math.hypot(x - camera.position.x, z - camera.position.z);
+    // keep it out of a pod, or the pod's beacon lands on top of the boss
+    const onPod = state.pods.some(
+      (p) => Math.hypot(p.home.x - x, p.home.z - z) < 1.4);
+    const score = onPod ? d * 0.35 : d;
+    if (score > bestD) { bestD = score; best = { x, z }; }
+  }
+  return best;
+}
+
+/**
+ * Opposing counsel files for summary judgment. Fetched here rather than with the
+ * rest of the assets: it is 664 KB that most players will never see, and making
+ * everyone pay for it up front to find out they were too slow is the wrong way
+ * round. The load happens under the transition card.
+ */
+async function startBonus() {
+  state.phase = 'bonus';
+  state.caseWon = true;
+  state.timeLeft = state.clock;          // banked, and reported in the ending
+  banner('Motion for summary judgment', 'Stamp every page');
+  musicTo(MUSIC.level * 1.15, 0.8);
+
+  let g, clips;
+  try {
+    const gltf = await load(BOSS_GLB);
+    g = gltf.scene;
+    clips = gltf.animations;
+  } catch (err) {
+    // The bonus is a reward, not a requirement: if it will not load, award the
+    // case that was already won rather than stranding the player in an empty
+    // round.
+    console.warn('bonus: boss failed to load —', err && err.message);
+    finishBonus(false);
+    return;
+  }
+
+  // Furthest walkable rectangle from the player, so it has a corridor to come
+  // down. This used to reuse LAYOUT.pods[1], which put the boss inside an ink
+  // pod: the beacon is 1.15 m of emissive orange and it filled the screen the
+  // moment the round began.
+  const spawn = bossSpawnPoint();
+  g.position.set(spawn.x, 0, spawn.z);
+  scene.add(g);
+  const mixer = new THREE.AnimationMixer(g);
+  const run = mixer.clipAction(THREE.AnimationClip.findByName(clips, 'Run'));
+  run.play();
+  const hit = mixer.clipAction(THREE.AnimationClip.findByName(clips, 'Stamped'));
+  hit.setLoop(THREE.LoopOnce, 1);
+  hit.clampWhenFinished = true;
+  state.boss = {
+    root: g, mixer, run, hit, pages: CFG.bossPages, alive: true, dead: 0,
+    heading: 0, flinch: 0, baseScale: g.scale.clone(),
+  };
+  state.clock = CFG.bonusTime;
+  state.nextObj = CFG.bossObjEvery;
+  els.clockLabel.textContent = 'before the ruling';
+  updateHud();
+}
+
+function updateBoss(dt) {
+  const b = state.boss;
+  if (!b) return;
+  if (!b.alive) {
+    b.dead += dt;
+    b.mixer.update(dt);
+    return;
+  }
+  // flinch: a stamped page pulses the whole motion, so a non-fatal hit reads
+  if (b.flinch > 0) {
+    b.flinch = Math.max(0, b.flinch - dt * 3.4);
+    const k = 1 + Math.sin(b.flinch * Math.PI) * 0.09;
+    b.root.scale.set(b.baseScale.x * k, b.baseScale.y / k, b.baseScale.z * k);
+  }
+
+  tmpV.copy(b.root.position).sub(camera.position);
+  tmpV.y = 0;
+  const dist = tmpV.length();
+  if (dist <= CFG.bossReach) {           // granted: the case never reaches trial
+    finishBonus(false, true);
+    return;
+  }
+
+  let want = Math.atan2(tmpV.x, tmpV.z);
+  let diff = ((want - b.heading + Math.PI) % (Math.PI * 2)) - Math.PI;
+  if (diff < -Math.PI) diff += Math.PI * 2;
+  b.heading += THREE.MathUtils.clamp(diff, -CFG.bossTurn * dt, CFG.bossTurn * dt);
+  const mv = resolveMove(b.root.position,
+                         -Math.sin(b.heading) * CFG.bossSpeed * dt,
+                         -Math.cos(b.heading) * CFG.bossSpeed * dt);
+  if (mv.dx === 0 && mv.dz === 0) b.heading += 1.8 * dt;
+  b.root.position.x += mv.dx;
+  b.root.position.z += mv.dz;
+  b.root.rotation.y = b.heading;
+  b.mixer.update(dt);
+}
+
+/** A stamp landed on the motion: number the page. */
+function stampBoss() {
+  const b = state.boss;
+  b.pages -= 1;
+  state.bossHits += 1;
+  b.flinch = 1;
+  // drive it back, so eight stamps is a fight you can feel winning
+  const back = new THREE.Vector3()
+    .subVectors(b.root.position, camera.position);
+  back.y = 0;
+  if (back.lengthSq() > 1e-6) {
+    back.normalize().multiplyScalar(CFG.bossKnockback);
+    const mv = resolveMove(b.root.position, back.x, back.z);
+    b.root.position.x += mv.dx;
+    b.root.position.z += mv.dz;
+  }
+  updateHud();
+  if (b.pages <= 0) {
+    b.alive = false;
+    b.dead = 0;
+    b.run.fadeOut(0.1);
+    b.hit.reset().play();
+    b.root.scale.copy(b.baseScale);
+    sfx.stamp(true);
+    finishBonus(true);
+  } else {
+    sfx.stamp(true);
+    warn(`Page numbered — ${b.pages} to go`);
+  }
+}
+
+/**
+ * The bonus ends. `granted` means the motion reached you, which is a loss of the
+ * bonus only: the case was already won on the binder before any of this began.
+ */
+function finishBonus(won, granted) {
+  if (state.done) return;
+  state.bonusWon = !!won;
+  state.bonusGranted = !!granted;
+  finish(true, true);
+}
+
 /**
  * A complete binder has to be held for closeHold before the case is closed, so
  * an objection can still take it apart on the last second.
@@ -939,6 +1120,18 @@ function updateClosing(dt) {
   if (state.closing >= CFG.closeHold) finish(true);
 }
 
+function updateBonusClock(dt) {
+  state.clock = Math.max(0, state.clock - dt);
+  const s = Math.ceil(state.clock);
+  els.clock.textContent = `0:${String(s % 60).padStart(2, '0')}`;
+  els.clock.classList.toggle('low', state.clock <= 12);
+  if (s !== state.lastTickS) {
+    state.lastTickS = s;
+    if (state.clock > 0 && state.clock <= 12) sfx.tick();
+  }
+  if (state.clock === 0) finishBonus(false);
+}
+
 function updatePods(dt) {
   for (const p of state.pods) {
     if (!p.live) {
@@ -954,10 +1147,16 @@ function updatePods(dt) {
                       + Math.sin(state.t * 2.1 + p.phase) * 0.045;
     p.root.rotation.y += dt * 1.5;
 
-    if (state.ink >= CFG.inkMax) continue;      // full: leave it standing
     tmpV.copy(p.home).sub(camera.position);
     tmpV.y = 0;
-    if (tmpV.length() > CFG.podRadius) continue;
+    const near = tmpV.length();
+    // The beacon is for finding a pod across a room; up close it is a wall of
+    // orange across the middle of the screen. On full ink a pod is not picked
+    // up at all, so the player can stand inside one indefinitely -- switch the
+    // beacon off before that happens.
+    if (p.beacon) p.beacon.visible = near > CFG.podRadius * 1.9;
+    if (state.ink >= CFG.inkMax) continue;      // full: leave it standing
+    if (near > CFG.podRadius) continue;
     p.live = false;
     p.cooldown = CFG.podRespawn;
     p.root.visible = false;
@@ -983,6 +1182,20 @@ function aimStrike() {
 
 function resolveHit() {
   aimStrike();
+
+  // The motion is the biggest thing on the floor and the only one with pages
+  // left to number, so during the bonus it is checked before anything else.
+  const b = state.boss;
+  if (b && b.alive) {
+    tmpV.copy(b.root.position).sub(strike);
+    tmpV.y = 0;
+    if (tmpV.length() <= CFG.strikeRadius + CFG.bossRadius) {
+      stampBoss();
+      state.lastProbe = { at: performance.now(), nearest: tmpV.length(),
+                          hit: true, boss: true };
+      return true;
+    }
+  }
 
   // Objections are checked first and win ties outright. They are the only thing
   // on the floor that can take a number off the board, so when one is inside
@@ -1034,6 +1247,18 @@ function resolveHit() {
 }
 
 function updateHud() {
+  if (state.phase === 'bonus') {
+    const b = state.boss;
+    const pages = b ? b.pages : CFG.bossPages;
+    // "FILED 8 / 8" is the wrong noun entirely once the binder is closed
+    els.scoreLabel.textContent = 'UNSTAMPED';
+    els.score.textContent = `${pages} / ${CFG.bossPages}`;
+    els.score.classList.remove('struck');
+    els.remaining.textContent = pages > 0
+      ? 'pages of summary judgment' : 'motion denied';
+    return;
+  }
+  els.scoreLabel.textContent = 'FILED';
   const total = state.enemies.length;
   els.score.textContent = `${state.filed} / ${total}`;
   const left = state.enemies.filter((e) => e.alive).length;
@@ -1055,6 +1280,16 @@ function warn(text) {
   els.warn.classList.add('on');
   clearTimeout(warnTimer);
   warnTimer = setTimeout(() => els.warn.classList.remove('on'), 2200);
+}
+
+/** The bigger, slower card that announces a phase change. */
+let bannerTimer = null;
+function banner(title, sub) {
+  els.bannerTitle.textContent = title;
+  els.bannerSub.textContent = sub || '';
+  els.banner.classList.add('on');
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => els.banner.classList.remove('on'), 3400);
 }
 
 function updateClock(dt) {
@@ -1104,6 +1339,19 @@ const VERDICTS = [
       + 'no memory of doing the work.' },
 ];
 
+// Above the verdict table entirely: you do not get here by winning the case, you
+// get here by winning it early enough that opposing counsel tried to end it
+// without a trial, and then numbering every page of the motion they filed.
+const LAWYER_OF_THE_YEAR = {
+  tag: 'Motion denied · Lawyer of the Year',
+  head: 'You wake up famous.',
+  body: 'The binder was closed with time to spare, so they moved for summary '
+      + 'judgment — and you Bates-stamped it. Every page. The motion is denied '
+      + 'in a two-line order, the case is yours, and somebody has put your name '
+      + 'on a plaque in a hotel ballroom. You still cannot remember doing any '
+      + 'of it.',
+};
+
 /** Which ruling a binder of `filed` out of `total` earns. */
 function verdictFor(filed, total) {
   const k = Math.max(0, Math.min(1, filed / Math.max(1, total)));
@@ -1116,8 +1364,15 @@ state.VERDICTS = VERDICTS;
  * The dream lets go — either because the binder is closed, or because the night
  * ran out and closed it for you. Either way you are due in court.
  */
-function finish(complete) {
+function finish(complete, fromBonus) {
   if (state.done) return;
+  // Closing the binder with time to spare does not end the round -- it earns
+  // one. Only reachable from the case phase, so the bonus cannot recurse.
+  if (complete && !fromBonus && state.phase === 'case'
+      && state.clock >= CFG.bonusAt) {
+    startBonus();
+    return;
+  }
   state.done = true;
   // pull the bed down so the sting lands in the clear, then let it go
   musicTo(MUSIC.level * 0.28, 0.5);
@@ -1125,11 +1380,23 @@ function finish(complete) {
   setTimeout(() => { musicTo(0, 2.2); MUSIC.on = false; }, 900);
 
   const total = state.enemies.length;
-  const v = verdictFor(state.filed, total);
+  const v = state.bonusWon ? LAWYER_OF_THE_YEAR : verdictFor(state.filed, total);
   els.wakeTag.textContent = v.tag;
   els.wakeHead.textContent = v.head;
   let body = v.body;
   if (!complete) body += ` You woke with ${state.filed} of ${total} filed.`;
+  // The bonus can only be lost, never the case: say so plainly, because losing
+  // a round you were awarded for winning reads as a punishment otherwise.
+  if (state.phase === 'bonus' && !state.bonusWon) {
+    const left = state.boss ? state.boss.pages : CFG.bossPages;
+    body += state.bonusGranted
+      ? ` Summary judgment was granted with ${left} page`
+        + `${left === 1 ? '' : 's'} still unnumbered — but the binder was already`
+        + ' closed, and the verdict on it stands.'
+      : ` You closed the binder ${Math.round(state.timeLeft)}s early and drew a`
+        + ` motion for summary judgment; ${left} page${left === 1 ? '' : 's'}`
+        + ' went unnumbered before you woke. The verdict on the binder stands.';
+  }
   if (state.struck > 0) {
     body += ` ${state.struck} exhibit${state.struck === 1 ? ' was' : 's were'} `
           + `struck from the record on ${state.sustained} sustained `
@@ -1292,13 +1559,22 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   state.t += dt;
   if (state.ready && controls.isLocked) {
-    updateClock(dt);
-    updatePlayer(dt);
-    updateSwing(dt);
-    updateEnemies(dt);
-    updateObjections(dt);
-    updateClosing(dt);
-    updatePods(dt);
+    if (state.phase === 'bonus') {
+      updateBonusClock(dt);
+      updatePlayer(dt);
+      updateSwing(dt);
+      updateObjections(dt);      // the motion keeps calling them
+      updateBoss(dt);
+      updatePods(dt);
+    } else {
+      updateClock(dt);
+      updatePlayer(dt);
+      updateSwing(dt);
+      updateEnemies(dt);
+      updateObjections(dt);
+      updateClosing(dt);
+      updatePods(dt);
+    }
   }
   if (state.armMixer) state.armMixer.update(dt);
   pumpMusic();
@@ -1320,8 +1596,16 @@ function animate() {
     state.shake = state.shake < 0.002 ? 0 : state.shake * Math.exp(-6 * dt);
     const a = state.shake * 0.020;
     camera.rotation.z = Math.sin(state.t * 47.0) * a;
-  } else if (camera.rotation.z !== 0) {
+    state.rolled = true;
+    if (!state.shake) { camera.rotation.z = 0; state.rolled = false; }
+  } else if (state.rolled) {
+    // Clear the roll once, on the frame the shake ends -- not every frame
+    // forever. Writing a single Euler component re-derives the whole camera
+    // quaternion from the decomposed Euler, so an unconditional `rotation.z = 0`
+    // silently destroys any roll another system introduced. It was harmless
+    // here only because PointerLockControls keeps z at zero anyway.
     camera.rotation.z = 0;
+    state.rolled = false;
   }
 
   renderer.render(scene, camera);

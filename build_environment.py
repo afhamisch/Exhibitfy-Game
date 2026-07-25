@@ -617,7 +617,11 @@ def piece_ink_pod(scene):
             beam.add_vertex((hw * ax[0], y, hw * ax[1]),
                             (u, (y - y0) / (y1 - y0)))
         beam.add_face((base, base + 1, base + 2, base + 3), 0)
-    root.add_mesh(beam)
+    # Its own node, not a mesh on the root: the beacon exists to be seen from
+    # the far end of a corridor, and at arm's length it fills the screen. The
+    # consumer needs to be able to switch it off, and the exporter merges every
+    # mesh on a node into one primitive, so separating it here is the only way.
+    root.add(Node("Pod_Beacon", meshes=[beam]))
     return root
 
 

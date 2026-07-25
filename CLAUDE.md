@@ -114,6 +114,13 @@ prefixed `<variant>_` and clips are `<variant>_Run` / `<variant>_Stamped`,
 because three.js binds animation tracks **by node name** and seven subtrees all
 calling their root `Rig` would cross-bind.
 
+**The boss is `BOSS` and is deliberately NOT in the combined file.** `motion` —
+the Motion for Summary Judgment, 2,088 tris at scale 2.05 — ships only as
+`enemy_motion.glb`, because it belongs to a bonus round most players never reach
+and 664 KB is too much to charge everyone to find that out. The prototype
+fetches it on qualification. Its clips are plain `Run` / `Stamped`, not prefixed,
+since it loads alone.
+
 **`absorb()` merges materials by NAME.** Two variants that define the same
 material name with different contents silently collapse to whichever was
 absorbed last, and only in the combined file — the per-variant GLBs stay
@@ -160,7 +167,7 @@ the floor. Both were tried and measured.
 | Clip | Frames | fps | Notes |
 |---|---:|---:|---|
 | `Stamp_Swing` | **23** | 30 | 0.733 s. 15 animated nodes, 45 channels, 23 keys each. Impact frames 11–13, trigger on 11. Frames 0 and 22 bit-identical. |
-| `Run` | **per variant** | 30 | Looping, one full stride: pleading 21 · privilege 19 · binder 31 · stack 17 · hearsay 25 · character 20 · rule403 18 keys. Last key repeats frame 0 bit-identically. |
+| `Run` | **per variant** | 30 | Looping, one full stride: pleading 21 · privilege 19 · binder 31 · stack 17 · hearsay 25 · character 20 · rule403 18 · motion 35 keys. Last key repeats frame 0 bit-identically. |
 | `Stamped` | **26** | 30 | One-shot. Squash on frame 4, Bates impression at 1.28× overshoot. |
 
 The office kit is static.
@@ -171,7 +178,7 @@ The office kit is static.
 
 ```
 pleading 38    privilege 27    binder 20    stack 44
-hearsay  58    character  64   rule403 70
+hearsay  58    character  64   rule403 70    motion 24
 ```
 
 **Never normalize these toward each other.** They encode personality — the
