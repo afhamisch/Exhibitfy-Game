@@ -115,7 +115,11 @@ const CFG = {
   // summary judgment instead -- a bonus round you can only lose the bonus in,
   // never the case you already won.
   bonusAt: 32,            // seconds that must still be on the clock
-  bonusTime: 40,          // and how long you get for the motion
+  // Thirty seconds, and what matters is how many you survive in them rather
+  // than working through a fixed pile. A count makes the round a checklist you
+  // finish; a clock makes it an endurance test you score on, which is what
+  // gives it tiers worth replaying for.
+  bonusTime: 30,
   // The boss does not die to one stamp; it has pages, and a Bates stamp is
   // exactly the tool for that. This is the only health bar in the game and it
   // is really a page count.
@@ -123,11 +127,11 @@ const CFG = {
   // is the one part of this game that is not about the stamp at all. He throws
   // binders down the corridor and the whole round is whether you get out of
   // the way, so the numbers below are all about the dodge window.
-  bossThrows: 8,          // survive this many and the motion is denied
+  // No throw limit any more -- he keeps going until the clock does.
   bossRange: 7.2,         // how far down the corridor he sets up
   bossWindup: 0.40,       // release lands on frame 12 of a 30-frame Throw
-  bossCycle: 2.10,        // seconds between throws, tightened as it goes
-  bossCycleMin: 1.15,
+  bossCycle: 1.05,        // seconds between throws, tightened as it goes
+  bossCycleMin: 0.45,     // by the end there are two in the air at once
   binderSpeed: 7.4,       // m/s -- about a second of flight at his range
   // These two add up to the width of the kill zone, and the first pass had
   // them at 0.42 + 0.40 = 0.82 m of RADIUS -- a 1.64 m corridor of death from
@@ -143,6 +147,25 @@ const CFG = {
   binderSpin: 9.0,        // rad/s, end over end
   binderLead: 0.20,       // he leads your movement, but not perfectly
   playerRadius2: 0.28,    // shoulders
+
+  // ---- deflection
+  //
+  // The stamp is not useless in here after all: swing at a binder in your face
+  // and you knock it out of the air. But never twice running -- after a
+  // deflection the next one has to be dodged, which stops the round collapsing
+  // into standing still and swinging on a metronome. It is a get-out for the
+  // one you read too late, not a strategy.
+  deflectRange: 2.30,     // how far ahead of the eye a swing can reach one
+  deflectSpeed: 5.0,      // m/s it leaves at, back the way it came
+  // Tiers, on binders survived -- dodged or deflected, both count as not
+  // having been hit by a binder.
+  // Measured against what he actually throws rather than picked: the first
+  // cadence produced 14 binders in the 30 s, which made a 16-survived plaque
+  // arithmetically impossible. At 1.05 -> 0.45 s he throws 15 to 18, so the
+  // plaque asks for nearly all of them and Super Lawyer for about half.
+  tierLawyer: 13,
+  tierSuper: 8,
+  tierDisbarred: 3,       // this many or fewer and the round is a disaster
   bossObjEvery: 8.0,      // he calls objections in his own defence
   // What one costs if it lands in there. Seconds, not exhibits: see sustain().
   objBonusCost: 4.0,
@@ -410,6 +433,7 @@ const state = {
   phase: 'case',          // 'case' -> 'bonus' -> done
   boss: null, bossHits: 0, bonusWon: false, caseWon: false, timeLeft: 0,
   binders: [], binderHits: 0, lastX: 0, lastZ: 0, swearT: 0,
+  deflects: 0, deflectReady: true, survived: 0, bonusTier: null,
   keys: Object.create(null),
 };
 
@@ -782,6 +806,13 @@ const sfx = {
     const t = AC.currentTime;
     playTone(t, 0.13, 'sawtooth', 190, 120, 0.24, at);
     playNoise(t + 0.04, 0.14, 'highpass', 900, 2000, 0.30, 1.0, at);
+  },
+  deflect() {                                // stamp meets binder board
+    if (!AC) return;
+    const t = AC.currentTime;
+    playTone(t, 0.09, 'square', 420, 180, 0.55);
+    playNoise(t, 0.13, 'bandpass', 2400, 700, 0.50, 1.4);
+    playTone(t + 0.03, 0.20, 'triangle', 784, 988, 0.22);
   },
   whoosh() {                                 // it went past your ear
     if (!AC) return;
@@ -1370,7 +1401,7 @@ function updateBoss(dt) {
   if (Math.random() < dt * 0.28) swear();
 
   b.next -= dt;
-  if (b.next <= 0 && seen && b.thrown < CFG.bossThrows) {
+  if (b.next <= 0 && seen) {
     b.winding = 0;
     // Aim is locked HERE, at the start of the wind-up, not at the release.
     // The corridor is 1.72 m wide and the player can only be 0.86 m off its
@@ -1382,8 +1413,9 @@ function updateBoss(dt) {
     b.aimZ = camera.position.z + (camera.position.z - state.lastZ) * CFG.binderLead * 30;
     b.throwA.reset().play();
     sfx.windup(b.root.position.x, b.root.position.z);
-    // He speeds up as he goes: the last two come at you noticeably harder.
-    const k = b.thrown / Math.max(1, CFG.bossThrows - 1);
+    // He winds up through the round: by the last third there is one in the
+    // air while he is already cocking the next.
+    const k = Math.min(1, 1 - state.clock / CFG.bonusTime);
     b.next = CFG.bossCycle + (CFG.bossCycleMin - CFG.bossCycle) * k
            + CFG.bossWindup;
   }
@@ -1416,7 +1448,34 @@ function throwBinder() {
   updateHud();
 }
 
+/**
+ * A swing in progress protects you for as long as it lasts.
+ *
+ * Not a test on the impact frame: the die lands 0.367 s after the click and a
+ * binder covers 2.7 m in that time, so by the time the strike resolved the
+ * thing was already past you or on you -- measured, zero deflections in three
+ * attempts that were aimed correctly. The whole swing is the window instead,
+ * which is what "swing at it" means to anybody playing.
+ */
+function tryDeflect() {
+  if (!state.swinging || !state.deflectReady || state.phase !== 'bonus') return;
+  camera.getWorldDirection(fwd);
+  fwd.y = 0;
+  fwd.normalize();
+  for (const p of state.binders) {
+    if (p.done || p.deflected) continue;
+    const dx = p.root.position.x - camera.position.x;
+    const dz = p.root.position.z - camera.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d > CFG.deflectRange) continue;
+    if (dx * fwd.x + dz * fwd.z <= 0.0) continue;    // behind you
+    deflectBinder(p);
+    return;
+  }
+}
+
 function updateBinders(dt) {
+  tryDeflect();
   for (const p of state.binders) {
     if (p.done) continue;
     p.life += dt;
@@ -1440,7 +1499,7 @@ function updateBinders(dt) {
         || p.root.position.y < 0.05) {
       p.done = true;
       scene.remove(p.root);
-      dodgedBinder();
+      if (!p.deflected) dodgedBinder();   // a deflection already scored
     }
   }
   if (state.binders.some((p) => p.done)) {
@@ -1448,36 +1507,83 @@ function updateBinders(dt) {
   }
 }
 
-/** One got past you. */
+/** One went past you. */
 function dodgedBinder() {
   const b = state.boss;
   if (!b || !b.alive) return;
   b.dodged += 1;
+  // A binder resolving without a deflection re-arms the stamp: the rule is no
+  // two deflections in a row, not one deflection per round.
+  state.deflectReady = true;
   sfx.whoosh();
   updateHud();
-  if (b.dodged + state.binderHits >= CFG.bossThrows) settleBonus();
 }
 
 /** One did not. */
 function hitByBinder() {
   const b = state.boss;
   state.binderHits += 1;
+  state.deflectReady = true;      // being hit also re-arms it
   state.shake = 1;
   state.kick = 1;
   sfx.ouch();
   swear(true);
   if (b && b.alive) { b.idle.stop(); b.gloat.reset().play(); b.idle.play(); }
   updateHud();
-  if (b && b.dodged + state.binderHits >= CFG.bossThrows) settleBonus();
 }
 
-/** Every binder is accounted for: did you take all eight without one landing? */
+/** Batted out of the air. Counts as survived, and locks the stamp for one. */
+function deflectBinder(p) {
+  const b = state.boss;
+  p.dir.set(-p.dir.x, 0.35, -p.dir.z).normalize();
+  p.spin *= -2.2;
+  p.deflected = true;
+  p.life = 2.4;                   // it is somebody else's problem now
+  if (b) b.deflected = (b.deflected || 0) + 1;
+  state.deflects += 1;
+  state.deflectReady = false;     // the next one has to be dodged
+  state.kick = 0.8;
+  sfx.deflect();
+  warn('Deflected — the next one you dodge');
+  updateHud();
+}
+
+/**
+ * Work out the tier from the counters. Idempotent, and called both by
+ * settleBonus and by finish(), so any path out of the round scores it.
+ *
+ * The belt and braces is cheap and worth it, but the bug that appeared to
+ * demand it was not real: a test kept reporting "no tier, ending says Verdict
+ * for the defense", which is the placeholder text sitting in index.html's
+ * #wake-tag. Its poll ran 100 s of wall clock, and headless game time runs
+ * about a quarter of that -- it was giving up before a 30 s round could end
+ * and reading the markup default. Check that the round actually finished
+ * before believing anything about how it finished.
+ */
+function scoreBonus() {
+  const b = state.boss;
+  const survived = b ? b.dodged + (b.deflected || 0) : 0;
+  state.survived = survived;
+  state.bonusTier = survived >= CFG.tierLawyer ? 'lawyer'
+    : survived >= CFG.tierSuper ? 'super'
+    : survived <= CFG.tierDisbarred ? 'disbarred' : 'plain';
+  return state.bonusTier;
+}
+state.scoreBonus = scoreBonus;
+
+/**
+ * The clock ran out. Score what you survived.
+ *
+ * Both a dodge and a deflection count: the round asks whether a binder got
+ * you, and either way one did not.
+ */
 function settleBonus() {
   const b = state.boss;
   if (!b || !b.alive) return;
   b.alive = false;
   b.dead = 0;
-  finishBonus(state.binderHits === 0);
+  scoreBonus();
+  finishBonus(state.bonusTier === 'lawyer');
 }
 
 /**
@@ -1521,7 +1627,7 @@ function updateBonusClock(dt) {
     state.lastTickS = s;
     if (state.clock > 0 && state.clock <= 12) sfx.tick();
   }
-  if (state.clock === 0) finishBonus(false);
+  if (state.clock === 0) settleBonus();
 }
 
 function updatePods(dt) {
@@ -1575,9 +1681,9 @@ function aimStrike() {
 function resolveHit() {
   aimStrike();
 
-  // Counsel is deliberately NOT a target. He is a person rather than a
+  // Counsel himself is deliberately NOT a target. He is a person rather than a
   // document, the stamp indexes documents, and swinging at him is the joke:
-  // the round is a dodge, and the one tool you have does not solve it.
+  // the round is a dodge, and the one tool you have does not solve it for you.
 
   // Objections are checked first and win ties outright. They are the only thing
   // on the floor that can take a number off the board, so when one is inside
@@ -1639,13 +1745,14 @@ function resolveHit() {
 function updateHud() {
   if (state.phase === 'bonus') {
     const b = state.boss;
-    const dodged = b ? b.dodged : 0;
-    els.scoreLabel.textContent = 'DODGED';
-    els.score.textContent = `${dodged} / ${CFG.bossThrows}`;
+    const survived = b ? b.dodged + (b.deflected || 0) : 0;
+    els.scoreLabel.textContent = 'SURVIVED';
+    els.score.textContent = `${survived}`;
     els.score.classList.toggle('struck', state.binderHits > 0);
-    els.remaining.textContent = state.binderHits > 0
-      ? `${state.binderHits} binder${state.binderHits === 1 ? '' : 's'} got you`
-      : 'binders thrown at you';
+    els.remaining.textContent = survived >= CFG.tierLawyer
+      ? 'lawyer of the year'
+      : survived >= CFG.tierSuper ? `super lawyer · ${CFG.tierLawyer} for the plaque`
+      : `${CFG.tierSuper} for super lawyer`;
     return;
   }
   els.scoreLabel.textContent = 'FILED';
@@ -1758,10 +1865,33 @@ const LAWYER_OF_THE_YEAR = {
   head: 'You wake up famous.',
   body: 'The binder was closed with time to spare, so opposing counsel came '
       + 'down the corridor himself and threw his entire discovery production at '
-      + 'your head, one binder at a time. Not one of them touched you. The '
-      + 'motion is denied in a two-line order, the case is yours, and somebody '
-      + 'has put your name on a plaque in a hotel ballroom. You still cannot '
-      + 'remember doing any of it.',
+      + 'your head for thirty seconds. You are still standing and most of it is '
+      + 'on the carpet behind you. The motion is denied in a two-line order, the '
+      + 'case is yours, and somebody has put your name on a plaque in a hotel '
+      + 'ballroom. You still cannot remember doing any of it.',
+};
+
+// Second place, and the one most players who take the round seriously will
+// actually see: you stayed on your feet, you just were not perfect.
+const SUPER_LAWYER = {
+  tag: 'Motion denied · Super Lawyer',
+  head: 'You wake up respected.',
+  body: 'Opposing counsel threw his entire discovery production at your head '
+      + 'and most of it went past you. The motion is denied, the case is '
+      + 'yours, and a magazine nobody reads puts you on a list of people to '
+      + 'watch. Not the plaque. A list.',
+};
+
+// And the floor. Being hit by that many binders in thirty seconds is not bad
+// luck, it is a pattern of conduct.
+const DISBARRED = {
+  tag: 'In re Rexington · disbarment',
+  head: 'You wake up unemployed.',
+  body: 'You stood in a corridor while a man threw thirty seconds of discovery '
+      + 'at you and you barely moved. Someone filmed it. The binder you '
+      + 'assembled is immaculate and it does not matter, because the panel has '
+      + 'seen the footage and the question before it was never really about '
+      + 'the exhibits.',
 };
 
 // Endings that beat the verdict table because what you did is a better story
@@ -1817,6 +1947,12 @@ function verdictFor(filed, total) {
  */
 function endingFor(s, total) {
   if (s.bonusWon) return LAWYER_OF_THE_YEAR;
+  // The tiers outrank the joke endings and the verdict table alike: what
+  // happened in that corridor is the most recent and most vivid thing about
+  // this dream. Disbarment beats a won case on purpose -- the binder being
+  // perfect is the joke, not a defence.
+  if (s.bonusTier === 'super') return SUPER_LAWYER;
+  if (s.bonusTier === 'disbarred') return DISBARRED;
   return SPECIALS.find((sp) => sp.when(s)) || verdictFor(s.filed, total);
 }
 state.verdictFor = verdictFor;
@@ -1903,7 +2039,8 @@ function restart() {
     redactions: 0, overRedacted: 0, privilegeSaved: false, waived: false,
     misses: 0, closing: 0, closeBroken: 0,
     phase: 'case', bossHits: 0, binderHits: 0, bonusWon: false,
-    bonusGranted: false,
+    bonusGranted: false, deflects: 0, deflectReady: true, survived: 0,
+    bonusTier: null,
     caseWon: false, timeLeft: 0, kick: 0, shake: 0, rolled: false,
   });
   state.round = (state.round || 0) + 1;   // fences timers owned by the last one
@@ -1936,6 +2073,8 @@ function restart() {
   musicTo(MUSIC.level, 0.8);
 }
 state.restart = restart;
+state.finishRef = finish;
+state.settleBonusRef = settleBonus;
 
 /**
  * The dream lets go — either because the binder is closed, or because the night
@@ -1951,6 +2090,12 @@ function finish(complete, fromBonus) {
     return;
   }
   state.done = true;
+  // Whoever got here, if it was during the bonus the round still has to be
+  // scored -- see scoreBonus.
+  if (state.phase === 'bonus' && !state.bonusTier) {
+    scoreBonus();
+    state.bonusWon = state.bonusTier === 'lawyer';
+  }
   // pull the bed down so the sting lands in the clear, then let it go
   musicTo(MUSIC.level * 0.28, 0.5);
   sfx.sting(complete);
@@ -1973,13 +2118,17 @@ function finish(complete, fromBonus) {
   if (!complete) body += ` You woke with ${state.filed} of ${total} filed.`;
   // The bonus can only be lost, never the case: say so plainly, because losing
   // a round you were awarded for winning reads as a punishment otherwise.
-  if (state.phase === 'bonus' && !state.bonusWon) {
+  if (state.phase === 'bonus') {
     const n = state.binderHits;
+    const d = state.deflects;
     body += ` You closed the binder ${Math.round(state.timeLeft)}s early, which`
           + ' brought opposing counsel down the corridor in person with an'
-          + ` armful of discovery. ${n} of them hit you`
-          + `${n === 1 ? '' : ''} before you woke up, so the plaque goes to`
-          + ' somebody else. The verdict on the binder stands.';
+          + ` armful of discovery: ${state.survived} of them went past you`
+          + (d > 0 ? `, ${d} swatted out of the air with the stamp` : '')
+          + (n > 0 ? `, and ${n} did not.` : ', and none of them landed.');
+    if (state.bonusTier !== 'disbarred') {
+      body += ' The verdict on the binder stands.';
+    }
   }
   if (state.struck > 0) {
     body += ` ${state.struck} exhibit${state.struck === 1 ? ' was' : 's were'} `

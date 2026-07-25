@@ -158,6 +158,25 @@ release is a contract between the two files. The thrown binder is not a new
 asset — it is the walking binder's `Body` subtree out of `enemies.glb`, legs
 left behind.
 
+**Thirty seconds, scored on what you survive.** He throws until the clock runs
+out — 15 to 18 binders, measured, not assumed — and the tiers are read off that:
+`tierLawyer` 13 for Lawyer of the Year, `tierSuper` 8 for Super Lawyer,
+`tierDisbarred` 3 or fewer for disbarment. Set a tier above what he actually
+throws and it is arithmetically unreachable; the first pass asked for 16 out of
+14. Re-measure before touching those numbers.
+
+**Disbarment outranks the won case on purpose.** Every other bonus outcome
+leaves the verdict standing; standing still while a man throws thirty seconds
+of discovery at you does not. The binder being immaculate is the joke, not a
+defence.
+
+**Deflection is a swing-long window, not an impact test.** The die lands
+0.367 s after the click and a binder covers 2.7 m in that time, so a check on
+the impact frame deflects nothing — measured, zero from three correctly aimed
+attempts. `tryDeflect()` runs every frame the swing is up. **Never two in a
+row:** a deflection disarms it until some binder resolves by dodge or hit,
+which is what stops the round becoming a metronome.
+
 **Aim is locked at the start of the wind-up, never at the release.** The
 walkable strip is 1.72 m wide, so a full sidestep from the centreline is
 0.86 m; against a 0.48 m hit radius that is 0.38 m of margin. Aiming where the
