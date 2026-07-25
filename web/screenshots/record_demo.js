@@ -327,7 +327,9 @@ async function record(browser, framesPath) {
   execFileSync(FFMPEG, ['-hide_banner', '-loglevel', 'error',
     '-f', 'image2pipe', '-c:v', 'mjpeg', '-r', String(FPS),
     '-i', 'file:' + best.path,
-    '-c:v', 'libvpx', '-b:v', '2500k',
+    // 1400k holds up at 960x600 and keeps a half-minute reel around 5 MB;
+    // 2500k looked no better and cost 9.3.
+    '-c:v', 'libvpx', '-b:v', '1400k',
     '-pix_fmt', 'yuv420p', '-y', webm], { stdio: 'inherit' });
   console.log('wrote', webm,
     (fs.statSync(webm).size / 1048576).toFixed(2) + ' MB');

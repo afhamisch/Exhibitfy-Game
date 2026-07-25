@@ -6,10 +6,13 @@ viewmodel with its `Stamp_Swing` clip, the seven paper enemies out of the
 shared-texture `enemies.glb`, the boss out of `enemy_motion.glb`, and the
 modular office kit. No geometry is authored here.
 
-**[▶ Watch a full run](screenshots/gameplay_demo.webm)** (35 s, silent) —
+**[▶ Watch a full run](screenshots/gameplay_demo.webm)** (31 s, silent) —
 chasing the four documents down, redacting the privileged one before stamping
-it, overruling two objections, closing the binder, and the Motion for Summary
-Judgment that turns up when you close it early.
+it, overruling an objection, closing the binder with 28 s to spare, and then
+numbering all eight pages of the Motion for Summary Judgment that turns up
+because of it. It ends on Lawyer of the Year, which is the run's actual
+outcome and not a scripted one: the bot wins that fight about one attempt in
+three, so the harness records up to `tries` runs and keeps the best.
 
 The capture harness stubs `requestAnimationFrame` and steps the page one frame
 at a time. It has to: this renders on SwiftShader at a few frames a second, so
@@ -18,6 +21,17 @@ recording in real time gives choppy slow motion. The game clamps its delta with
 20 fps timestep, and footage that plays at true speed however long the capture
 took. It is driven by a bot rather than a scripted camera path, so it cannot
 desync from enemies that move on their own.
+
+```bash
+node web/screenshots/record_demo.js [max-seconds] [tries]
+```
+
+The capture stops 2.5 s after the ending screen rather than at a frame count,
+so there is no dead time on the end. The bot's one concession to the camera is
+pulling the first objection forward — a competent run closes the binder before
+the first one is due at 22 s, so the mechanic would otherwise never appear. The
+one thing it is bad at is corners: it walks a straight line at its target, and
+the office is a corridor kit, so it needs a sidestep watchdog to get round them.
 
 ![corridor](screenshots/prototype_corridor.png)
 
