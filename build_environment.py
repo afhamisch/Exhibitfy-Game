@@ -56,6 +56,7 @@ MAT = {
     "glow": "Light_Fluorescent",
     "steel": "Steel_Trim",
     "ink": "Ink_Exhibitfy",
+    "ink_glow": "Ink_Beacon",
 }
 
 
@@ -90,6 +91,11 @@ def materials(scene):
     # which is not something you can be asked to detour towards.
     scene.material(Material(MAT["ink"], hex_srgb("#D93E15"), 0.0, 0.34,
                             emissive=hex_srgb("#5E1A08")))
+    # The beacon is meant to be seen and not lit by: fully emissive, so it holds
+    # its colour at the end of a corridor where the troffers do not reach, and
+    # double-sided so a thin cone does not vanish when viewed from inside it.
+    scene.material(Material(MAT["ink_glow"], hex_srgb("#F2602B"), 0.0, 0.9,
+                            emissive=hex_srgb("#F2602B"), double_sided=True))
 
 
 # ------------------------------------------------------------------ helpers
@@ -539,13 +545,21 @@ def piece_ink_pod(scene):
     four times and respawns them, so it is built at 14 sides rather than the
     kit's usual 16 and carries no unique texture.
 
-    Sized as a one-litre refill bottle rather than a desk-tidy inkwell, at
-    0.29 m. That is still real scale for the shelf it came off, and it is the
-    smallest it can be and still be findable from the other end of a corridor.
+    Sized off what it has to survive on screen, not off a real ink bottle. The
+    longest sightline the layout can produce is about 12 m, and measured at
+    1100x690 the pod covers:
+
+        0.30 m tall ->  9 x 13 px      0.40 m ->  14 x 18      0.51 m -> 19 x 23
+
+    A 9 px speck is not something a player can be asked to detour towards, so
+    this is built at 0.40 m -- a bulk refill jug rather than a desk inkwell, and
+    the point past which it stops reading as something you would pour from. The
+    rest of the legibility comes from the prototype floating it off the carpet
+    rather than from making it any larger.
     """
     root = Node("Ink_Pod")
     N = 14
-    S = 1.45              # bottle, not inkwell -- see the docstring
+    S = 1.95              # ~0.40 m tall -- see the docstring
 
     foot = M.Mesh("Pod_Foot", MAT["plastic"])
     M.cylinder(foot, (0.0*S, 0.0*S, 0.0*S), (0.0*S, 0.022*S, 0.0*S), 0.076*S, 0.070*S, N,
@@ -577,6 +591,33 @@ def piece_ink_pod(scene):
     M.cylinder(nozzle, (0.0*S, 0.186*S, 0.0*S), (0.0*S, 0.206*S, 0.0*S), 0.016*S, 0.013*S, N,
                group=0)
     root.add_mesh(nozzle)
+
+    # Beacon. The bottle alone loses the argument at range: even at 0.40 m and
+    # floated to eye level it is 14 x 17 px from 12 m, which is the longest
+    # sightline the layout can produce.
+    #
+    # Two emissive quads crossed at right angles, not a column -- a round beam
+    # thin enough to look like a beam is about 2 px wide at that distance, which
+    # is height with no width and reads as nothing at all. Crossed quads are
+    # 0.17 m across for four triangles and present the same silhouette from any
+    # approach.
+    #
+    # Tapered to a point rather than left as a bar. The exporter has no
+    # alphaMode, so the beacon cannot fade out the way a shaft of light should,
+    # and a full-width opaque bar at this emissive reads as an orange pole
+    # growing out of the lid. Narrowing it does the same job with geometry:
+    # bright and wide where it meets the bottle, gone by the top.
+    beam = M.Mesh("Pod_Beacon", MAT["ink_glow"])
+    bw, tw = 0.17, 0.018
+    y0, y1 = 0.20 * S, 0.20 * S + 1.15
+    for ax in ((1.0, 0.0), (0.0, 1.0)):          # crossed: along X, then along Z
+        base = len(beam.pos)
+        for (hw, y, u) in ((-bw * 0.5, y0, 0.0), (bw * 0.5, y0, 1.0),
+                           (tw * 0.5, y1, 1.0), (-tw * 0.5, y1, 0.0)):
+            beam.add_vertex((hw * ax[0], y, hw * ax[1]),
+                            (u, (y - y0) / (y1 - y0)))
+        beam.add_face((base, base + 1, base + 2, base + 3), 0)
+    root.add_mesh(beam)
     return root
 
 

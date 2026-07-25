@@ -64,6 +64,11 @@ pods, deliberately sited at the dead ends and the far corner rather than along
 the route you would walk anyway, so running out costs you a corridor and the
 seconds it takes to cover it.
 
+Pods hover at 0.62 m and carry a tapered emissive beacon, both for the same
+reason: from the far end of a 12 m corridor the bottle on its own is about
+14 × 18 px, low in the frame, against carpet of nearly its own value. You cannot
+be asked to detour towards something you cannot pick out.
+
 That chain is the whole point: **miss → burn ink → detour → lose clock → worse
 verdict.** Before it existed the swing was free, so there was no reason to aim,
 close distance, or fear the clock.

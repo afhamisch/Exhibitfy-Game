@@ -66,6 +66,12 @@ const CFG = {
   podRefill: 45,          // a pod is worth ~3 swings
   podRadius: 0.95,        // metres, walk-over pickup
   podRespawn: 12.0,       // seconds before a taken pod comes back
+  // Pods hover instead of sitting on the floor. At the far end of a 12 m
+  // corridor a floor-level pickup is a few pixels tall, low in the frame and
+  // silhouetted against carpet of nearly the same value; lifting it puts it
+  // near the eye line and against the wall, which is worth more than making
+  // the model bigger.
+  podFloat: 0.62,
 };
 
 // The four variants, tuned from what build_enemies.py actually baked rather
@@ -707,7 +713,8 @@ function updatePods(dt) {
       continue;
     }
     // idle motion, so a pod reads as a pickup and not as kit dressing
-    p.root.position.y = p.home.y + 0.035 + Math.sin(state.t * 2.1 + p.phase) * 0.025;
+    p.root.position.y = p.home.y + CFG.podFloat
+                      + Math.sin(state.t * 2.1 + p.phase) * 0.045;
     p.root.rotation.y += dt * 1.5;
 
     if (state.ink >= CFG.inkMax) continue;      // full: leave it standing

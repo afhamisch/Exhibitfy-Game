@@ -113,7 +113,7 @@ and four subtrees all calling their root `Rig` would cross-bind.
 
 **Environment:** hallway_straight 1,186 · hallway_corner 1,762 · doorway 2,016 ·
 desk_chair 3,110 · file_cabinet 3,080 · banker_boxes 1,546 ·
-reception_counter 1,600 · ink_pod 294. **Kit total 14,594**; a corridor run with
+reception_counter 1,600 · ink_pod 298. **Kit total 14,598**; a corridor run with
 props in view is ~11.4k.
 
 The two hallway figures were recorded here as 1,166 and 1,742 and had been wrong
@@ -123,12 +123,26 @@ than off this table when they matter.
 
 `ink_pod` is the kit's first piece that exists for a **rule** rather than for
 dressing: it is the stamp's ammunition, so the prototype instances it, hides it
-on pickup and respawns it. Two consequences. It carries the only emissive in the
-kit besides the ceiling troffers, because a drab prop the player is asked to
-detour towards is a design failure — at 9 m down a hallway it measured as a
-~10 px speck before that. And it is sized as a one-litre bottle at 0.29 m for the
-same reason, which is still real scale but is chosen for legibility, not for the
-shelf.
+on pickup and respawns it. Everything odd about it is legibility at range. The
+longest sightline the layout can produce is ~12 m, and measured at 1100×690 the
+bottle alone covers:
+
+```
+0.30 m tall ->  9 x 13 px      0.40 m -> 14 x 18 px      0.51 m -> 19 x 23 px
+```
+
+A 9 px speck is not something a player can be asked to detour towards, so the
+bottle is built at **0.40 m** — chosen for the screen, not for the shelf — and it
+carries a **tapered emissive beacon**, crossed quads rather than a column,
+because a round beam thin enough to look like a beam is ~2 px wide at that range.
+The taper substitutes for the fade the exporter cannot do: `tools/gltf.py` has no
+`alphaMode`, so a full-width opaque bar at that emissive reads as a pole growing
+out of the lid. The prototype then floats the pod at 0.62 m, which is worth more
+than any of it — a floor-level pickup sits low in frame against carpet of nearly
+its own value.
+
+Do not "simplify" the beacon back to a cylinder, and do not put the pod back on
+the floor. Both were tried and measured.
 
 ## Clips
 
