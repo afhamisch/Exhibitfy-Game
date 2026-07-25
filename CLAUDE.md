@@ -70,16 +70,15 @@ python build_environment.py --no-preview
 
 ## Budgets — read these back after every rebuild
 
-**Viewmodel:** 12,492 triangles / 5,350 quads / 8,737 vertices / 17 textures,
-38 nodes / 35 meshes / 14 materials. The single-mesh copy is the same geometry
+**Viewmodel:** 8,556 triangles / 3,670 quads / 5,888 vertices / 17 textures,
+20 nodes / 17 meshes / 14 materials. The single-mesh copy is the same geometry
 as one object with 14 material slots and no animation. 8–15k is the usual
 mobile viewmodel allowance.
 
-**One-handed.** The right hand runs the stamp; the left carries a sheaf of
-exhibits and is **not attached to the tool**, so it does not inherit the swing —
-`build_swing` drives the right arm from the stamp and braces the left against
-its bind pose. A Bates stamp is a one-handed desk tool; the old two-handed grip
-and the foregrip it needed were an invention of the viewmodel.
+**Right hand only.** Strict first person: one hand, one forearm, entering from
+the bottom right. `SIDES` drives both the build and the swing bake, so adding a
+limb back means changing one tuple. The left arm — and the watch it wore — are
+gone with it; the watch cannot be shown without a left wrist in frame.
 
 **Enemies:** pleading 1,392 · privilege 1,392 · binder 2,700 · stack 1,856.
 
@@ -99,7 +98,7 @@ view is ~11k.
 
 | Clip | Frames | fps | Notes |
 |---|---:|---:|---|
-| `Stamp_Swing` | **23** | 30 | 0.733 s. 15 animated nodes, 45 channels, 23 keys each. Impact frames 11–13, trigger on 11. Frames 0 and 22 bit-identical. |
+| `Stamp_Swing` | **23** | 30 | 0.733 s. 8 animated nodes, 24 channels, 23 keys each. Impact frames 11–13, trigger on 11. Frames 0 and 22 bit-identical. |
 | `Run` | **per variant** | 30 | Looping, one full stride: pleading 21 · privilege 19 · binder 31 · stack 17 keys. Last key repeats frame 0 bit-identically. |
 | `Stamped` | **26** | 30 | One-shot. Squash on frame 4, Bates impression at 1.28× overshoot. |
 

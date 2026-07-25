@@ -116,6 +116,19 @@ RIG = {
     # gripping a bar to swing it down looks like. Both values below are the
     # measured maxima -- right +0.981, left +0.988.
     #
+    # 0 already satisfies the written brief: the thumb sits 14.8 mm nearer the
+    # camera than the fingertips (thumb near side, fingers wrapping the far
+    # side) and facing is +0.413, inside the "slightly inward/away" band. The
+    # higher-scoring rolls -- 105 scores best on paper -- fail a criterion the
+    # scorer does not encode. grip_frame lands grip_point on the bar, and
+    # grip_point is ~80 mm from the wrist, so rolling SWINGS THE WRIST AROUND
+    # THE BAR. Past about 30 deg the wrist arrives near the camera and the
+    # forearm fills the frame from sheer proximity; re-aiming elbow_dir_r does
+    # not recover it, because the elbow is not what moved.
+    #
+    # To go past 30, move the stamp -- grip_r_point or stamp_pos -- so the
+    # rolled wrist lands further from the eye. That is the real solve.
+    #
     # The right hand is NOT at its maximum, and this is deliberate. Roll is not
     # independent of the arm: the forearm chain follows the wrist, and at 60 the
     # hand does read knuckles-out (+0.981) but the forearm swings across the
@@ -405,6 +418,8 @@ def build_finger(name, root, radius, phal, splay, bends, side_uv, suffix=""):
 
 
 KNUCKLE_X = [f[1][0] for f in FINGERS]
+
+SIDES = ("R",)          # one-handed, right only
 
 
 def build_palm(side_uv):
@@ -1022,8 +1037,11 @@ def build_scene(bates="000137", images=None):
     def dir_world(d):
         return vec.norm(vec.xform_dir(stamp_world, d))
 
+    # Strict first person: the right hand and forearm only. The carrying arm
+    # and the watch it wore are gone with it -- the brief asks for no left hand
+    # in frame, and the watch cannot be shown without one.
     arms = []
-    for side in ("R", "L"):
+    for side in SIDES:
         if side == "R":
             axis = dir_world(RIG["grip_r_axis"])
             dorsal = dir_world(RIG["grip_r_dorsal"])
@@ -1221,7 +1239,7 @@ def build_swing(scene, anim=None):
         squeeze = SWING["grip_squeeze"] * max(0.0, min(1.0, s)) ** 2 * D2R
 
         pose = {rig["stamp"]: full}
-        for side in ("R", "L"):
+        for side in SIDES:
             if side == "R":
                 # welded to the tool: hand world is the stamp times a constant
                 # grip offset, and the forearm follows from there
