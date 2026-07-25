@@ -110,8 +110,10 @@ const DEMO = () => {
       }
       if (!this.lockOn) { s.keys.KeyW = true; return 'idle'; }
 
-      const kind = this.lockOn.kind;
-      const t = kind === 'pod' ? this.lockOn.ref.home : this.lockOn.ref.root.position;
+      // Hold the target in a local: the give-up below clears this.lockOn, and
+      // reading through it after that is a TypeError.
+      const { kind, ref } = this.lockOn;
+      const t = kind === 'pod' ? ref.home : ref.root.position;
       const { dist, aligned } = this.aim(t.x, t.z);
       s.keys.KeyS = false;
       // Two thresholds, not one. The things that come at you have to be held in
@@ -167,7 +169,7 @@ const DEMO = () => {
       // privileged memo therefore takes two actions in order: redact it, then
       // stamp the redacted version to get it into the binder. Stamping first is
       // the mistake the game is built around.
-      const redact = kind === 'privilege' && !this.lockOn.ref.redacted;
+      const redact = kind === 'privilege' && !ref.redacted;
       // A swing with less than inkPerSwing in the barrel still swings -- it just
       // files nothing. Gate on the cost of the action being taken, so the bot
       // never spends its turn on a dry stamp it could have spent on a pod.
