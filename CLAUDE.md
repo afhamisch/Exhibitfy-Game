@@ -8,7 +8,7 @@ dependency-free Python. No DCC app, no third-party packages.
 |---|---|---|
 | **Viewmodel** — FPV arms + Exhibitfy Bates stamp, `Stamp_Swing` | `build_fpv_arms.py` | `build/` |
 | **Enemies** — four anthropomorphic legal documents, `Run` + `Stamped` | `build_enemies.py` | `build/enemies/` |
-| **Environment** — seven-piece modular law office kit | `build_environment.py` | `build/environment/` |
+| **Environment** — eight-piece modular law office kit | `build_environment.py` | `build/environment/` |
 
 Shared code lives in `tools/`. `build/` is committed so the assets are usable
 as-is.
@@ -111,10 +111,24 @@ file every node is prefixed `<variant>_` and clips are `<variant>_Run` /
 `<variant>_Stamped`, because three.js binds animation tracks **by node name**
 and four subtrees all calling their root `Rig` would cross-bind.
 
-**Environment:** hallway_straight 1,166 · hallway_corner 1,742 · doorway 2,016 ·
+**Environment:** hallway_straight 1,186 · hallway_corner 1,762 · doorway 2,016 ·
 desk_chair 3,110 · file_cabinet 3,080 · banker_boxes 1,546 ·
-reception_counter 1,600. **Kit total 14,260**; a corridor run with props in
-view is ~11k.
+reception_counter 1,600 · ink_pod 294. **Kit total 14,594**; a corridor run with
+props in view is ~11.4k.
+
+The two hallway figures were recorded here as 1,166 and 1,742 and had been wrong
+for a while — the committed GLBs already held 1,186 and 1,762, so the total was
+14,300 before the ink pod, not 14,260. Read the counts back off a rebuild rather
+than off this table when they matter.
+
+`ink_pod` is the kit's first piece that exists for a **rule** rather than for
+dressing: it is the stamp's ammunition, so the prototype instances it, hides it
+on pickup and respawns it. Two consequences. It carries the only emissive in the
+kit besides the ceiling troffers, because a drab prop the player is asked to
+detour towards is a design failure — at 9 m down a hallway it measured as a
+~10 px speck before that. And it is sized as a one-litre bottle at 0.29 m for the
+same reason, which is still real scale but is chosen for legibility, not for the
+shelf.
 
 ## Clips
 

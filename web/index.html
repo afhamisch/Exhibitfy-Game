@@ -46,6 +46,30 @@
   #hud .sub { opacity: .75; font-size: 12px; letter-spacing: .12em;
               text-transform: uppercase; }
 
+  /* ink gauge — bottom left, out of the viewmodel's way */
+  #inkbox {
+    position: fixed; left: 18px; bottom: 18px; width: 190px;
+    pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  }
+  #inkbox .track {
+    height: 10px; border: 2px solid rgba(255,255,255,.55);
+    background: rgba(0,0,0,.35); overflow: hidden;
+  }
+  #inkfill {
+    height: 100%; width: 100%; background: var(--orange);
+    transition: width .12s linear;
+  }
+  #inklabel { margin-top: 5px; font-size: 11px; letter-spacing: .12em;
+              text-transform: uppercase; opacity: .8; }
+  /* two swings left */
+  #inkbox.low #inkfill { background: #ffb020; }
+  #inkbox.low #inklabel { color: #ffb020; opacity: 1; }
+  /* nothing left: the stamp is dry and files nothing */
+  #inkbox.dry #inkfill { background: #6b6f77; }
+  #inkbox.dry #inklabel { color: var(--orange); opacity: 1;
+                          animation: dryPulse .7s steps(2) infinite; }
+  @keyframes dryPulse { 50% { opacity: .35; } }
+
   #overlay {
     position: fixed; inset: 0; display: flex; align-items: center;
     justify-content: center; background: rgba(10,11,13,.86);
@@ -122,19 +146,21 @@
   <div class="score">FILED <b id="score">0 / 4</b></div>
   <div class="sub" id="remaining">4 documents at large</div>
 </div>
+<div id="inkbox" hidden>
+  <div class="track"><div id="inkfill"></div></div>
+  <div id="inklabel">Stamp ink</div>
+</div>
 <div id="wakeclock" hidden>
   <div class="t" id="clock">1:30</div>
   <div class="l">until you wake</div>
 </div>
 
-<!-- The dream lets go once the binder is complete. -->
+<!-- The dream lets go, and the binder you assembled is what you take to court. -->
 <div id="wake" hidden>
   <div class="card">
-    <div class="tag" id="wake-tag">Exhibit binder complete</div>
-    <h1>You wake up.</h1>
-    <p id="wake-body">The desk lamp is still on. The coffee is cold. Every page
-       in front of you is stamped, numbered and in order — and you have
-       absolutely no memory of doing it.</p>
+    <div class="tag" id="wake-tag">Verdict for the defense</div>
+    <h1 id="wake-head">You win the case.</h1>
+    <p id="wake-body">Every page stamped, numbered and in order.</p>
     <div class="again" id="again">File another binder</div>
   </div>
 </div>

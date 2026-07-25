@@ -50,10 +50,31 @@ it — Bates numbering is how exhibits get indexed, so a stamped document isn't
 destroyed, it's **filed**: it flattens, takes the impression, then files itself
 into the binder you're carrying.
 
-You have **90 seconds** before you wake up. Get all four in and the binder is
-complete; run the clock out and you wake with it unfinished, which is the only
-way to lose. The chaotic stack is the one that costs you — at 3.33 m/s it is
-faster than your walk, so it has to be sprinted down or cornered.
+You have **90 seconds** before you wake up, and the binder you assemble in that
+time is the evidentiary record you walk into court with. The chaotic stack is the
+one that costs you — at 3.33 m/s it is faster than your walk, so it has to be
+sprinted down or cornered.
+
+### Ink is the cost of a miss
+
+The stamp holds **seven swings**, and every swing spends one whether it lands or
+not. Run it dry and the die still comes down — it just leaves a ghost impression
+on the carpet and files nothing, however well you aimed. Refills are the orange
+pods, deliberately sited at the dead ends and the far corner rather than along
+the route you would walk anyway, so running out costs you a corridor and the
+seconds it takes to cover it.
+
+That chain is the whole point: **miss → burn ink → detour → lose clock → worse
+verdict.** Before it existed the swing was free, so there was no reason to aim,
+close distance, or fear the clock.
+
+### The verdict
+
+You do not win or lose so much as get a ruling, graded on how much of the binder
+is in order. A full binder takes the case; three of four draws an adverse
+inference on the exhibit you never authenticated; below that the court starts
+directing verdicts and entering judgment. Filing three used to be
+indistinguishable from filing none, which made partial competence invisible.
 
 ## How it works
 
@@ -126,7 +147,7 @@ does something the clip never could: make the thing genuinely harder to hit.
 |---|---|
 | Page + script | 21.5 KB |
 | Three.js (vendored) | 820 KB on disk, ~180 KB gzipped over the wire |
-| Assets actually fetched | 4.05 MB (viewmodel, all four enemies, seven kit pieces) |
+| Assets actually fetched | 4.07 MB (viewmodel, all four enemies, eight kit pieces) |
 | Music bed | 381 KB fetched — one of the two encodings, never both |
 
 The enemies used to be 2.9 MB of that, as four self-contained GLBs. They could
@@ -169,6 +190,11 @@ measures 0.019 at the join for about a decibel of level through the overlap.
 - No score persistence.
 - The bed is one 31.2 s loop with no variation and no reaction to the clock
   running down.
+- The documents still cannot touch you. Ink and the clock are the only pressure;
+  nothing in the office is a threat, so there is no reason to retreat from
+  anything.
+- One round, one layout, four documents, no waves and no difficulty curve — you
+  see everything the game has inside two minutes.
 - Enemies path by fleeing and wall-sliding, not by navmesh — they can get
   briefly stuck grinding a corner before they turn out of it.
 - One of each variant spawns, and that is the whole roster — there is no wave

@@ -2,7 +2,7 @@
 """Modular law office kit for "Tom Rexington, Esq.: Bates & Destroy".
 
 Clean but industrial: warm wood, cool gray, fluorescent troffers overhead, and
-just enough scattered paper and worn edge to look lived in. Seven pieces, each
+just enough scattered paper and worn edge to look lived in. Eight pieces, each
 exported on its own so they can be instanced and snapped on a grid.
 
     python3 build_environment.py [--no-preview] [--only desk_chair]
@@ -55,6 +55,7 @@ MAT = {
     "paper": "Paper_Loose",
     "glow": "Light_Fluorescent",
     "steel": "Steel_Trim",
+    "ink": "Ink_Exhibitfy",
 }
 
 
@@ -81,6 +82,14 @@ def materials(scene):
     scene.material(Material(MAT["glow"], P["glow"], 0.0, 0.40,
                             emissive=P["glow"], double_sided=True))
     scene.material(Material(MAT["steel"], hex_srgb("#AEB3BA"), 1.0, 0.30))
+    # The kit is deliberately drab -- grey carpet, beige walls, oak. The ink
+    # pod is the only thing in it the player is meant to spot and chase, so it
+    # gets the brand accent, a bit of gloss to pick up the troffers, and a low
+    # emissive so it does not go to mud at the far end of a corridor. Measured
+    # from 9 m down a hallway it was a ~10 px grey-orange speck without this,
+    # which is not something you can be asked to detour towards.
+    scene.material(Material(MAT["ink"], hex_srgb("#D93E15"), 0.0, 0.34,
+                            emissive=hex_srgb("#5E1A08")))
 
 
 # ------------------------------------------------------------------ helpers
@@ -518,6 +527,59 @@ def piece_reception_counter(scene):
     return root
 
 
+def piece_ink_pod(scene):
+    """Refill canister for the Bates stamp -- the one pickup in the kit.
+
+    A prop that has to read as "grab this" from across a corridor, at 0.20 m
+    tall, against grey carpet. That is what the brand orange is for; the black
+    foot and cap give it enough tonal separation not to melt into the accent,
+    and the steel nozzle says it dispenses rather than stores.
+
+    Deliberately the cheapest piece in the kit -- the prototype instances it
+    four times and respawns them, so it is built at 14 sides rather than the
+    kit's usual 16 and carries no unique texture.
+
+    Sized as a one-litre refill bottle rather than a desk-tidy inkwell, at
+    0.29 m. That is still real scale for the shelf it came off, and it is the
+    smallest it can be and still be findable from the other end of a corridor.
+    """
+    root = Node("Ink_Pod")
+    N = 14
+    S = 1.45              # bottle, not inkwell -- see the docstring
+
+    foot = M.Mesh("Pod_Foot", MAT["plastic"])
+    M.cylinder(foot, (0.0*S, 0.0*S, 0.0*S), (0.0*S, 0.022*S, 0.0*S), 0.076*S, 0.070*S, N,
+               group=0)
+    root.add_mesh(foot)
+
+    body = M.Mesh("Pod_Body", MAT["ink"])
+    # slight taper and a waist, so it is not a plain tube
+    M.cylinder(body, (0.0*S, 0.022*S, 0.0*S), (0.0*S, 0.072*S, 0.0*S), 0.070*S, 0.064*S, N,
+               group=0, cap_start=False)
+    M.cylinder(body, (0.0*S, 0.072*S, 0.0*S), (0.0*S, 0.112*S, 0.0*S), 0.064*S, 0.067*S, N,
+               group=3, cap_start=False, cap_end=False)
+    M.cylinder(body, (0.0*S, 0.112*S, 0.0*S), (0.0*S, 0.150*S, 0.0*S), 0.067*S, 0.058*S, N,
+               group=6, cap_start=False, cap_end=False)
+    root.add_mesh(body)
+
+    # label band: a hair proud of the body so it catches a different normal
+    band = M.Mesh("Pod_Label", MAT["paper"])
+    M.cylinder(band, (0.0*S, 0.060*S, 0.0*S), (0.0*S, 0.104*S, 0.0*S), 0.0685*S, 0.0700*S, N,
+               group=0, cap_start=False, cap_end=False)
+    root.add_mesh(band)
+
+    cap = M.Mesh("Pod_Cap", MAT["plastic"])
+    M.cylinder(cap, (0.0*S, 0.150*S, 0.0*S), (0.0*S, 0.186*S, 0.0*S), 0.046*S, 0.042*S, N,
+               group=0)
+    root.add_mesh(cap)
+
+    nozzle = M.Mesh("Pod_Nozzle", MAT["steel"])
+    M.cylinder(nozzle, (0.0*S, 0.186*S, 0.0*S), (0.0*S, 0.206*S, 0.0*S), 0.016*S, 0.013*S, N,
+               group=0)
+    root.add_mesh(nozzle)
+    return root
+
+
 PIECES = {
     "hallway_straight": (piece_hallway_straight, "Straight hallway section"),
     "hallway_corner": (piece_hallway_corner, "90 degree corner"),
@@ -526,6 +588,7 @@ PIECES = {
     "file_cabinet": (piece_file_cabinet, "Lateral file cabinet"),
     "banker_boxes": (piece_banker_boxes, "Stack of banker's boxes"),
     "reception_counter": (piece_reception_counter, "Reception counter"),
+    "ink_pod": (piece_ink_pod, "Stamp ink refill pickup"),
 }
 
 

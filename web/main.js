@@ -46,9 +46,26 @@ const CFG = {
   fileTime: 0.55,         // then the flight into the binder
 
   // You do not get to stay asleep forever. The dream is the clock: run it out
-  // and you wake with the binder unfinished, which is the only way to lose.
+  // and you wake with whatever binder you managed to assemble, and the verdict
+  // is scaled to it.
   dreamTime: 90,
   dreamPanic: 20,         // the countdown goes orange under this
+
+  // Ink is what makes a miss cost something. Without it the swing was free, so
+  // there was no reason to aim, no reason to close distance, and nothing the
+  // clock could actually pressure. The chain is: miss -> burn ink -> detour to
+  // a pod -> lose seconds -> worse verdict.
+  //
+  // Capacity is 7 swings and the roster is 4 documents, so a full stamp allows
+  // three misses. That is deliberately tight rather than generous: the pods are
+  // off the corridor spine, so running dry is meant to be a real detour and not
+  // a formality.
+  inkMax: 100,
+  inkPerSwing: 14,        // 7 swings on a full stamp
+  inkLow: 28,             // 2 swings left: the gauge goes orange
+  podRefill: 45,          // a pod is worth ~3 swings
+  podRadius: 0.95,        // metres, walk-over pickup
+  podRespawn: 12.0,       // seconds before a taken pod comes back
 };
 
 // The four variants, tuned from what build_enemies.py actually baked rather
@@ -117,6 +134,15 @@ const LAYOUT = {
     { x: -12, z: 2.0, rot: 0 },
   ],
   spawns: [[0, -6], [-5.5, -12], [-12, -6], [-1.0, -10.5], [-9.5, -12]],
+  // Ink pods, pushed out to the far ends and the two corners rather than sat
+  // along the route you would walk anyway. A pod you pass over for free is not
+  // a decision; these cost you the length of a corridor.
+  pods: [
+    [0.55, -10.6],       // near the first corner
+    [-11.4, -11.2],      // the far corner
+    [0.0, 0.9],          // back at the entrance you started from
+    [-12.0, -1.0],       // the opposite dead end
+  ],
 };
 
 /** AABB of a local rectangle placed at (cx, cz) under a 90-degree rotation. */
@@ -219,8 +245,12 @@ const els = {
   reticle: document.getElementById('reticle'),
   score: document.getElementById('score'),
   remaining: document.getElementById('remaining'),
+  inkBox: document.getElementById('inkbox'),
+  inkFill: document.getElementById('inkfill'),
+  inkLabel: document.getElementById('inklabel'),
   wake: document.getElementById('wake'),
   wakeTag: document.getElementById('wake-tag'),
+  wakeHead: document.getElementById('wake-head'),
   wakeBody: document.getElementById('wake-body'),
   clock: document.getElementById('clock'),
   clockBox: document.getElementById('wakeclock'),
@@ -229,7 +259,8 @@ const els = {
 const state = {
   ready: false, score: 0, filed: 0, done: false, t: 0, clock: CFG.dreamTime,
   swinging: false, swingT: 0, hitDone: false,
-  enemies: [],
+  ink: CFG.inkMax, dryStamps: 0,
+  enemies: [], pods: [],
   keys: Object.create(null),
 };
 
@@ -260,6 +291,7 @@ async function boot() {
     load(`${ASSETS}/environment/banker_boxes.glb`),
     load(`${ASSETS}/environment/desk_chair.glb`),
     load(`${ASSETS}/environment/reception_counter.glb`),
+    load(`${ASSETS}/environment/ink_pod.glb`),
   ]);
   const props = {
     file_cabinet: propGs[0].scene,
@@ -267,6 +299,7 @@ async function boot() {
     desk_chair: propGs[2].scene,
     reception_counter: propGs[3].scene,
   };
+  const podProto = propGs[4].scene;
 
   // ---- office
   for (const h of LAYOUT.halls) scene.add(place(hallG.scene.clone(true), h.x, h.z, h.rot));
@@ -296,6 +329,18 @@ async function boot() {
   state.arms = arms;
   state.armMixer = armMixer;
   state.swing = swing;
+
+  // ---- ink pods
+  // Each is its own clone so a taken pod can hide and come back without
+  // disturbing the others. The bob and spin are here rather than baked: the
+  // piece is static in the kit, and a pickup wants to catch the eye.
+  LAYOUT.pods.forEach(([x, z], i) => {
+    const g = podProto.clone(true);
+    g.position.set(x, 0, z);
+    scene.add(g);
+    state.pods.push({ root: g, home: new THREE.Vector3(x, 0, z),
+                      live: true, cooldown: 0, phase: i * 1.4 });
+  });
 
   // ---- enemies
   ROSTER.forEach((kind, i) => {
@@ -334,6 +379,7 @@ async function boot() {
   els.loading.hidden = true;
   els.go.hidden = false;
   updateHud();
+  updateInk();
 }
 
 boot().catch((err) => {
@@ -419,6 +465,16 @@ const sfx = {
     const t = AC.currentTime;
     playNoise(t, 0.22, 'bandpass', 500, 2400, 0.3, 1.4);
     playTone(t + 0.20, 0.09, 'triangle', 660, 660, 0.25);
+  },
+  dry() {                                    // the stamp lands on nothing
+    if (!AC) return;
+    playNoise(AC.currentTime, 0.07, 'highpass', 2200, 3400, 0.22);
+  },
+  ink() {                                    // pod picked up: a rising pair
+    if (!AC) return;
+    const t = AC.currentTime;
+    playTone(t, 0.10, 'triangle', 440, 660, 0.30);
+    playTone(t + 0.09, 0.16, 'triangle', 880, 880, 0.22);
   },
   tick() {
     if (!AC) return;
@@ -548,10 +604,14 @@ function batesTexture(serial) {
   return tex;
 }
 
-function stampCarpet(x, z, yaw) {
+function stampCarpet(x, z, yaw, dry) {
   if (!insideWalk(x, z)) return;           // no carpet there, no impression
   const mat = new THREE.MeshBasicMaterial({
     map: batesTexture(DECALS.serial++), transparent: true, depthWrite: false,
+    // A dry stamp still leaves a mark, just a ghost of one. That is the
+    // clearest possible read on why nothing got filed: the impression is
+    // there on the carpet, and it is too faint to be an exhibit.
+    opacity: dry ? 0.22 : 1.0,
   });
   const m = new THREE.Mesh(decalGeo, mat);
   // XYZ euler applies the in-plane spin (z) before laying the plane flat (x)
@@ -579,11 +639,13 @@ controls.addEventListener('lock', () => {
   musicTo(MUSIC.level, 0.6);
   els.overlay.style.display = 'none';
   els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = false;
+  els.inkBox.hidden = false;
 });
 controls.addEventListener('unlock', () => {
   // once the binder is closed the wake screen owns the view, not the menu
   if (!state.done) els.overlay.style.display = 'flex';
   els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = true;
+  els.inkBox.hidden = true;
   // the bed keeps running under the menu, just further back. Stopping it
   // would mean rescheduling the crossfade chain from scratch on every pause.
   if (!state.done) musicTo(MUSIC.level * 0.35, 0.4);
@@ -601,8 +663,64 @@ function startSwing() {
   state.swinging = true;
   state.swingT = 0;
   state.hitDone = false;
+  // A dry stamp still swings. Blocking the input would be cheaper to write and
+  // much worse to play: the animation plus a faint impression and no filing
+  // tells the player exactly what is wrong, where a dead mouse button does not.
+  state.swingDry = state.ink < CFG.inkPerSwing;
+  if (!state.swingDry) {
+    state.ink = Math.max(0, state.ink - CFG.inkPerSwing);
+    updateInk();
+  }
   state.swing.reset().play();
   sfx.swing();
+}
+
+// The gauge is written on change, not per frame, so every path that moves the
+// ink has to say so. There are only three -- boot, swinging, and picking up a
+// pod -- and this is the fourth, for setting it from the console without the
+// readout silently drifting out of step with the number.
+state.setInk = (n) => {
+  state.ink = Math.max(0, Math.min(CFG.inkMax, n));
+  updateInk();
+  return state.ink;
+};
+
+function updateInk() {
+  const k = Math.max(0, Math.min(1, state.ink / CFG.inkMax));
+  els.inkFill.style.width = `${k * 100}%`;
+  const dry = state.ink < CFG.inkPerSwing;
+  els.inkBox.classList.toggle('dry', dry);
+  els.inkBox.classList.toggle('low', !dry && state.ink <= CFG.inkLow);
+  els.inkLabel.textContent = dry
+    ? 'Stamp dry — find ink'
+    : `Stamp ink · ${Math.floor(state.ink / CFG.inkPerSwing)} left`;
+}
+
+function updatePods(dt) {
+  for (const p of state.pods) {
+    if (!p.live) {
+      p.cooldown -= dt;
+      if (p.cooldown <= 0) {
+        p.live = true;
+        p.root.visible = true;
+      }
+      continue;
+    }
+    // idle motion, so a pod reads as a pickup and not as kit dressing
+    p.root.position.y = p.home.y + 0.035 + Math.sin(state.t * 2.1 + p.phase) * 0.025;
+    p.root.rotation.y += dt * 1.5;
+
+    if (state.ink >= CFG.inkMax) continue;      // full: leave it standing
+    tmpV.copy(p.home).sub(camera.position);
+    tmpV.y = 0;
+    if (tmpV.length() > CFG.podRadius) continue;
+    p.live = false;
+    p.cooldown = CFG.podRespawn;
+    p.root.visible = false;
+    state.ink = Math.min(CFG.inkMax, state.ink + CFG.podRefill);
+    updateInk();
+    sfx.ink();
+  }
 }
 
 // ---------------------------------------------------------------- hits
@@ -612,10 +730,15 @@ const fwd = new THREE.Vector3();
 const strike = new THREE.Vector3();
 const fileTo = new THREE.Vector3();
 
-function resolveHit() {
+/** Put `strike` where the die lands: a point ahead of the eye, on the floor. */
+function aimStrike() {
   camera.getWorldDirection(fwd);
   fwd.y = 0; fwd.normalize();
   strike.copy(camera.position).addScaledVector(fwd, CFG.strikeAhead);
+}
+
+function resolveHit() {
+  aimStrike();
 
   let best = null, bestD = Infinity;
   for (const e of state.enemies) {
@@ -663,9 +786,50 @@ function updateClock(dt) {
   if (state.clock === 0) finish(false);
 }
 
+// You do not win or lose a case, you get a ruling. The binder you assembled is
+// the evidentiary record you walk into court with, so the outcome is graded on
+// it: a complete binder wins, and every exhibit still loose in the pile is one
+// you cannot authenticate. Filing three of four used to be indistinguishable
+// from filing none, which made partial competence invisible.
+const VERDICTS = [
+  { tag: 'Judgment for the plaintiff', head: 'You lose the case.',
+    body: 'You walk in with an empty binder. Nothing is Bates-stamped, nothing '
+      + 'is indexed, and nothing you try to put in front of the jury survives '
+      + 'an objection. The court finds for the plaintiff on every count and '
+      + 'invites a fee motion.' },
+  { tag: 'Judgment for the plaintiff', head: 'You lose the case.',
+    body: 'One exhibit is in order. The rest are loose paper, and loose paper '
+      + 'is not evidence — opposing counsel objects to each one in turn and is '
+      + 'sustained each time. Judgment for the plaintiff, and the court has '
+      + 'notes about your preparation.' },
+  { tag: 'Directed verdict, in part', head: 'You lose the case.',
+    body: 'Half a binder. Enough to survive the morning, not enough to survive '
+      + 'the afternoon: the exhibits you never stamped are the ones the whole '
+      + 'theory rested on. The court directs a verdict against you on the '
+      + 'counts you could not document.' },
+  { tag: 'Adverse inference', head: 'You lose the case — barely.',
+    body: 'Three of four. Every exhibit you filed comes in clean, and the one '
+      + 'you did not becomes the only thing anyone remembers. The jury is '
+      + 'instructed it may infer the missing document said exactly what the '
+      + 'plaintiff claims it said. It does.' },
+  { tag: 'Verdict for the defense', head: 'You win the case.',
+    body: 'Every page stamped, numbered and in order. Each exhibit goes in '
+      + 'without a single sustained objection, because there is nothing to '
+      + 'object to. The court finds for the defense — and you have absolutely '
+      + 'no memory of doing the work.' },
+];
+
+/** Which ruling a binder of `filed` out of `total` earns. */
+function verdictFor(filed, total) {
+  const k = Math.max(0, Math.min(1, filed / Math.max(1, total)));
+  return VERDICTS[Math.round(k * (VERDICTS.length - 1))];
+}
+state.verdictFor = verdictFor;
+state.VERDICTS = VERDICTS;
+
 /**
- * The dream lets go — either because the binder is closed, or because it ran
- * out of time and closed on you.
+ * The dream lets go — either because the binder is closed, or because the night
+ * ran out and closed it for you. Either way you are due in court.
  */
 function finish(complete) {
   if (state.done) return;
@@ -674,15 +838,18 @@ function finish(complete) {
   musicTo(MUSIC.level * 0.28, 0.5);
   sfx.sting(complete);
   setTimeout(() => { musicTo(0, 2.2); MUSIC.on = false; }, 900);
-  els.wakeTag.textContent = complete
-    ? 'Exhibit binder complete' : 'You ran out of night';
-  els.wakeBody.textContent = complete
-    ? 'The desk lamp is still on. The coffee is cold. Every page in front of '
-      + 'you is stamped, numbered and in order — and you have absolutely no '
-      + 'memory of doing it.'
-    : `The desk lamp is still on. The coffee is cold. ${state.filed} of `
-      + `${state.enemies.length} exhibits made it into the binder; the rest are `
-      + 'still loose somewhere in the pile. Trial is Monday.';
+
+  const total = state.enemies.length;
+  const v = verdictFor(state.filed, total);
+  els.wakeTag.textContent = v.tag;
+  els.wakeHead.textContent = v.head;
+  let body = v.body;
+  if (!complete) body += ` You woke with ${state.filed} of ${total} filed.`;
+  if (state.dryStamps > 0) {
+    body += ` ${state.dryStamps} swing${state.dryStamps === 1 ? '' : 's'} came `
+          + 'down on a dry stamp and left nothing but an impression.';
+  }
+  els.wakeBody.textContent = body;
   els.wake.hidden = false;
   // let the last document land before the room dissolves
   setTimeout(() => {
@@ -799,13 +966,25 @@ function updateSwing(dt) {
   state.swingT += dt;
   if (!state.hitDone && state.swingT >= CFG.swingImpact) {
     state.hitDone = true;
-    const hit = resolveHit();      // leaves `strike` at the impact point
-    sfx.stamp(hit);
-    stampCarpet(strike.x, strike.z, camera.rotation.y);
-    state.kick = 1;
-    if (hit) {
-      els.reticle.classList.add('hit');
-      setTimeout(() => els.reticle.classList.remove('hit'), 130);
+    if (state.swingDry) {
+      // The die still lands -- it just has no ink on it, so nothing is filed
+      // however well aimed the swing was. Aim is not the failure here, supply
+      // is, and the ghost impression on the carpet says so.
+      state.dryStamps += 1;
+      aimStrike();
+      sfx.dry();
+      stampCarpet(strike.x, strike.z, camera.rotation.y, true);
+      state.kick = 0.45;
+      updateInk();
+    } else {
+      const hit = resolveHit();    // leaves `strike` at the impact point
+      sfx.stamp(hit);
+      stampCarpet(strike.x, strike.z, camera.rotation.y, false);
+      state.kick = 1;
+      if (hit) {
+        els.reticle.classList.add('hit');
+        setTimeout(() => els.reticle.classList.remove('hit'), 130);
+      }
     }
   }
   if (state.swingT >= CFG.swingDuration) {
@@ -823,6 +1002,7 @@ function animate() {
     updatePlayer(dt);
     updateSwing(dt);
     updateEnemies(dt);
+    updatePods(dt);
   }
   if (state.armMixer) state.armMixer.update(dt);
   pumpMusic();
