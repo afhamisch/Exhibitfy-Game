@@ -40,8 +40,10 @@ landing page.
 | Sprint | `Shift` |
 | Release cursor | `Esc` |
 
-Chase the paperwork down and stamp it. Four documents; the counter tracks how
-many are still at large.
+You fell asleep assembling a trial binder. Chase the paperwork down and stamp
+it — Bates numbering is how exhibits get indexed, so a stamped document isn't
+destroyed, it's **filed**: it flattens, takes the impression, then files itself
+into the binder you're carrying. Get all four in and the dream lets go.
 
 ## How it works
 
@@ -73,6 +75,14 @@ cabinet — renders black, since there is nothing for them to reflect.
 **The viewmodel camera runs at the same FOV as the world camera.** A narrower
 one blows the arms up until they cover the middle of the screen, which is
 exactly where enemies appear.
+
+**Filing** is what a hit actually does. A stamped document lies flat for the
+length of the `Stamped` clip, then arcs up, tumbles, shrinks and homes on the
+binder below your eye. The HUD counts filed exhibits rather than kills, and
+filing the last one closes the binder: the wake screen fades up and releases
+the cursor.
+
+![the wake screen](screenshots/prototype_wake.png)
 
 **Enemies** run the looping `Run` clip, flee once you are close enough, wander
 at reduced speed otherwise, and turn on the spot when cornered. Getting
@@ -127,7 +137,7 @@ adopted quietly.
 
 ## Known limits of this slice
 
-- No sound, no score persistence, no win screen beyond the counter.
+- No sound, no score persistence, no fail state — you cannot lose, only finish.
 - Enemies path by fleeing and wall-sliding, not by navmesh — they can get
   briefly stuck grinding a corner before they turn out of it.
 - One of each variant spawns, and that is the whole roster — there is no wave
