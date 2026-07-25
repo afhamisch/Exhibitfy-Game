@@ -126,6 +126,12 @@ const CFG = {
   bossReach: 1.35,        // reaching you means the motion is GRANTED
   bossObjEvery: 8.0,      // it calls objections in its own defence
   bossKnockback: 0.55,    // metres a stamp drives it back, so hits read
+
+  // How far a footstep carries. The longest sightline the layout can produce is
+  // about 12 m, so this is deliberately just inside it: something you can hear
+  // is something you could have seen if you had turned round.
+  hearRadius: 11.0,
+  objNearAt: 4.0,         // an objection this close mutters as well as walks
 };
 
 // The four variants, tuned from what build_enemies.py actually baked rather
@@ -138,12 +144,17 @@ const CFG = {
 // into a one-stride loop -- half a cycle does not close -- so it lives here,
 // on the heading, where it also does something the clip never could: make it
 // genuinely harder to hit.
+// `stride` is the variant's Run clip length in frames, straight off the bake at
+// 30 fps, and it is here so the footsteps land with the feet: a stride is two
+// footfalls, so one every stride/60 seconds. Taking it from the clip rather
+// than picking an interval by ear means the binder's plod and the stack's
+// scurry come out of the same numbers that made them look that way.
 const VARIANTS = {
-  pleading:  { speed: 1.00, flee: 1.00, turn: 1.00, radius: 1.00 },
-  privilege: { speed: 0.92, flee: 1.30, turn: 1.25, radius: 0.97,
+  pleading:  { speed: 1.00, flee: 1.00, turn: 1.00, radius: 1.00, stride: 21 },
+  privilege: { speed: 0.92, flee: 1.30, turn: 1.25, radius: 0.97, stride: 19,
                weave: { rate: 2.3, amp: 0.85 } },
-  binder:    { speed: 0.49, flee: 0.80, turn: 0.55, radius: 1.16 },
-  stack:     { speed: 1.36, flee: 1.15, turn: 1.35, radius: 1.04 },
+  binder:    { speed: 0.49, flee: 0.80, turn: 0.55, radius: 1.16, stride: 31 },
+  stack:     { speed: 1.36, flee: 1.15, turn: 1.35, radius: 1.04, stride: 17 },
 };
 
 // One of each, so every silhouette is on the floor to be told apart.
@@ -165,12 +176,12 @@ const ROSTER = ['pleading', 'privilege', 'binder', 'stack'];
 // on an empty binder is a threat that cost the player nothing.
 const OBJECTIONS = {
   hearsay:   { label: 'Hearsay', speed: 1.35, turn: 2.4, radius: 0.30,
-               strikes: 1, after: 1, weight: 3 },
+               strikes: 1, after: 1, weight: 3, stride: 25 },
   character: { label: 'Character evidence', speed: 1.70, turn: 3.4,
-               radius: 0.29, strikes: 1, after: 2, weight: 2,
+               radius: 0.29, strikes: 1, after: 2, weight: 2, stride: 20,
                weave: { rate: 1.9, amp: 0.55 } },
   rule403:   { label: 'Rule 403', speed: 2.00, turn: 2.0, radius: 0.34,
-               strikes: 2, after: 3, weight: 1 },
+               strikes: 2, after: 3, weight: 1, stride: 18 },
 };
 
 // All four come out of one GLB. The per-variant files are the art deliverable
@@ -514,12 +525,12 @@ function initAudio() {
   MUSIC.gain.connect(master);
 }
 
-function envGain(t0, attack, peak, decay) {
+function envGain(t0, attack, peak, decay, dest) {
   const g = AC.createGain();
   g.gain.setValueAtTime(0, t0);
   g.gain.linearRampToValueAtTime(peak, t0 + attack);
   g.gain.exponentialRampToValueAtTime(0.0008, t0 + attack + decay);
-  g.connect(master);
+  g.connect(dest || master);
   return g;
 }
 
@@ -531,7 +542,7 @@ function noiseBuf() {
   return (noiseBuf.b = b);
 }
 
-function playNoise(t0, dur, type, f0, f1, peak, q = 1.0) {
+function playNoise(t0, dur, type, f0, f1, peak, q = 1.0, dest) {
   const src = AC.createBufferSource();
   src.buffer = noiseBuf();
   const flt = AC.createBiquadFilter();
@@ -539,19 +550,58 @@ function playNoise(t0, dur, type, f0, f1, peak, q = 1.0) {
   flt.Q.value = q;
   flt.frequency.setValueAtTime(f0, t0);
   flt.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t0 + dur);
-  src.connect(flt).connect(envGain(t0, 0.008, peak, dur));
+  src.connect(flt).connect(envGain(t0, 0.008, peak, dur, dest));
   src.start(t0);
   src.stop(t0 + dur + 0.05);
 }
 
-function playTone(t0, dur, type, f0, f1, peak) {
+function playTone(t0, dur, type, f0, f1, peak, dest) {
   const o = AC.createOscillator();
   o.type = type;
   o.frequency.setValueAtTime(f0, t0);
   o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
-  o.connect(envGain(t0, 0.004, peak, dur));
+  o.connect(envGain(t0, 0.004, peak, dur, dest));
   o.start(t0);
   o.stop(t0 + dur + 0.05);
+}
+
+// -------------------------------------------------- sounds that have a place
+//
+// Everything above plays flat into the master bus, which is right for the
+// stamp in your own hands and wrong for anything out in the room. An objection
+// closing on you from behind was, until now, completely silent: the first you
+// knew of it was an exhibit leaving the binder.
+//
+// So: distance attenuation and a stereo position, which is all a corridor
+// needs. A full PannerNode would model a head and a cone per source and there
+// are up to eight sources; the useful part here is only "which side, how far".
+const earV = new THREE.Vector3();
+
+/** A gain/pan sink for a sound at (x, z), or null if it is out of earshot. */
+function ear(x, z, spread = 1) {
+  if (!AC) return null;
+  const dx = x - camera.position.x;
+  const dz = z - camera.position.z;
+  const d = Math.hypot(dx, dz);
+  if (d > CFG.hearRadius) return null;
+  camera.getWorldDirection(earV);
+  earV.y = 0;
+  earV.normalize();
+  // right-hand vector in the floor plane, so the sign is which ear it lands in
+  const pan = d < 0.05 ? 0
+    : Math.max(-1, Math.min(1, ((dx * -earV.z) + (dz * earV.x)) / d * spread));
+  const g = AC.createGain();
+  // squared falloff: linear stays audible for too long across a 12 m sightline
+  const k = 1 - d / CFG.hearRadius;
+  g.gain.value = k * k;
+  if (AC.createStereoPanner) {
+    const p = AC.createStereoPanner();
+    p.pan.value = pan;
+    g.connect(p).connect(master);
+  } else {
+    g.connect(master);                  // Safari < 14.1: mono, still audible
+  }
+  return g;
 }
 
 const sfx = {
@@ -608,6 +658,35 @@ const sfx = {
     const t = AC.currentTime;
     playNoise(t, 0.06, 'highpass', 1800, 3000, 0.35);
     playTone(t, 0.12, 'triangle', 587.33, 880, 0.28);
+  },
+  // ---- out in the room, rather than in your hands
+  step(x, z) {                               // an exhibit's paper footfall
+    const at = ear(x, z);
+    if (!at) return;
+    const t = AC.currentTime;
+    const f = 1500 + Math.random() * 900;    // never twice the same
+    playNoise(t, 0.055, 'bandpass', f, f * 0.45, 0.30, 1.6, at);
+  },
+  objStep(x, z) {                            // heavier, and it is coming to you
+    const at = ear(x, z);
+    if (!at) return;
+    const t = AC.currentTime;
+    playNoise(t, 0.075, 'bandpass', 420 + Math.random() * 160, 190, 0.42, 1.9, at);
+    playTone(t, 0.05, 'sine', 110, 78, 0.16, at);
+  },
+  objNear(x, z) {                            // close enough to do something
+    const at = ear(x, z);
+    if (!at) return;
+    const t = AC.currentTime;
+    playTone(t, 0.30, 'sawtooth', 165, 138, 0.14, at);
+    playNoise(t, 0.18, 'bandpass', 300, 200, 0.20, 2.4, at);
+  },
+  bossStep(x, z) {                           // 2 m of paper, and it lands
+    const at = ear(x, z);
+    if (!at) return;
+    const t = AC.currentTime;
+    playTone(t, 0.18, 'sine', 78, 44, 0.85, at);
+    playNoise(t, 0.10, 'lowpass', 900, 240, 0.40, 0.8, at);
   },
   sting(win) {
     if (!AC) return;
@@ -759,6 +838,7 @@ function stampCarpet(x, z, yaw, dry) {
 state.DECALS = DECALS;
 state.OBJECTIONS = OBJECTIONS;
 state.insideWalk = insideWalk;          // for tuning from the console
+state.sfx = sfx;                        // same object the loops call through
 state.spawnObjection = spawnObjection;      // for tuning from the console
 // `startBonus` is a hoisted function declaration so this is safe here; BOSS_GLB
 // is a const declared with it further down and must NOT be touched from up here.
@@ -1011,6 +1091,15 @@ function updateObjections(dt) {
     e.root.position.z += mv.dz;
     e.root.rotation.y = e.heading;
     e.mixer.update(dt);
+    // An objection used to be silent all the way in, so one coming from behind
+    // announced itself by taking an exhibit out of the binder. Now it walks
+    // audibly, and mutters once it is close enough to be about to land.
+    footfall(e, e.o.stride, dt, sfx.objStep);
+    e.mutter = (e.mutter || 0) - dt;
+    if (dist < CFG.objNearAt && e.mutter <= 0) {
+      e.mutter = 1.3;
+      sfx.objNear(e.root.position.x, e.root.position.z);
+    }
   }
 }
 
@@ -1137,6 +1226,9 @@ function updateBoss(dt) {
   b.root.position.z += mv.dz;
   b.root.rotation.y = b.heading;
   b.mixer.update(dt);
+  // 35 frames a stride and two metres of paper: it should be audible through a
+  // wall, which at 1.15 m/s is most of the warning you get.
+  footfall(b, 35, dt, sfx.bossStep);
 }
 
 /** A stamp landed on the motion: number the page. */
@@ -1792,8 +1884,28 @@ function updateEnemies(dt) {
     e.root.position.x += mv.dx;
     e.root.position.z += mv.dz;
     e.root.rotation.y = e.heading;
-    e.mixer.update(dt * (fleeing ? 1.0 : 0.55));
+    // The clip is played at 0.55 speed when it is only milling about, so the
+    // footfalls have to stretch by the same factor or the feet and the sound
+    // walk at different speeds.
+    const rate = fleeing ? 1.0 : 0.55;
+    e.mixer.update(dt * rate);
+    footfall(e, e.v.stride, dt * rate, sfx.step);
   }
+}
+
+/**
+ * Tick an entity's stride and fire `snd` on each footfall.
+ *
+ * A stride is two steps, and `stride` is the Run clip's own length in frames at
+ * 30 fps, so the sound is locked to the bake rather than to a number picked by
+ * ear: change the clip and the audio follows.
+ */
+function footfall(e, strideFrames, dt, snd) {
+  const half = strideFrames / 60;
+  e.stepT = (e.stepT || Math.random() * half) + dt;
+  if (e.stepT < half) return;
+  e.stepT -= half;
+  snd(e.root.position.x, e.root.position.z);
 }
 
 function updateSwing(dt) {

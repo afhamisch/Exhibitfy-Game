@@ -279,6 +279,23 @@ Effects are synthesized on a WebAudio graph at play time — swing, stamp, the
 riffle of a document filing itself, the wake clock, and a sting per ending.
 There are no effect samples to ship.
 
+Anything out in the room is placed rather than played flat: a gain by distance,
+squared and cut off at 11 m — just inside the longest sightline the layout can
+produce, so what you hear is something you could have seen had you turned — and
+a stereo pan from the dot product with your right-hand vector. Not a
+`PannerNode`: with up to eight sources the useful part is which side and how
+far, not a modelled head. Measured, a source dead abeam pans to ±1.00, and one
+at 2 m and 9 m gains 0.68 and 0.03 against a formula predicting 0.669 and
+0.033.
+
+Footfalls come off the bake, not off a number picked by ear. `stride` in
+`VARIANTS` and `OBJECTIONS` is each Run clip's length in frames at 30 fps, a
+stride is two steps, and when a document is only milling about — clip played at
+0.55 speed — its footsteps stretch by the same 0.55. The binder plods and the
+stack scurries for the same reason they look that way. Objections also mutter
+inside 4 m: they arrive from behind, and before this the first you knew of one
+was an exhibit leaving the binder.
+
 The music bed is a file, `audio/calm_loop.*`, 31.2 s stereo. It ships twice
 because no single encoding covers every browser: Opus-in-Ogg (381 KB) and
 AAC-in-M4A (521 KB). The page asks `canPlayType` which it prefers and fetches
