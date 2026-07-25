@@ -119,12 +119,31 @@ const CFG = {
   // The boss does not die to one stamp; it has pages, and a Bates stamp is
   // exactly the tool for that. This is the only health bar in the game and it
   // is really a page count.
-  bossPages: 8,
-  bossSpeed: 1.15,        // slow -- it does not need to hurry
-  bossTurn: 1.3,
-  bossRadius: 0.62,       // a big target, and it reads that way
-  bossReach: 1.35,        // reaching you means the motion is GRANTED
-  bossObjEvery: 8.0,      // it calls objections in its own defence
+  // Opposing counsel does not walk at you and cannot be stamped -- the bonus
+  // is the one part of this game that is not about the stamp at all. He throws
+  // binders down the corridor and the whole round is whether you get out of
+  // the way, so the numbers below are all about the dodge window.
+  bossThrows: 8,          // survive this many and the motion is denied
+  bossRange: 7.2,         // how far down the corridor he sets up
+  bossWindup: 0.40,       // release lands on frame 12 of a 30-frame Throw
+  bossCycle: 2.10,        // seconds between throws, tightened as it goes
+  bossCycleMin: 1.15,
+  binderSpeed: 7.4,       // m/s -- about a second of flight at his range
+  // These two add up to the width of the kill zone, and the first pass had
+  // them at 0.42 + 0.40 = 0.82 m of RADIUS -- a 1.64 m corridor of death from
+  // a binder 0.30 m across. A test that teleported the player a metre and a
+  // half sideways still took all eight, which is not a dodge, it is a cutscene.
+  //
+  // These two total the hit radius, and the corridor sets what it can be: the
+  // walkable strip is 1.72 m, so a full sidestep from the centreline is only
+  // 0.86 m. At 0.56 m total that left 0.30 m of margin, which is a dodge you
+  // win or lose on a rounding error. 0.48 leaves 0.38 m and still requires
+  // committing to a direction.
+  binderRadius: 0.20,     // about the real half-width of the thing
+  binderSpin: 9.0,        // rad/s, end over end
+  binderLead: 0.20,       // he leads your movement, but not perfectly
+  playerRadius2: 0.28,    // shoulders
+  bossObjEvery: 8.0,      // he calls objections in his own defence
   // What one costs if it lands in there. Seconds, not exhibits: see sustain().
   objBonusCost: 4.0,
   bossKnockback: 0.55,    // metres a stamp drives it back, so hits read
@@ -363,6 +382,7 @@ const els = {
   scoreLabel: document.getElementById('score-label'),
   remaining: document.getElementById('remaining'),
   warn: document.getElementById('warn'),
+  swear: document.getElementById('swear'),
   banner: document.getElementById('banner'),
   bannerTitle: document.getElementById('banner-title'),
   bannerSub: document.getElementById('banner-sub'),
@@ -389,6 +409,7 @@ const state = {
   closing: 0, closeBroken: 0,
   phase: 'case',          // 'case' -> 'bonus' -> done
   boss: null, bossHits: 0, bonusWon: false, caseWon: false, timeLeft: 0,
+  binders: [], binderHits: 0, lastX: 0, lastZ: 0, swearT: 0,
   keys: Object.create(null),
 };
 
@@ -493,6 +514,22 @@ async function boot() {
                       beacon: g.getObjectByName('Pod_Beacon'),
                       live: true, cooldown: 0, phase: i * 1.4 });
   });
+
+  // ---- the binder counsel throws, out of the file we already have. The
+  // walking binder's BODY only: pages, rings and the face on the front, with
+  // its legs left behind. A binder with legs pinwheeling at your head was
+  // funnier for about four seconds and then just looked like a bug.
+  const binderBody = enemyG.scene.getObjectByName('binder_Body')
+                  || enemyG.scene.getObjectByName('Enemy_binder');
+  if (binderBody) {
+    const proto = new THREE.Group();
+    const copy = binderBody.clone(true);
+    copy.position.set(0, 0, 0);
+    copy.rotation.set(0, 0, 0);
+    copy.scale.setScalar(1);
+    proto.add(copy);
+    state.binderProto = proto;
+  }
 
   // ---- objection prototypes, kept off-scene until one is called
   state.objProto = {};
@@ -731,6 +768,34 @@ const sfx = {
     const t = AC.currentTime;
     playTone(t, 0.18, 'sine', 78, 44, 0.85, at);
     playNoise(t, 0.10, 'lowpass', 900, 240, 0.40, 0.8, at);
+  },
+  // ---- the bonus round
+  windup(x, z) {                             // cloth and effort, up the corridor
+    const at = ear(x, z);
+    if (!at) return;
+    const t = AC.currentTime;
+    playNoise(t, 0.26, 'bandpass', 260, 620, 0.34, 1.2, at);
+  },
+  throwRelease(x, z) {                       // the grunt and the let-go
+    const at = ear(x, z);
+    if (!at) return;
+    const t = AC.currentTime;
+    playTone(t, 0.13, 'sawtooth', 190, 120, 0.24, at);
+    playNoise(t + 0.04, 0.14, 'highpass', 900, 2000, 0.30, 1.0, at);
+  },
+  whoosh() {                                 // it went past your ear
+    if (!AC) return;
+    const t = AC.currentTime;
+    playNoise(t, 0.20, 'bandpass', 1600, 320, 0.34, 0.9);
+  },
+  ouch() {                                   // it did not go past your ear
+    if (!AC) return;
+    const t = AC.currentTime;
+    // a thud on you, then the man himself: a short pained vowel, formant-ish
+    playTone(t, 0.14, 'sine', 130, 60, 0.85);
+    playNoise(t, 0.08, 'lowpass', 800, 200, 0.55);
+    playTone(t + 0.05, 0.26, 'sawtooth', 232, 176, 0.30);
+    playTone(t + 0.05, 0.24, 'sawtooth', 349, 262, 0.14);
   },
   sting(win) {
     if (!AC) return;
@@ -1169,6 +1234,7 @@ function sustain(e) {
   const n = Math.min(state.filed, e.o.strikes);
   state.filed -= n;
   state.struck += n;
+  if (n > 0) swear(true);          // losing one off the board deserves it
   warn(n > 0
     ? `${e.o.label} sustained — ${n} exhibit${n === 1 ? '' : 's'} struck`
     : `${e.o.label} sustained — nothing in the binder to strike`);
@@ -1177,36 +1243,23 @@ function sustain(e) {
 
 // ------------------------------------------------------------- bonus round
 
-const BOSS_GLB = `${ASSETS}/enemies/enemy_motion.glb`;
-
-/** Centre of the walkable rectangle furthest from the player, clear of pods. */
-function bossSpawnPoint() {
-  let best = { x: camera.position.x, z: camera.position.z }, bestD = -1;
-  for (const r of WALK) {
-    const x = (r.x0 + r.x1) * 0.5;
-    const z = (r.z0 + r.z1) * 0.5;
-    if (!insideWalk(x, z)) continue;
-    const d = Math.hypot(x - camera.position.x, z - camera.position.z);
-    // keep it out of a pod, or the pod's beacon lands on top of the boss
-    const onPod = state.pods.some(
-      (p) => Math.hypot(p.home.x - x, p.home.z - z) < 1.4);
-    const score = onPod ? d * 0.35 : d;
-    if (score > bestD) { bestD = score; best = { x, z }; }
-  }
-  return best;
-}
+const BOSS_GLB = `${ASSETS}/enemies/enemy_counsel.glb`;
 
 /**
- * Opposing counsel files for summary judgment. Fetched here rather than with the
- * rest of the assets: it is 664 KB that most players will never see, and making
- * everyone pay for it up front to find out they were too slow is the wrong way
- * round. The load happens under the transition card.
+ * Opposing counsel turns up in person. Fetched here rather than with the rest
+ * of the assets: it is a bonus round most players never earn, and nobody
+ * should pay for a lawyer up front to find out they were too slow. The load
+ * happens under the transition card.
+ *
+ * The round inverts the whole game. Everything up to here has been you closing
+ * on paper that runs away; this is paper coming at you and the stamp being no
+ * use at all. You cannot number a binder in flight -- you move, or you wear it.
  */
 async function startBonus() {
   state.phase = 'bonus';
   state.caseWon = true;
   state.timeLeft = state.clock;          // banked, and reported in the ending
-  banner('Motion for summary judgment', 'Stamp every page');
+  banner('Opposing counsel', 'Dodge every binder');
   musicTo(MUSIC.level * 1.15, 0.8);
 
   let g, clips;
@@ -1220,103 +1273,211 @@ async function startBonus() {
     // The bonus is a reward, not a requirement: if it will not load, award the
     // case that was already won rather than stranding the player in an empty
     // round.
-    console.warn('bonus: boss failed to load —', err && err.message);
+    console.warn('bonus: counsel failed to load —', err && err.message);
     finishBonus(false);
     return;
   }
 
-  // Furthest walkable rectangle from the player, so it has a corridor to come
-  // down. This used to reuse LAYOUT.pods[1], which put the boss inside an ink
-  // pod: the beacon is 1.15 m of emissive orange and it filled the screen the
-  // moment the round began.
-  const spawn = bossSpawnPoint();
+  // Down the corridor from you, facing you, at throwing range. Not the
+  // furthest walkable rectangle the way the walking boss used it -- he has to
+  // have a clear line to throw along, and you have to be able to see him wind
+  // up, which is the entire tell you get.
+  const spawn = counselSpawnPoint();
   g.position.set(spawn.x, 0, spawn.z);
   scene.add(g);
   const mixer = new THREE.AnimationMixer(g);
-  const run = mixer.clipAction(THREE.AnimationClip.findByName(clips, 'Run'));
-  run.play();
-  const hit = mixer.clipAction(THREE.AnimationClip.findByName(clips, 'Stamped'));
-  hit.setLoop(THREE.LoopOnce, 1);
-  hit.clampWhenFinished = true;
+  const idle = mixer.clipAction(THREE.AnimationClip.findByName(clips, 'Idle'));
+  idle.play();
+  const throwA = mixer.clipAction(THREE.AnimationClip.findByName(clips, 'Throw'));
+  throwA.setLoop(THREE.LoopOnce, 1);
+  throwA.clampWhenFinished = true;
+  const gloat = mixer.clipAction(THREE.AnimationClip.findByName(clips, 'Gloat'));
+  gloat.setLoop(THREE.LoopOnce, 1);
+  gloat.clampWhenFinished = true;
   state.boss = {
-    root: g, mixer, run, hit, pages: CFG.bossPages, alive: true, dead: 0,
-    heading: 0, flinch: 0, baseScale: g.scale.clone(),
+    root: g, mixer, idle, throwA, gloat, alive: true, dead: 0,
+    thrown: 0, dodged: 0, next: 1.4, winding: -1,
+    baseScale: g.scale.clone(),
   };
+  state.binders = [];
   state.clock = CFG.bonusTime;
   state.nextObj = CFG.bossObjEvery;
   els.clockLabel.textContent = 'before the ruling';
   updateHud();
 }
 
+/** A spot down a corridor from the player, with a clear line to throw along. */
+function counselSpawnPoint() {
+  let best = null, bestScore = -1;
+  for (let i = 0; i < 200; i++) {
+    const r = WALK[Math.floor(Math.random() * WALK.length)];
+    const x = r.x0 + Math.random() * (r.x1 - r.x0);
+    const z = r.z0 + Math.random() * (r.z1 - r.z0);
+    if (!insideWalk(x, z)) continue;
+    const d = Math.hypot(x - camera.position.x, z - camera.position.z);
+    // He wants to be about bossRange away: close enough to read, far enough
+    // that a binder takes a second to arrive.
+    let score = 10 - Math.abs(d - CFG.bossRange);
+    if (!clearLine(camera.position.x, camera.position.z, x, z)) score -= 20;
+    if (score > bestScore) { bestScore = score; best = { x, z }; }
+  }
+  return best || { x: camera.position.x, z: camera.position.z - CFG.bossRange };
+}
+
+/** Is the straight line between two points walkable the whole way? */
+function clearLine(x0, z0, x1, z1) {
+  const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.35);
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    if (!insideWalk(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t)) return false;
+  }
+  return true;
+}
+
 function updateBoss(dt) {
   const b = state.boss;
   if (!b) return;
-  if (!b.alive) {
-    b.dead += dt;
-    b.mixer.update(dt);
-    return;
-  }
-  // flinch: a stamped page pulses the whole motion, so a non-fatal hit reads
-  if (b.flinch > 0) {
-    b.flinch = Math.max(0, b.flinch - dt * 3.4);
-    const k = 1 + Math.sin(b.flinch * Math.PI) * 0.09;
-    b.root.scale.set(b.baseScale.x * k, b.baseScale.y / k, b.baseScale.z * k);
-  }
+  b.mixer.update(dt);
+  if (!b.alive) { b.dead += dt; return; }
 
+  // face the player, always: the wind-up is only a tell if you can see it
   tmpV.copy(b.root.position).sub(camera.position);
   tmpV.y = 0;
-  const dist = tmpV.length();
-  if (dist <= CFG.bossReach) {           // granted: the case never reaches trial
-    finishBonus(false, true);
+  b.root.rotation.y = Math.atan2(-tmpV.x, -tmpV.z);
+
+  // If you walk out of his line he repositions rather than throwing into a
+  // wall -- otherwise the corner nearest him is a safe room and the round is
+  // over as a game.
+  const seen = clearLine(camera.position.x, camera.position.z,
+                         b.root.position.x, b.root.position.z);
+  if (!seen && b.winding < 0) {
+    const spot = counselSpawnPoint();
+    b.root.position.x += (spot.x - b.root.position.x) * Math.min(1, dt * 1.6);
+    b.root.position.z += (spot.z - b.root.position.z) * Math.min(1, dt * 1.6);
+  }
+
+  if (b.winding >= 0) {
+    b.winding += dt;
+    if (b.winding >= CFG.bossWindup) {
+      b.winding = -1;
+      throwBinder();
+    }
     return;
   }
 
-  let want = Math.atan2(tmpV.x, tmpV.z);
-  let diff = ((want - b.heading + Math.PI) % (Math.PI * 2)) - Math.PI;
-  if (diff < -Math.PI) diff += Math.PI * 2;
-  b.heading += THREE.MathUtils.clamp(diff, -CFG.bossTurn * dt, CFG.bossTurn * dt);
-  const mv = resolveMove(b.root.position,
-                         -Math.sin(b.heading) * CFG.bossSpeed * dt,
-                         -Math.cos(b.heading) * CFG.bossSpeed * dt);
-  if (mv.dx === 0 && mv.dz === 0) b.heading += 1.8 * dt;
-  b.root.position.x += mv.dx;
-  b.root.position.z += mv.dz;
-  b.root.rotation.y = b.heading;
-  b.mixer.update(dt);
-  // 35 frames a stride and two metres of paper: it should be audible through a
-  // wall, which at 1.15 m/s is most of the warning you get.
-  footfall(b, 35, dt, sfx.bossStep);
+  // Muttering between throws, on its own slow timer. `swear` has a cooldown of
+  // its own, so this cannot machine-gun the bubble.
+  if (Math.random() < dt * 0.28) swear();
+
+  b.next -= dt;
+  if (b.next <= 0 && seen && b.thrown < CFG.bossThrows) {
+    b.winding = 0;
+    // Aim is locked HERE, at the start of the wind-up, not at the release.
+    // The corridor is 1.72 m wide and the player can only be 0.86 m off its
+    // centreline, so a throw aimed where you stand when it leaves his hand is
+    // not dodgeable in the space available -- it is a cutscene with a die roll.
+    // Locking it a wind-up early makes the wind-up the tell it is animated to
+    // be, and gives you 0.40 s at 3.1 m/s to be somewhere else.
+    b.aimX = camera.position.x + (camera.position.x - state.lastX) * CFG.binderLead * 30;
+    b.aimZ = camera.position.z + (camera.position.z - state.lastZ) * CFG.binderLead * 30;
+    b.throwA.reset().play();
+    sfx.windup(b.root.position.x, b.root.position.z);
+    // He speeds up as he goes: the last two come at you noticeably harder.
+    const k = b.thrown / Math.max(1, CFG.bossThrows - 1);
+    b.next = CFG.bossCycle + (CFG.bossCycleMin - CFG.bossCycle) * k
+           + CFG.bossWindup;
+  }
 }
 
-/** A stamp landed on the motion: number the page. */
-function stampBoss() {
+/** The binder leaves his hand, on the frame the clip says it does. */
+function throwBinder() {
   const b = state.boss;
-  b.pages -= 1;
-  state.bossHits += 1;
-  b.flinch = 1;
-  // drive it back, so eight stamps is a fight you can feel winning
-  const back = new THREE.Vector3()
-    .subVectors(b.root.position, camera.position);
-  back.y = 0;
-  if (back.lengthSq() > 1e-6) {
-    back.normalize().multiplyScalar(CFG.bossKnockback);
-    const mv = resolveMove(b.root.position, back.x, back.z);
-    b.root.position.x += mv.dx;
-    b.root.position.z += mv.dz;
-  }
+  if (!b || !state.binderProto) return;
+  b.thrown += 1;
+
+  const g = state.binderProto.clone(true);
+  // out of the hand, not out of his navel
+  const from = new THREE.Vector3(b.root.position.x, 1.30, b.root.position.z);
+  g.position.copy(from);
+  g.scale.setScalar(0.85);
+  scene.add(g);
+
+  // Where you were when he started winding up, plus a little lead on the
+  // movement you were making then. Committed early on purpose -- see the note
+  // in updateBoss about the width of a corridor.
+  const aim = new THREE.Vector3(b.aimX, 1.15, b.aimZ);
+  const dir = aim.sub(from).normalize();
+
+  state.binders.push({
+    root: g, dir, life: 0,
+    spin: (Math.random() < 0.5 ? -1 : 1) * CFG.binderSpin,
+  });
+  sfx.throwRelease(from.x, from.z);
   updateHud();
-  if (b.pages <= 0) {
-    b.alive = false;
-    b.dead = 0;
-    b.run.fadeOut(0.1);
-    b.hit.reset().play();
-    b.root.scale.copy(b.baseScale);
-    sfx.stamp(true);
-    finishBonus(true);
-  } else {
-    sfx.stamp(true);
-    warn(`Page numbered — ${b.pages} to go`);
+}
+
+function updateBinders(dt) {
+  for (const p of state.binders) {
+    if (p.done) continue;
+    p.life += dt;
+    p.root.position.addScaledVector(p.dir, CFG.binderSpeed * dt);
+    p.root.rotation.x += p.spin * dt;
+    p.root.rotation.z += p.spin * 0.4 * dt;
+
+    // did it get you?
+    const dx = p.root.position.x - camera.position.x;
+    const dz = p.root.position.z - camera.position.z;
+    const dy = p.root.position.y - CFG.eyeHeight;
+    if (Math.hypot(dx, dz) < CFG.playerRadius2 + CFG.binderRadius
+        && Math.abs(dy) < 1.0) {
+      p.done = true;
+      scene.remove(p.root);
+      hitByBinder();
+      continue;
+    }
+    // gone past, into a wall, or simply out of the world
+    if (p.life > 3.0 || !insideWalk(p.root.position.x, p.root.position.z)
+        || p.root.position.y < 0.05) {
+      p.done = true;
+      scene.remove(p.root);
+      dodgedBinder();
+    }
   }
+  if (state.binders.some((p) => p.done)) {
+    state.binders = state.binders.filter((p) => !p.done);
+  }
+}
+
+/** One got past you. */
+function dodgedBinder() {
+  const b = state.boss;
+  if (!b || !b.alive) return;
+  b.dodged += 1;
+  sfx.whoosh();
+  updateHud();
+  if (b.dodged + state.binderHits >= CFG.bossThrows) settleBonus();
+}
+
+/** One did not. */
+function hitByBinder() {
+  const b = state.boss;
+  state.binderHits += 1;
+  state.shake = 1;
+  state.kick = 1;
+  sfx.ouch();
+  swear(true);
+  if (b && b.alive) { b.idle.stop(); b.gloat.reset().play(); b.idle.play(); }
+  updateHud();
+  if (b && b.dodged + state.binderHits >= CFG.bossThrows) settleBonus();
+}
+
+/** Every binder is accounted for: did you take all eight without one landing? */
+function settleBonus() {
+  const b = state.boss;
+  if (!b || !b.alive) return;
+  b.alive = false;
+  b.dead = 0;
+  finishBonus(state.binderHits === 0);
 }
 
 /**
@@ -1414,19 +1575,9 @@ function aimStrike() {
 function resolveHit() {
   aimStrike();
 
-  // The motion is the biggest thing on the floor and the only one with pages
-  // left to number, so during the bonus it is checked before anything else.
-  const b = state.boss;
-  if (b && b.alive) {
-    tmpV.copy(b.root.position).sub(strike);
-    tmpV.y = 0;
-    if (tmpV.length() <= CFG.strikeRadius + CFG.bossRadius) {
-      stampBoss();
-      state.lastProbe = { at: performance.now(), nearest: tmpV.length(),
-                          hit: true, boss: true };
-      return true;
-    }
-  }
+  // Counsel is deliberately NOT a target. He is a person rather than a
+  // document, the stamp indexes documents, and swinging at him is the joke:
+  // the round is a dodge, and the one tool you have does not solve it.
 
   // Objections are checked first and win ties outright. They are the only thing
   // on the floor that can take a number off the board, so when one is inside
@@ -1488,13 +1639,13 @@ function resolveHit() {
 function updateHud() {
   if (state.phase === 'bonus') {
     const b = state.boss;
-    const pages = b ? b.pages : CFG.bossPages;
-    // "FILED 8 / 8" is the wrong noun entirely once the binder is closed
-    els.scoreLabel.textContent = 'UNSTAMPED';
-    els.score.textContent = `${pages} / ${CFG.bossPages}`;
-    els.score.classList.remove('struck');
-    els.remaining.textContent = pages > 0
-      ? 'pages of summary judgment' : 'motion denied';
+    const dodged = b ? b.dodged : 0;
+    els.scoreLabel.textContent = 'DODGED';
+    els.score.textContent = `${dodged} / ${CFG.bossThrows}`;
+    els.score.classList.toggle('struck', state.binderHits > 0);
+    els.remaining.textContent = state.binderHits > 0
+      ? `${state.binderHits} binder${state.binderHits === 1 ? '' : 's'} got you`
+      : 'binders thrown at you';
     return;
   }
   els.scoreLabel.textContent = 'FILED';
@@ -1520,6 +1671,27 @@ function warn(text) {
   clearTimeout(warnTimer);
   warnTimer = setTimeout(() => els.warn.classList.remove('on'), 2200);
 }
+
+// What a man says when a discovery binder hits him in a dream about work.
+// Grawlixes rather than words: it is funnier, it is in the register of the
+// rest of the game, and it is the version you can put in a CLE presentation.
+const SWEARS = ['#*%!?', '%!**!', '@#$%&!', '*&%$#@', '$#@*!!', '#@!*%&?',
+                '&%$#@!', '!?#*%'];
+
+/**
+ * Put one in the bubble. `force` jumps the queue for a hit, so being clobbered
+ * always says something even if he only just muttered.
+ */
+let swearTimer = null;
+function swear(force) {
+  if (!force && state.t < state.swearT) return;
+  state.swearT = state.t + 2.2;
+  els.swear.textContent = SWEARS[Math.floor(Math.random() * SWEARS.length)];
+  els.swear.classList.add('on');
+  clearTimeout(swearTimer);
+  swearTimer = setTimeout(() => els.swear.classList.remove('on'), 1500);
+}
+state.swear = swear;
 
 /** The bigger, slower card that announces a phase change. */
 let bannerTimer = null;
@@ -1584,11 +1756,12 @@ const VERDICTS = [
 const LAWYER_OF_THE_YEAR = {
   tag: 'Motion denied · Lawyer of the Year',
   head: 'You wake up famous.',
-  body: 'The binder was closed with time to spare, so they moved for summary '
-      + 'judgment — and you Bates-stamped it. Every page. The motion is denied '
-      + 'in a two-line order, the case is yours, and somebody has put your name '
-      + 'on a plaque in a hotel ballroom. You still cannot remember doing any '
-      + 'of it.',
+  body: 'The binder was closed with time to spare, so opposing counsel came '
+      + 'down the corridor himself and threw his entire discovery production at '
+      + 'your head, one binder at a time. Not one of them touched you. The '
+      + 'motion is denied in a two-line order, the case is yours, and somebody '
+      + 'has put your name on a plaque in a hotel ballroom. You still cannot '
+      + 'remember doing any of it.',
 };
 
 // Endings that beat the verdict table because what you did is a better story
@@ -1673,6 +1846,8 @@ function restart() {
   }
   for (const o of state.objections) scene.remove(o.root);
   state.objections.length = 0;
+  for (const p of state.binders || []) scene.remove(p.root);
+  state.binders = [];
 
   // ---- the documents go back to their spawns, un-redacted
   state.enemies.forEach((e, i) => {
@@ -1727,7 +1902,8 @@ function restart() {
     struck: 0, overruled: 0, sustained: 0, nextObj: CFG.objFirst,
     redactions: 0, overRedacted: 0, privilegeSaved: false, waived: false,
     misses: 0, closing: 0, closeBroken: 0,
-    phase: 'case', bossHits: 0, bonusWon: false, bonusGranted: false,
+    phase: 'case', bossHits: 0, binderHits: 0, bonusWon: false,
+    bonusGranted: false,
     caseWon: false, timeLeft: 0, kick: 0, shake: 0, rolled: false,
   });
   state.round = (state.round || 0) + 1;   // fences timers owned by the last one
@@ -1798,14 +1974,12 @@ function finish(complete, fromBonus) {
   // The bonus can only be lost, never the case: say so plainly, because losing
   // a round you were awarded for winning reads as a punishment otherwise.
   if (state.phase === 'bonus' && !state.bonusWon) {
-    const left = state.boss ? state.boss.pages : CFG.bossPages;
-    body += state.bonusGranted
-      ? ` Summary judgment was granted with ${left} page`
-        + `${left === 1 ? '' : 's'} still unnumbered — but the binder was already`
-        + ' closed, and the verdict on it stands.'
-      : ` You closed the binder ${Math.round(state.timeLeft)}s early and drew a`
-        + ` motion for summary judgment; ${left} page${left === 1 ? '' : 's'}`
-        + ' went unnumbered before you woke. The verdict on the binder stands.';
+    const n = state.binderHits;
+    body += ` You closed the binder ${Math.round(state.timeLeft)}s early, which`
+          + ' brought opposing counsel down the corridor in person with an'
+          + ` armful of discovery. ${n} of them hit you`
+          + `${n === 1 ? '' : ''} before you woke up, so the plaque goes to`
+          + ' somebody else. The verdict on the binder stands.';
   }
   if (state.struck > 0) {
     body += ` ${state.struck} exhibit${state.struck === 1 ? ' was' : 's were'} `
@@ -1876,6 +2050,9 @@ function updatePlayer(dt) {
   const sp = Math.hypot(vel.x, vel.z);
   state.bobT = (state.bobT || 0) + dt * sp * 2.4;
   camera.position.y = CFG.eyeHeight + Math.sin(state.bobT * 2) * 0.022 * Math.min(1, sp / CFG.walk);
+  // one frame of history, which is all the lead aim needs
+  state.lastX = camera.position.x - vel.x * dt;
+  state.lastZ = camera.position.z - vel.z * dt;
 }
 
 function updateEnemies(dt) {
@@ -1977,6 +2154,7 @@ function updateSwing(dt) {
       state.dryStamps += 1;
       aimStrike();
       sfx.dry();
+      swear();
       stampCarpet(strike.x, strike.z, camera.rotation.y, true);
       state.kick = 0.45;
       updateInk();
@@ -2007,8 +2185,9 @@ function animate() {
       updateBonusClock(dt);
       updatePlayer(dt);
       updateSwing(dt);
-      updateObjections(dt);      // the motion keeps calling them
+      updateObjections(dt);      // he keeps calling them
       updateBoss(dt);
+      updateBinders(dt);
       updatePods(dt);
     } else {
       updateClock(dt);

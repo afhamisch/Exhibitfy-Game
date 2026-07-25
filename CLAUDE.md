@@ -114,12 +114,25 @@ cap.
 
 **Score the hand you can see.** Grip facing — the back of the hand dotted with
 the direction to the eye — is necessary and not sufficient: the hand can read
-knuckles-out and still be hidden behind its own forearm. Roll 55 scores +0.988,
-beating what was recorded as this hand's maximum, and is visibly worse than
-roll 35 because the forearm covers the knuckles. What sets the usable roll is
-`elbow_dir_r`, not proximity, and not `stamp_pos` — moving the stamp outward
-costs visible fist faster than it buys clearance. Depth-buffer the hand against
-the forearm before believing any pose number.
+knuckles-out and still be hidden behind its own forearm. What sets the usable
+roll is `elbow_dir_r`, not proximity, and not `stamp_pos` — moving the stamp
+outward costs visible fist faster than it buys clearance. Depth-buffer the hand
+against the forearm before believing any pose number: paint it and count the
+pixels that survive the whole scene.
+
+**A first-person arm has to recede.** `elbow_dir_r` carried Z = 0.00, putting
+the elbow at exactly the wrist's depth, so the forearm lay flat across the view
+— a side-on picture of an arm rather than your own arm running away from you,
+which is what made the hand read as seen from the front. Z = 0.58 costs 21% of
+the visible fist (5,141 px → 4,042) and the loss saturates past 0.6, so there
+is nothing to buy beyond it.
+
+Two numbers govern the roll, not one: knuckles towards the eye **and** fingers
+not pointing at it, because fingertips aimed at your face is the front of a
+hand. Re-swept at the receding elbow, roll 65 gives dorsal +0.988 and fingers
+−0.024 for 3,607 px, against roll 35's +0.859 / +0.494 at 4,042. Past 65 the
+forearm eats the hand exactly as the old note warned — that warning was right,
+the number under it (roll 55) was measured at the old flat elbow.
 
 **Enemies:** four exhibits — pleading 1,392 · privilege 1,392 · binder 2,700 ·
 stack 1,856 — and three objections: hearsay 1,392 · character 1,392 ·
@@ -132,6 +145,30 @@ same page, face and Bates maps seven times. In the combined file every node is
 prefixed `<variant>_` and clips are `<variant>_Run` / `<variant>_Stamped`,
 because three.js binds animation tracks **by node name** and seven subtrees all
 calling their root `Rig` would cross-bind.
+
+**The bonus round is a dodge, not a fight.** Opposing counsel (`enemy_counsel.glb`,
+2,298 tris, built by `build_counsel()` rather than `build_enemy()`) is the only
+thing in the game that is not a document: a person at a person's scale, 1.78 m
+against a sheet of paper 0.6 m tall wearing shoes. He throws binders down the
+corridor and the stamp is no use — swinging at him deliberately does nothing,
+because the round exists to take the one tool away. Clips are `Idle` 49f,
+`Throw` 30f, `Gloat` 24f, and **the binder leaves his hand on frame 12 of
+`Throw`**; `web/main.js` spawns the projectile on exactly that frame, so the
+release is a contract between the two files. The thrown binder is not a new
+asset — it is the walking binder's `Body` subtree out of `enemies.glb`, legs
+left behind.
+
+**Aim is locked at the start of the wind-up, never at the release.** The
+walkable strip is 1.72 m wide, so a full sidestep from the centreline is
+0.86 m; against a 0.48 m hit radius that is 0.38 m of margin. Aiming where the
+player stands when the binder actually leaves his hand is not dodgeable in that
+space — it is a cutscene with a die roll. Locking it a wind-up early is what
+makes the animation a tell and gives 0.40 s at 3.1 m/s to be somewhere else.
+Do not "fix" the aim to be more accurate.
+
+**The old boss still ships.** `enemy_motion.glb` — the walking Motion for
+Summary Judgment, 2,088 tris at scale 2.05 — is still built and still valid;
+the prototype simply no longer loads it.
 
 **The boss is `BOSS` and is deliberately NOT in the combined file.** `motion` —
 the Motion for Summary Judgment, 2,088 tris at scale 2.05 — ships only as

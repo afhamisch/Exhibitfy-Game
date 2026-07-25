@@ -55,6 +55,25 @@
      class it loses to `#hud .score b` above and silently never applies. */
   #hud #score.struck { color: #ffb020; }
 
+  /* What Tom says when a binder finds him. Bottom right, out of the
+     viewmodel's way and away from the ink gauge, with a tail so it reads as
+     speech rather than as another HUD label. */
+  #swear {
+    position: fixed; right: 26px; bottom: 96px; pointer-events: none;
+    background: #f2f1ec; color: #14161a; border-radius: 14px;
+    padding: 10px 16px; font-size: 24px; font-weight: 700;
+    letter-spacing: .06em; font-family: ui-monospace, monospace;
+    box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    opacity: 0; transform: scale(.7) translateY(8px);
+    transition: opacity .12s ease-out, transform .12s ease-out;
+  }
+  #swear.on { opacity: 1; transform: scale(1) translateY(0); }
+  #swear::after {
+    content: ""; position: absolute; right: 22px; bottom: -9px;
+    border: 10px solid transparent; border-top-color: #f2f1ec;
+    border-bottom: 0;
+  }
+
   /* objection callout — centred under the crosshair, brief */
   #warn {
     position: fixed; left: 50%; top: 58%; transform: translateX(-50%);
@@ -204,6 +223,7 @@
   <div class="sub" id="remaining">4 documents at large</div>
 </div>
 <div id="warn"></div>
+<div id="swear"></div>
 <div id="banner">
   <div class="t" id="banner-title">Motion for summary judgment</div>
   <div class="s" id="banner-sub">Stamp every page</div>
