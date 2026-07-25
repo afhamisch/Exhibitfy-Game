@@ -76,8 +76,9 @@ python build_environment.py --no-preview
 
 ## Budgets — read these back after every rebuild
 
-**Viewmodel:** 12,492 triangles / 5,350 quads / 8,737 vertices / 17 textures,
-38 nodes / 35 meshes / 14 materials. The single-mesh copy is the same geometry
+**Viewmodel:** 12,780 triangles / 5,494 quads / 8,965 vertices / 17 textures,
+38 nodes / 35 meshes / 14 materials. It was 12,492 / 5,350 / 8,737 before the
+wrist was closed with domes. The single-mesh copy is the same geometry
 as one object with 14 material slots and no animation. 8–15k is the usual
 mobile viewmodel allowance.
 
@@ -92,6 +93,24 @@ while the hand counter-rotated through the brace, so the paper slid inside its
 own grip. About 1.5 mm of digit sits inside the paper and does not tune away: a
 fist's bore is a hole, and a slab 279 mm deep has to be threaded through it. At
 that depth it reads as paper denting under a grip.
+
+**The wrist is a T-joint and both ends are domed.** The hand sits about 116°
+off the forearm axis — the fist is wrapped round a bar that crosses the arm —
+so the arm arrives at the *side* of the hand's base and neither part covers the
+other's opening. A flat cap left 13 of its 19 boundary vertices standing clear
+of the hand, the worst by 31 mm: that was the hard-edged fin sticking out of
+both wrists, and no pose tuning moves it, because it is the end of the tube and
+not the pose. Running a tapered tube on into the fist instead came out the far
+side as a row of prongs — rings translated 116° off their own normal make a
+sheared prism, not a tube.
+
+What works is two domes that overlap. `wrist_dome` on each side, and the palm
+necked to `wrist_neck` at its rim so it fits *inside* the arm it enters: the
+palm is 55 mm wide against a forearm 39 mm thick, and because of the 116° the
+palm's width lies across the arm's thickness, so the rim has to lose girth or
+nothing can cover it. No ball joint fixes that either — anything wide enough to
+cover a 55 mm rim is wider than the arm. Do not flatten either dome back to a
+cap.
 
 **Score the hand you can see.** Grip facing — the back of the hand dotted with
 the direction to the eye — is necessary and not sufficient: the hand can read

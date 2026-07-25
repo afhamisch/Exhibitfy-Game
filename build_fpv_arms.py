@@ -43,6 +43,14 @@ HAND = {
     "palm_t1": 0.029,
     "palm_rings": 11,
     "palm_sides": 18,
+    # How far the palm's domed base reaches back up inside the forearm. It only
+    # has to clear the forearm's own dome, which comes the other way.
+    "wrist_dome": 0.013,
+    # 0.64 puts the rim's furthest point 17.6 mm from the pivot, inside the
+    # forearm's 19.5 mm half-thickness with 1.9 mm to spare; the neck is gone
+    # again by a quarter of the way along the palm, which is still inside.
+    "wrist_neck": 0.64,
+    "wrist_neck_t": 0.24,
     "finger_sides": 10,
     # a gripped bar sits here in hand-local space (used by the grip solver)
     "grip_point": (0.0, -0.0335, 0.072),
@@ -196,7 +204,16 @@ RIG = {
     # forearm cross-section
     "r_elbow": (0.0525, 0.0475),
     "r_mid": (0.0435, 0.0385),
-    "r_wrist": (0.0325, 0.0252),
+    # The wrist has to be no fatter than the hand it enters, or the joint shows
+    # however it is capped: this was 32.5 x 25.2 against a palm measuring
+    # 27.5 x 17.0 at its base, so the arm was 5 mm wider and 8 mm thicker than
+    # the thing meant to hide it. Now it lands just proud of the palm's rim --
+    # enough to bury it, not enough to read as a cuff -- and a wrist that is
+    # flatter than the forearm's belly is what a wrist actually is.
+    "r_wrist": (0.0290, 0.0195),
+    # How far past the wrist the forearm's dome reaches, along its own axis.
+    # It has to cover the palm's necked base, which comes the other way.
+    "wrist_dome": 0.015,
     "sleeve_pad": 0.0098,
     "sleeve_t0": -0.95,       # extends behind the elbow, off-camera
     "sleeve_t1": 0.46,        # rolled up to mid-forearm
@@ -458,7 +475,16 @@ KNUCKLE_X = [f[1][0] for f in FINGERS]
 SIDES = ("R", "L")      # right runs the stamp, left carries the exhibits
 
 
-def build_palm(side_uv):
+def build_palm(side_uv, wrist_dir=None):
+    """The palm, from its wrist rim to the knuckles.
+
+    `wrist_dir` is the direction back up the forearm, in this hand's own space.
+    Given it, the palm does not stop at its wrist rim with a flat lid; it runs
+    a little way up inside the arm and closes there. The lid was the flat facet
+    chiselled across the top of the wrist -- the forearm arrives at the side of
+    the hand, so it never covered the hand's own cap any more than the hand
+    covered its.
+    """
     m = M.Mesh("Palm", MAT["skin"])
     n = HAND["palm_sides"]
     rings = HAND["palm_rings"]
@@ -470,6 +496,17 @@ def build_palm(side_uv):
         w = HAND["palm_w0"] + (HAND["palm_w1"] - HAND["palm_w0"]) * \
             vec.smoothstep(min(1.0, t * 1.15))
         th = HAND["palm_t0"] + (HAND["palm_t1"] - HAND["palm_t0"]) * t
+        # Neck the rim down so it fits inside the arm it enters. The hand is
+        # mounted about 116 deg off the forearm, so the palm's WIDTH lies
+        # across the forearm's THICKNESS: a rim reaching 27.5 mm from the
+        # pivot cannot hide in a tube 19.5 mm thick, whatever caps it, and no
+        # ball joint fixes that either -- anything wide enough to cover a
+        # 55 mm rim is wider than the arm. Necking the first fifth of the palm
+        # costs nothing visible, because that part is inside the arm.
+        neck = HAND["wrist_neck"] + (1.0 - HAND["wrist_neck"]) * \
+            vec.smoothstep(min(1.0, t / HAND["wrist_neck_t"]))
+        w *= neck
+        th *= neck
         # the palm arches: knuckle end drops slightly to the palmar side
         y = -0.005 * t * t
         z = L * t
@@ -498,8 +535,19 @@ def build_palm(side_uv):
         # close the seam
         ring[-1] = ring[0]
         out.append(ring)
+
     m.add_loft(out, uv_rect=(0.0, v0, 1.0, v1), group=0)
-    m.add_grid_cap(out[0], group=1, flip=True)
+
+    # ---- the wrist end, closed into the arm
+    if wrist_dir is None:
+        m.add_grid_cap(out[0], group=1, flip=True)
+    else:
+        # Domed, and aimed back up the forearm so it closes inside it. The ring
+        # is reversed because this end faces the other way: dome_tip follows
+        # the ring's own winding, and the base ring is wound for the loft.
+        apex = vec.mul(vec.norm(wrist_dir), HAND["wrist_dome"])
+        M.dome_tip(m, out[0][::-1], apex, steps=2, group=1,
+                   uv_rect=(0.0, v0, 1.0, v0 + (v1 - v0) * 0.04), bulge=0.85)
     knuckle = (0.0, -0.005 * 1.0, L + HAND["palm_t1"] * 0.42)
     M.dome_tip(m, out[-1], knuckle, steps=2, group=0,
                uv_rect=(0.0, v1 - (v1 - v0) * 0.05, 1.0, v1), bulge=0.55)
@@ -548,7 +596,7 @@ def build_thumb(side_uv, curl=(34.0, 30.0), splay=-52.0, twist=-26.0,
 
 
 def build_hand(name, bar_radius, grip_point=None, tighten=None, thumb=None,
-               suffix=""):
+               suffix="", wrist_dir=None):
     """A LEFT hand in canonical local space: +Z fingers, +Y dorsal, +X... no.
 
     Canonical space is +Z along the fingers, +Y out of the back of the hand,
@@ -563,7 +611,7 @@ def build_hand(name, bar_radius, grip_point=None, tighten=None, thumb=None,
     grip = grip_point or HAND["grip_point"]
     tighten = tighten or {}
     node = Node(name)
-    node.add_mesh(build_palm(hv))
+    node.add_mesh(build_palm(hv, wrist_dir))
     centre = (grip[2], grip[1])          # handle axis, in the hand's (z, y)
 
     for fname, root, radius, phal, splay in FINGERS:
@@ -649,9 +697,42 @@ def build_arm(name, wrist_world, hand_basis, elbow_dir, bow, watch=False):
         prof = M.profile_super(HAND["palm_sides"], rx, ry, e)
         rings.append(M.ring_from_profile(prof, pts[i], x, y))
     fv = TX.FOREARM_V
+    # ---- into the hand, rather than a lid in mid-air
+    #
+    # The wrist is a T-joint, not a butt joint. The hand is mounted about 116
+    # deg off the forearm axis -- the arm arrives at the SIDE of the hand's
+    # base, because the fist is wrapped round a bar that crosses the forearm --
+    # so the hand never covers the end of the arm. A flat cap there is left
+    # hanging in the open: 13 of its 19 boundary vertices stood clear of the
+    # hand, the worst by 31 mm. That is the hard-edged fin that has been
+    # sticking out of both wrists, and no amount of tuning the pose moves it,
+    # because it is the end of the tube and not the pose.
+    #
+    # So the tube keeps going, shrinking, aimed at a point inside the fist, and
+    # closes in there where the hand's own mass hides it. The last open ring is
+    # still proud of the palm's rim, which is what buries the palm's own cap in
+    # turn -- the two caps used to stick out of each other.
+    # A dome, not a tube with a lid on it. Two things were tried and measured
+    # first, and both are worse:
+    #
+    #   a flat cap    left 13 of its 19 boundary vertices standing clear of the
+    #                 hand, the worst by 31 mm -- the hard-edged fin that was
+    #                 sticking out of both wrists;
+    #   a tapered tube run on into the fist came out of the far side as a row
+    #                 of prongs, because a tube whose rings travel 116 deg off
+    #                 their own normal is a sheared prism and reads as one.
+    #
+    # A dome has no flat facet from any angle and no silhouette of its own to
+    # go wrong. Paired with the palm's own domed base, which is necked to fit
+    # inside this one, the two convex surfaces simply overlap and the crossing
+    # reads as the crease a wrist has anyway.
     skin.add_loft(rings, uv_rect=(0.0, fv[0], 1.0, fv[1]), group=0)
     skin.add_grid_cap(rings[0], group=1, flip=True)
-    skin.add_grid_cap(rings[-1], group=2)
+    tan_end = vec.norm(vec.sub(pts[-1], pts[-2]))
+    M.dome_tip(skin, rings[-1], vec.mad(pts[-1], tan_end, RIG["wrist_dome"]),
+               steps=2, group=2,
+               uv_rect=(0.0, fv[1] - (fv[1] - fv[0]) * 0.04, 1.0, fv[1]),
+               bulge=0.85)
 
     # ---- shirt sleeve, rolled to mid-forearm with a thick cuff
     # Behind the elbow the sleeve follows the straight tangent rather than
@@ -1133,8 +1214,20 @@ def build_scene(bates="000137", images=None):
         arm_node, arm_world, path_at, frame_info = build_arm(
             "Arm_" + side, wrist_world, hand_world, elbow_dir, bow)
 
+        # Which way is "up the arm", in the hand's own space. The palm runs
+        # that way for a couple of centimetres so its wrist rim finishes inside
+        # the forearm instead of showing as a flat facet across the joint.
+        #
+        # Canonical hand space is a LEFT hand and the right side is mirrored
+        # across X afterwards, so the direction has to be un-mirrored on the
+        # way in or the right palm tucks away from its own arm.
+        back = vec.xform_dir(vec.rigid_inverse(hand_world),
+                             vec.xform_dir(arm_world, (0.0, 0.0, -1.0)))
+        if side == "R":
+            back = (-back[0], back[1], back[2])
+
         hand = build_hand("Hand_" + side, bar_r, gp, tighten, thumb,
-                          "_" + side)
+                          "_" + side, wrist_dir=back)
         hand.matrix = vec.mat_mul(vec.rigid_inverse(arm_world), hand_world)
         if side == "R":
             mirror_node(hand)
