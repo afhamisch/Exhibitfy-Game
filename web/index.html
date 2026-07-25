@@ -72,14 +72,48 @@
   }
   #overlay .note { margin-top: 16px; font-size: 11px; opacity: .45; }
   #loading { font-size: 13px; opacity: .7; }
+
+  /* wake screen — fades up from the dream rather than cutting */
+  #wake {
+    position: fixed; inset: 0; z-index: 6; display: flex;
+    align-items: center; justify-content: center; text-align: center;
+    background: #0a0b0d; opacity: 0; transition: opacity 1.1s ease 0s;
+    pointer-events: none;
+  }
+  #wake.on { opacity: 1; pointer-events: auto; }
+  #wake .card { max-width: 440px; padding: 28px 34px; }
+  #wake h1 { margin: 0 0 14px; font-size: 30px; letter-spacing: .01em; }
+  #wake p { margin: 0; opacity: .62; font-size: 13px; line-height: 1.7; }
+  #wake .tag {
+    font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--orange); margin-bottom: 18px;
+  }
+  #wake .again {
+    display: inline-block; margin-top: 26px; padding: 10px 22px;
+    border: 1px solid #383c44; border-radius: 3px; cursor: pointer;
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+  }
+  #wake .again:hover { background: #1c1f24; }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="reticle" hidden></div>
 <div id="hud" hidden>
-  <div class="score">STAMPED <b id="score">0</b></div>
+  <div class="score">FILED <b id="score">0 / 4</b></div>
   <div class="sub" id="remaining">4 documents at large</div>
+</div>
+
+<!-- The dream lets go once the binder is complete. -->
+<div id="wake" hidden>
+  <div class="card">
+    <div class="tag">Exhibit binder complete</div>
+    <h1>You wake up.</h1>
+    <p>The desk lamp is still on. The coffee is cold. Every page in front of
+       you is stamped, numbered and in order — and you have absolutely no
+       memory of doing it.</p>
+    <div class="again" id="again">File another binder</div>
+  </div>
 </div>
 
 <div id="overlay">

@@ -37,6 +37,13 @@ const CFG = {
   enemySpeed: 2.45,       // the pleading paper; the rest scale off it
   enemyFlee: 7.0,         // starts running when the player is this close
   enemyTurn: 3.2,
+
+  // A stamped document is not dead, it is FILED. Bates numbering is how
+  // exhibits get indexed for trial, so the stamp is what makes a document
+  // collectible -- it lies flat for the length of the Stamped clip, then
+  // files itself into the binder you are carrying.
+  fileDelay: 0.90,        // Stamped runs 0.833 s; let it land first
+  fileTime: 0.55,         // then the flight into the binder
 };
 
 // The four variants, tuned from what build_enemies.py actually baked rather
@@ -207,10 +214,11 @@ const els = {
   reticle: document.getElementById('reticle'),
   score: document.getElementById('score'),
   remaining: document.getElementById('remaining'),
+  wake: document.getElementById('wake'),
 };
 
 const state = {
-  ready: false, score: 0, t: 0,
+  ready: false, score: 0, filed: 0, done: false, t: 0,
   swinging: false, swingT: 0, hitDone: false,
   enemies: [],
   keys: Object.create(null),
@@ -294,6 +302,9 @@ async function boot() {
     state.enemies.push({
       kind, v, root: g, mixer, run, hit, alive: true,
       heading: g.rotation.y, dead: 0, phase: i * 1.7,
+      // the variants carry their own scale on the root (the binder is 1.16),
+      // so the filing shrink has to be relative to it, not an absolute 1
+      baseScale: g.scale.clone(), filed: false, restPos: new THREE.Vector3(),
     });
   });
 
@@ -309,15 +320,19 @@ boot().catch((err) => {
 });
 
 // ---------------------------------------------------------------- input
-els.overlay.addEventListener('click', () => { if (state.ready) controls.lock(); });
+els.overlay.addEventListener('click', () => {
+  if (state.ready && !state.done) controls.lock();
+});
 controls.addEventListener('lock', () => {
   els.overlay.style.display = 'none';
   els.hud.hidden = els.reticle.hidden = false;
 });
 controls.addEventListener('unlock', () => {
-  els.overlay.style.display = 'flex';
+  // once the binder is closed the wake screen owns the view, not the menu
+  if (!state.done) els.overlay.style.display = 'flex';
   els.hud.hidden = els.reticle.hidden = true;
 });
+document.getElementById('again').addEventListener('click', () => location.reload());
 addEventListener('keydown', (e) => { state.keys[e.code] = true; });
 addEventListener('keyup', (e) => { state.keys[e.code] = false; });
 renderer.domElement.addEventListener('mousedown', (e) => {
@@ -338,6 +353,7 @@ const tmpV = new THREE.Vector3();
 const fwd = new THREE.Vector3();
 
 const strike = new THREE.Vector3();
+const fileTo = new THREE.Vector3();
 
 function resolveHit() {
   camera.getWorldDirection(fwd);
@@ -358,6 +374,7 @@ function resolveHit() {
   if (!best) return;
   best.alive = false;
   best.dead = 0;
+  best.restPos.copy(best.root.position);
   best.run.fadeOut(0.08);
   best.hit.reset().play();
   state.score += 1;
@@ -365,11 +382,25 @@ function resolveHit() {
 }
 
 function updateHud() {
-  els.score.textContent = state.score;
+  const total = state.enemies.length;
+  els.score.textContent = `${state.filed} / ${total}`;
   const left = state.enemies.filter((e) => e.alive).length;
-  els.remaining.textContent = left === 0
-    ? 'all filed — press Esc'
-    : `${left} document${left === 1 ? '' : 's'} at large`;
+  const inFlight = state.score - state.filed;
+  els.remaining.textContent = left > 0
+    ? `${left} document${left === 1 ? '' : 's'} at large`
+    : inFlight > 0 ? 'filing…' : 'binder complete';
+}
+
+/** Last exhibit filed: the binder is closed, so the dream lets go. */
+function finish() {
+  if (state.done) return;
+  state.done = true;
+  els.wake.hidden = false;
+  // let the last document land before the room dissolves
+  setTimeout(() => {
+    els.wake.classList.add('on');
+    controls.unlock();
+  }, 700);
 }
 
 // ---------------------------------------------------------------- loop
@@ -412,6 +443,24 @@ function updateEnemies(dt) {
     if (!e.alive) {
       e.dead += dt;
       e.mixer.update(dt);
+      if (!e.filed && e.dead >= CFG.fileDelay) {
+        const k = Math.min(1, (e.dead - CFG.fileDelay) / CFG.fileTime);
+        const ease = k * k * (3 - 2 * k);
+        // home on the binder you are carrying, just below the eye
+        fileTo.copy(camera.position);
+        fileTo.y -= 0.5;
+        e.root.position.lerpVectors(e.restPos, fileTo, ease);
+        e.root.position.y += Math.sin(ease * Math.PI) * 0.7;   // arc up
+        e.root.rotation.y = e.heading + ease * Math.PI * 2;    // and tumble
+        e.root.scale.copy(e.baseScale).multiplyScalar(1 - ease * 0.88);
+        if (k >= 1) {
+          e.filed = true;
+          e.root.visible = false;
+          state.filed += 1;
+          updateHud();
+          if (state.filed === state.enemies.length) finish();
+        }
+      }
       continue;
     }
     tmpV.copy(e.root.position).sub(camera.position);
