@@ -6,6 +6,12 @@ viewmodel with its `Stamp_Swing` clip, all four paper enemies out of the
 shared-texture `enemies.glb`, and the modular office kit. No geometry is
 authored here.
 
+https://github.com/afhamisch/Exhibitfy-Game/raw/main/web/screenshots/gameplay_demo.webm
+
+A full run, captured from the prototype itself: chasing the four documents
+down, stamping them, watching them file themselves into the binder, and the
+wake screen when the last one lands.
+
 ![corridor](screenshots/prototype_corridor.png)
 
 ## Run it
