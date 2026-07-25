@@ -373,15 +373,20 @@ def build_finger(name, root, radius, phal, splay, bends, side_uv, suffix=""):
     """
     n = HAND["finger_sides"]
     seg_names = ("", "_Mid", "_Tip")
-    radii = [radius, radius * 0.90, radius * 0.80, radius * 0.72]
+    # Real fingers lose about 40% from the proximal knuckle to the tip. The old
+    # 1.0 -> 0.72 was too gentle, which is half of why these read as tubes.
+    radii = [radius, radius * 0.86, radius * 0.72, radius * 0.58]
     v0, v1 = side_uv
 
     nodes = []
     for i, (ln, bend) in enumerate(zip(phal, bends)):
         m = M.Mesh("Finger_" + name + seg_names[i] + suffix, MAT["skin"])
-        # slightly wider than deep, and the knuckle end a touch fatter
-        M.capsule(m, ln, radii[i] * (1.06 if i else 1.10), radii[i + 1], n,
-                  group=0, uv_rect=(0.0, v0, 1.0, v1),
+        # The joint end used to be fattened (1.06/1.10) and the end domes left
+        # near-round, which put a visible ball at every joint and made the
+        # digits read as sausage links. Knuckles are barely wider than the
+        # shaft, and a flatter dome keeps the silhouette continuous.
+        M.capsule(m, ln, radii[i] * (1.0 if i else 1.03), radii[i + 1], n,
+                  group=0, uv_rect=(0.0, v0, 1.0, v1), squash=0.52,
                   base=True, tip=(i == len(phal) - 1))
         if i == 0:
             mtx = vec.mat_mul(
@@ -449,15 +454,18 @@ def build_thumb(side_uv, curl=(34.0, 30.0), splay=-52.0, twist=-26.0,
     n = HAND["finger_sides"]
     radius = 0.0148
     phal = (0.038, 0.030)
-    radii = (radius, radius * 0.90, radius * 0.80)
+    # A thumb is not a fifth finger: it stays broad through the pad and barely
+    # narrows, which is what separates its silhouette from the digits.
+    radii = (radius, radius * 0.94, radius * 0.84)
     v0, v1 = side_uv
     root = (-HAND["palm_w0"] * 0.50, -0.008, 0.026)
 
     nodes = []
     for i, (ln, ang) in enumerate(zip(phal, curl)):
         m = M.Mesh("Thumb" + ("_Tip" if i else "") + suffix, MAT["skin"])
-        M.capsule(m, ln, radii[i] * 1.05, radii[i + 1], n, group=0,
-                  uv_rect=(0.0, v0, 1.0, v1), base=True, tip=(i == 1))
+        M.capsule(m, ln, radii[i], radii[i + 1], n, group=0,
+                  uv_rect=(0.0, v0, 1.0, v1), squash=0.58,
+                  base=True, tip=(i == 1))
         if i == 0:
             mtx = vec.mat_mul(
                 vec.mat_mul(vec.translate(root),
