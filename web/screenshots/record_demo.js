@@ -143,6 +143,11 @@ const DEMO = () => {
         // fight is lost from full retreat: two runs got seven of eight pages
         // and were reached in a corner holding the last one.
         if (kind === 'boss') side = (Math.floor(s.t / 2.2) % 2) ? 'KeyA' : 'KeyD';
+        // Inside the last half metre of the band, run. A walk only beats the
+        // motion by 1.95 m/s and the pages take long enough to number that the
+        // margin gets eaten; the sprint applies to the whole move vector, so it
+        // works backwards.
+        if (dist < band[1] - 0.35) s.keys.ShiftLeft = true;
       }
       // Stuck watchdog, measured on the bot's own displacement rather than on
       // the range to the target. The bot walks a straight line at whatever it
@@ -157,7 +162,9 @@ const DEMO = () => {
       if (this.strafe > 0) {
         this.strafe -= 1;
         side = this.strafeKey;
-      } else if (s.keys.KeyW) {
+      } else if (s.keys.KeyW || s.keys.KeyS) {
+        // Retreat gets stuck on walls exactly the way pursuit does, and being
+        // stuck while giving ground is the one that loses the round.
         const px = s.camera.position.x, pz = s.camera.position.z;
         if (!this.mark) { this.mark = [px, pz]; this.marked = 20; }
         if (--this.marked <= 0) {
