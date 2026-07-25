@@ -162,7 +162,25 @@ RIG = {
     # scores +0.988, better than the +0.981 recorded as this hand's maximum, and
     # is visibly worse -- the forearm covers the knuckles and only fingertips
     # survive. Score the hand you can SEE, not the one you have posed.
-    "grip_r_roll": 35.0,
+    #
+    # Re-swept at the receding elbow, because that warning was measured at the
+    # old flat one and a different elbow is a different trade. There are two
+    # numbers to satisfy, not one: the back of the hand towards the eye, AND
+    # the fingers not pointing at it -- a fist whose fingertips aim at your
+    # face is the front of a hand, which is not what you see of your own.
+    #
+    #   roll   fist px   dorsal   fingers
+    #      5      4428   +0.528   +0.841   fingertips straight at the player
+    #     35      4042   +0.859   +0.494   what shipped before
+    #     50      3872   +0.957   +0.252
+    #     65      3607   +0.988   -0.024   knuckles square, fingers side-on
+    #     80      2860   +0.936   -0.315   fingers away, a third of the fist lost
+    #     95      1030   +0.789   -0.591
+    #
+    # 65 peaks the facing, takes the fingertips off the camera, and keeps 89%
+    # of the fist. Past it the forearm eats the hand exactly as the old note
+    # said -- the warning was right, the number under it was for another pose.
+    "grip_r_roll": 65.0,
     # The left hand does not touch the stamp -- it carries the exhibits. These
     # are VIEW-space, not stamp-space: the arm hangs off the root, so the sheaf
     # rides the hand and braces, but never inherits the swing.
@@ -197,7 +215,22 @@ RIG = {
     # that roll cannot do: facing says which way the hand is turned, this says
     # whether the player can see it. It is what actually lifted the roll
     # ceiling -- see grip_r_roll for the numbers.
-    "elbow_dir_r": (0.90, -0.44, 0.00),
+    # The Z is the whole point. At 0.00 the elbow sat at exactly the wrist's
+    # depth, so the forearm lay flat across the view: a side-on picture of an
+    # arm rather than your own arm running away from you, which is what made
+    # the hand read as seen from the front in a first-person view.
+    #
+    # Recession costs visible fist, because pulling the elbow towards the
+    # camera puts forearm between eye and hand, and it is worth measuring
+    # rather than guessing -- painting the hand and counting its surviving
+    # pixels through the whole scene:
+    #
+    #   Z  0.00 -> 5141 px      Z  0.45 -> 4160 px      Z  0.71 -> 4040 px
+    #   Z  0.31 -> 4690 px      Z  0.58 -> 4042 px
+    #
+    # The loss saturates around 0.6, so past that you are paying nothing for
+    # more recession and gaining nothing either. 0.58 it is.
+    "elbow_dir_r": (0.70, -0.45, 0.60),
     "elbow_dir_l": (-0.42, -0.82, 0.39),
     "forearm_bow_r": (0.026, -0.016, 0.024),
     "forearm_bow_l": (-0.026, -0.020, 0.022),
