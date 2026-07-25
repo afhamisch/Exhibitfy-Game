@@ -419,7 +419,7 @@ def build_finger(name, root, radius, phal, splay, bends, side_uv, suffix=""):
 
 KNUCKLE_X = [f[1][0] for f in FINGERS]
 
-SIDES = ("R",)          # one-handed, right only
+SIDES = ("R", "L")      # right runs the stamp, left carries the exhibits
 
 
 def build_palm(side_uv):
@@ -1037,9 +1037,9 @@ def build_scene(bates="000137", images=None):
     def dir_world(d):
         return vec.norm(vec.xform_dir(stamp_world, d))
 
-    # Strict first person: the right hand and forearm only. The carrying arm
-    # and the watch it wore are gone with it -- the brief asks for no left hand
-    # in frame, and the watch cannot be shown without one.
+    # Right hand runs the stamp; left carries the exhibits and wears the watch.
+    # The carrying arm is posed in VIEW space, not stamp space, so the sheaf
+    # does not swing with the tool -- see build_swing.
     arms = []
     for side in SIDES:
         if side == "R":
