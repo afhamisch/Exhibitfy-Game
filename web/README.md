@@ -42,6 +42,7 @@ landing page.
 | Move | `W` `A` `S` `D` |
 | Look | Mouse |
 | Stamp | Left click |
+| Redact | Right click |
 | Sprint | `Shift` |
 | Release cursor | `Esc` |
 

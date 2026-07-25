@@ -105,6 +105,7 @@ const CFG = {
   // irrelevant. Now the binder has to be HELD. An objection that lands during
   // the hold takes an exhibit back out and the round carries on.
   closeHold: 3.0,
+  inkPerRedact: 8,        // cheaper than a stamp; you are only drawing bars
 
   // ---- the bonus round, and the reason to be fast
   //
@@ -351,6 +352,7 @@ const state = {
   ink: CFG.inkMax, dryStamps: 0,
   enemies: [], pods: [], objections: [],
   struck: 0, overruled: 0, sustained: 0, nextObj: CFG.objFirst,
+  redactions: 0, overRedacted: 0, privilegeSaved: false, waived: false,
   closing: 0, closeBroken: 0,
   phase: 'case',          // 'case' -> 'bonus' -> done
   boss: null, bossHits: 0, bonusWon: false, caseWon: false, timeLeft: 0,
@@ -569,6 +571,10 @@ const sfx = {
     playNoise(t, 0.22, 'bandpass', 500, 2400, 0.3, 1.4);
     playTone(t + 0.20, 0.09, 'triangle', 660, 660, 0.25);
   },
+  redact() {                                 // a marker dragged across a page
+    if (!AC) return;
+    playNoise(AC.currentTime, 0.19, 'lowpass', 1500, 380, 0.34, 0.7);
+  },
   dry() {                                    // the stamp lands on nothing
     if (!AC) return;
     playNoise(AC.currentTime, 0.07, 'highpass', 2200, 3400, 0.22);
@@ -781,7 +787,9 @@ controls.addEventListener('unlock', () => {
 document.getElementById('again').addEventListener('click', () => location.reload());
 addEventListener('keydown', (e) => { state.keys[e.code] = true; });
 addEventListener('keyup', (e) => { state.keys[e.code] = false; });
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('mousedown', (e) => {
+  if (e.button === 2 && controls.isLocked) { redact(); return; }
   if (e.button === 0 && controls.isLocked) startSwing();
 });
 
@@ -822,6 +830,63 @@ function updateInk() {
   els.inkLabel.textContent = dry
     ? 'Stamp dry — find ink'
     : `Stamp ink · ${Math.floor(state.ink / CFG.inkPerSwing)} left`;
+}
+
+// ---------------------------------------------------------------- redaction
+//
+// The joke, and the one trap in the game. A Bates stamp indexes a document for
+// production -- so stamping the PRIVILEGE paper produces privileged material to
+// the other side, which is the single worst thing a litigator can do by
+// accident. That one has to be REDACTED (right mouse) instead, and everything
+// else is fair game to over-redact if you feel like blacking out a pleading.
+
+function redactable() {
+  aimStrike();
+  let best = null, bestD = Infinity;
+  for (const e of state.enemies) {
+    if (!e.alive || e.redacted) continue;
+    tmpV.copy(e.root.position).sub(strike);
+    tmpV.y = 0;
+    const d = tmpV.length();
+    if (d > CFG.strikeRadius + CFG.enemyRadius * e.v.radius) continue;
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
+
+/** Black out every page of a document. Cheaper than a stamp, and reversible by
+ *  nothing at all -- a redacted exhibit is still filed, just unreadable. */
+function redact() {
+  if (state.phase === 'bonus') return;         // nothing to redact in there
+  if (state.ink < CFG.inkPerRedact) { sfx.dry(); warn('No ink to redact with'); return; }
+  const e = redactable();
+  if (!e) return;
+  state.ink -= CFG.inkPerRedact;
+  updateInk();
+  e.redacted = true;
+  // Materials are shared by name across the combined GLB, so clone before
+  // darkening or every document of this kind goes black at once.
+  e.root.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    o.material = (Array.isArray(o.material) ? mats : mats).map((m) => {
+      if (/Face|Limb|Glove|Shoe|Ring/i.test(m.name)) return m;   // keep the face
+      const c = m.clone();
+      c.color.setRGB(0.045, 0.045, 0.05);
+      c.map = null;                            // the point is that it is gone
+      return c;
+    });
+    if (!Array.isArray(o.material)) o.material = o.material[0];
+  });
+  state.redactions += 1;
+  if (e.kind === 'privilege') {
+    state.privilegeSaved = true;
+    warn('Privileged material redacted');
+  } else {
+    state.overRedacted += 1;
+    warn('Redacted — nobody asked you to');
+  }
+  sfx.redact();
 }
 
 // --------------------------------------------------------------- objections
@@ -1242,6 +1307,14 @@ function resolveHit() {
   best.run.fadeOut(0.08);
   best.hit.reset().play();
   state.score += 1;
+  // The trap: Bates-stamping the privilege paper indexes it for production, so
+  // an unredacted one goes out to the other side. It still files -- that is
+  // what makes it a mistake rather than a miss.
+  if (best.kind === 'privilege' && !best.redacted) {
+    state.waived = true;
+    warn('Privilege WAIVED — you produced it unredacted');
+    sfx.sustained();
+  }
   updateHud();
   return true;
 }
@@ -1410,6 +1483,19 @@ function finish(complete, fromBonus) {
   if (state.dryStamps > 0) {
     body += ` ${state.dryStamps} swing${state.dryStamps === 1 ? '' : 's'} came `
           + 'down on a dry stamp and left nothing but an impression.';
+  }
+  if (state.waived) {
+    body += ' The privilege log is a formality now: you Bates-stamped the '
+          + 'attorney-client memo and produced it unredacted, so it is theirs, '
+          + 'it is admissible, and it is going in their opening.';
+  } else if (state.privilegeSaved) {
+    body += ' The privileged memo went out redacted to the margins, which is '
+          + 'the one thing here nobody can complain about.';
+  }
+  if (state.overRedacted > 0) {
+    body += ` You also blacked out ${state.overRedacted} document`
+          + `${state.overRedacted === 1 ? '' : 's'} that nobody had asked you `
+          + 'to redact.';
   }
   els.wakeBody.textContent = body;
   els.wake.hidden = false;
