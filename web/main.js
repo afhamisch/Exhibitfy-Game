@@ -353,6 +353,7 @@ const state = {
   enemies: [], pods: [], objections: [],
   struck: 0, overruled: 0, sustained: 0, nextObj: CFG.objFirst,
   redactions: 0, overRedacted: 0, privilegeSaved: false, waived: false,
+  misses: 0, muted: false,
   closing: 0, closeBroken: 0,
   phase: 'case',          // 'case' -> 'bonus' -> done
   boss: null, bossHits: 0, bonusWon: false, caseWon: false, timeLeft: 0,
@@ -785,7 +786,15 @@ controls.addEventListener('unlock', () => {
   if (!state.done) musicTo(MUSIC.level * 0.35, 0.4);
 });
 document.getElementById('again').addEventListener('click', () => location.reload());
-addEventListener('keydown', (e) => { state.keys[e.code] = true; });
+addEventListener('keydown', (e) => {
+  state.keys[e.code] = true;
+  // Mute. This is going to get shown in a room with other people in it.
+  if (e.code === 'KeyM' && master) {
+    state.muted = !state.muted;
+    master.gain.value = state.muted ? 0 : 0.32;
+    warn(state.muted ? 'Sound off' : 'Sound on');
+  }
+});
 addEventListener('keyup', (e) => { state.keys[e.code] = false; });
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('mousedown', (e) => {
@@ -1425,13 +1434,65 @@ const LAWYER_OF_THE_YEAR = {
       + 'of it.',
 };
 
+// Endings that beat the verdict table because what you did is a better story
+// than how many exhibits you filed. Each one hangs off something already
+// counted, so they are all reachable by playing badly on purpose -- which is
+// the only reason anyone replays a two-minute game.
+//
+// Checked in order, and none of them outrank Lawyer of the Year: that one is
+// earned, these are mostly self-inflicted.
+const SPECIALS = [
+  {
+    when: (s) => s.overRedacted >= 3,
+    tag: 'In re Exhibitfy · sanctions',
+    head: 'You produced a binder of black rectangles.',
+    body: 'Somewhere in there was a case. You redacted almost all of it, on no '
+        + "instruction from anybody, and what went over was a stack of pages "
+        + 'redacted edge to edge. Opposing counsel filed a motion to compel '
+        + 'that is four words long. The court granted it from the bench.',
+  },
+  {
+    when: (s) => s.misses >= 8 && s.filed <= 2,
+    tag: 'Facilities has questions',
+    head: 'You Bates-stamped the building.',
+    body: 'The carpet is numbered. The doorframes are numbered. A banker\'s box '
+        + 'is numbered twice. Of the documents that were actually supposed to '
+        + 'be indexed you got a couple, and the rest of the sequence is '
+        + 'distributed across the fourth floor in a way the property manager '
+        + 'describes as "deliberate".',
+  },
+  {
+    when: (s) => s.score === 0 && s.dryStamps === 0 && s.misses === 0,
+    tag: 'No appearance entered',
+    head: 'You just walked around.',
+    body: 'Ninety seconds, a loaded Bates stamp, four documents actively '
+        + 'fleeing from you, and not one swing. The binder is as empty as it '
+        + 'was when you fell asleep. Opposing counsel, who prepared, is having '
+        + 'a lovely morning.',
+  },
+];
+
 /** Which ruling a binder of `filed` out of `total` earns. */
 function verdictFor(filed, total) {
   const k = Math.max(0, Math.min(1, filed / Math.max(1, total)));
   return VERDICTS[Math.round(k * (VERDICTS.length - 1))];
 }
+
+/**
+ * The whole ending decision, in one place and out of finish().
+ *
+ * Same reason verdictFor came out: finish() calls controls.unlock(), which stops
+ * the update loop, so it can only ever fire once per page load and testing five
+ * outcomes against it tests one.
+ */
+function endingFor(s, total) {
+  if (s.bonusWon) return LAWYER_OF_THE_YEAR;
+  return SPECIALS.find((sp) => sp.when(s)) || verdictFor(s.filed, total);
+}
 state.verdictFor = verdictFor;
+state.endingFor = endingFor;
 state.VERDICTS = VERDICTS;
+state.SPECIALS = SPECIALS;
 
 /**
  * The dream lets go — either because the binder is closed, or because the night
@@ -1453,7 +1514,7 @@ function finish(complete, fromBonus) {
   setTimeout(() => { musicTo(0, 2.2); MUSIC.on = false; }, 900);
 
   const total = state.enemies.length;
-  const v = state.bonusWon ? LAWYER_OF_THE_YEAR : verdictFor(state.filed, total);
+  const v = endingFor(state, total);
   els.wakeTag.textContent = v.tag;
   els.wakeHead.textContent = v.head;
   let body = v.body;
@@ -1625,6 +1686,7 @@ function updateSwing(dt) {
       updateInk();
     } else {
       const hit = resolveHit();    // leaves `strike` at the impact point
+      if (!hit) state.misses += 1;
       sfx.stamp(hit);
       stampCarpet(strike.x, strike.z, camera.rotation.y, false);
       state.kick = 1;

@@ -44,6 +44,7 @@ landing page.
 | Stamp | Left click |
 | Redact | Right click |
 | Sprint | `Shift` |
+| Mute | `M` |
 | Release cursor | `Esc` |
 
 You fell asleep assembling a trial binder. Chase the paperwork down and stamp
@@ -130,11 +131,21 @@ the case is awarded rather than leaving the player in an empty round.
 
 ### The verdict
 
-You do not win or lose so much as get a ruling, graded on how much of the binder
-is in order. A full binder takes the case; three of four draws an adverse
+Nine endings. You do not win or lose so much as get a ruling, graded on how much
+of the binder is in order. A full binder takes the case; three of four draws an adverse
 inference on the exhibit you never authenticated; below that the court starts
 directing verdicts and entering judgment. Filing three used to be
 indistinguishable from filing none, which made partial competence invisible.
+
+Three endings beat the table outright, because what you did is a better story
+than how many exhibits you filed: black out three documents nobody asked you to
+and you get sanctioned; miss eight swings while filing almost nothing and
+facilities would like a word about the numbered carpet; go the whole ninety
+seconds without swinging at all and no appearance is entered. None of them
+outrank Lawyer of the Year — that one is earned, the others are self-inflicted.
+
+Redacting the privileged memo, or Bates-stamping it unredacted and waiving
+privilege, adds a line to whichever ending you get.
 
 ## How it works
 
