@@ -187,6 +187,14 @@ an on-screen button, and sprint is the far end of the stick. World FOV widens as
 the frame gets taller — three.js `fov` is vertical, so portrait keeps the
 vertical angle and throws away horizontal — and the arms shrink to match.
 
+**Feet and flight are different questions.** `insideWalk` answers "can a person
+stand here" and must refuse furniture; `insideBounds` answers "is this still in
+the room" and must not. Projectiles use the second. Using the first cost 12 of
+15 binders in a round: counsel paces the top edge of the conference table, threw
+diagonally across it, and each one was deleted 0.05 s after leaving his hand —
+and a deleted binder is scored to the player as a dodge, so standing still in
+the room came out as Lawyer of the Year.
+
 **Aim is locked at the start of the wind-up, never at the release.** The
 walkable strip is 1.72 m wide, so a full sidestep from the centreline is
 0.86 m; against a 0.48 m hit radius that is 0.38 m of margin. Aiming where the
@@ -216,8 +224,19 @@ every objection comes out amber, which is what happened first.
 
 **Environment:** hallway_straight 1,186 · hallway_corner 1,762 · doorway 2,016 ·
 desk_chair 3,110 · file_cabinet 3,080 · banker_boxes 1,546 ·
-reception_counter 1,600 · ink_pod 298. **Kit total 14,598**; a corridor run with
-props in view is ~11.4k.
+reception_counter 1,600 · ink_pod 298 · conference_room 4,754. **Kit total
+19,352**; a corridor run with props in view is ~11.4k, and the room is only
+ever loaded by the bonus round.
+
+`conference_room` is the arena, 10 x 8.5 m of clear floor, and it exists
+because a corridor is 1.72 m wide — the dodge was being balanced against the
+hallway rather than designed. Use `slab_box`, not `slab`, for anything small in
+it: `slab` chamfers, a chamfer is a 24-sided loft, and chair legs built that way
+put the room at 11,954 triangles on its own. Same room, six-sided legs: 4,754.
+
+Its furniture is on the SIDE wall. Across the far end it takes away the only
+place counsel can stand — he spawned inside the table, failed his own
+line-of-sight test and threw nothing for an entire round.
 
 The two hallway figures were recorded here as 1,166 and 1,742 and had been wrong
 for a while — the committed GLBs already held 1,186 and 1,762, so the total was

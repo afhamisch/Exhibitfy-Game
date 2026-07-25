@@ -129,6 +129,7 @@ const CFG = {
   // the way, so the numbers below are all about the dodge window.
   // No throw limit any more -- he keeps going until the clock does.
   bossRange: 7.2,         // how far down the corridor he sets up
+  bossPace: 1.75,         // m/s he walks the far wall between throws
   bossWindup: 0.40,       // release lands on frame 12 of a 30-frame Throw
   bossCycle: 1.05,        // seconds between throws, tightened as it goes
   bossCycleMin: 0.45,     // by the end there are two in the air at once
@@ -147,11 +148,11 @@ const CFG = {
   // finger on a key, so the touch build gets a smaller collision. The tiers
   // then mean very slightly different things on a phone, which is the honest
   // cost of the round being playable there at all.
-  binderRadiusTouch: 0.15,
-  binderRadius: 0.20,     // about the real half-width of the thing
+  binderRadiusTouch: 0.18,
+  binderRadius: 0.24,     // about the real half-width of the thing
   binderSpin: 9.0,        // rad/s, end over end
   binderLead: 0.20,       // he leads your movement, but not perfectly
-  playerRadius2: 0.28,    // shoulders
+  playerRadius2: 0.34,    // shoulders
 
   // ---- deflection
   //
@@ -327,6 +328,20 @@ for (const c of LAYOUT.corners) {
 // Everything in WALK is already inset by playerRadius, so these are inset the
 // same way and the whole set stays a test on the player's centre.
 const BLOCKERS = [];
+
+/**
+ * Inside the walls, furniture ignored.
+ *
+ * The distinction matters: insideWalk answers "can a person stand here", which
+ * has to refuse desks and tables. This answers "is this still in the room",
+ * which is what anything airborne needs.
+ */
+function insideBounds(x, z) {
+  for (const r of WALK) {
+    if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) return true;
+  }
+  return false;
+}
 
 function insideWalk(x, z) {
   for (const b of BLOCKERS) {
@@ -1406,12 +1421,20 @@ function pickObjection() {
 function objSpawnPoint() {
   let best = null, bestD = -1;
   for (let i = 0; i < 48; i++) {
-    const r = WALK[Math.floor(Math.random() * WALK.length)];
+    // Inside the room once the round moves there. The arena is a walkable
+    // island with no path back to the corridor, so an objection spawned in the
+    // hallway would walk at a wall for thirty seconds and threaten nothing.
+    const r = state.arena ? state.arena.rect
+      : WALK[Math.floor(Math.random() * WALK.length)];
     const x = r.x0 + Math.random() * (r.x1 - r.x0);
     const z = r.z0 + Math.random() * (r.z1 - r.z0);
     if (!insideWalk(x, z)) continue;
     const d = Math.hypot(x - camera.position.x, z - camera.position.z);
-    if (d >= CFG.objSpawnMin) return { x, z };
+    // The room is 9 x 7, so nothing in it is 7 m from you: ask for less in
+    // there or every spawn falls through to the "furthest we found" branch.
+    if (d >= (state.arena ? CFG.objSpawnMin * 0.6 : CFG.objSpawnMin)) {
+      return { x, z };
+    }
     if (d > bestD) { bestD = d; best = { x, z }; }   // fall back to the furthest
   }
   return best;
@@ -1540,6 +1563,17 @@ function sustain(e) {
 // ------------------------------------------------------------- bonus round
 
 const BOSS_GLB = `${ASSETS}/enemies/enemy_counsel.glb`;
+const ARENA_GLB = `${ASSETS}/environment/conference_room.glb`;
+
+// The bonus round does not happen in the corridor any more.
+//
+// A corridor is 1.72 m of walkable width -- 0.86 m of sidestep from the
+// centreline -- and the binder collision had to be shaved twice to keep the
+// dodge winnable in it. That is balancing the round against the hallway rather
+// than designing it. The conference room is 9 x 7 m of clear floor, parked
+// well clear of the corridor loop, and both of you are shown into it when the
+// round starts.
+const ARENA = { x: 15.0, z: -6.0, w: 10.0, d: 8.5 };
 
 /**
  * Opposing counsel turns up in person. Fetched here rather than with the rest
@@ -1565,6 +1599,12 @@ async function startBonus() {
     if (!state.bossGltf) state.bossGltf = await load(BOSS_GLB);
     g = state.bossGltf.scene.clone(true);
     clips = state.bossGltf.animations;
+    await openArena();
+    // Shown in through the door on the near wall, facing the room.
+    camera.position.set(ARENA.x, CFG.eyeHeight, ARENA.z - ARENA.d * 0.5 + 0.9);
+    camera.rotation.set(0, Math.PI, 0);
+    state.lastX = camera.position.x;
+    state.lastZ = camera.position.z;
   } catch (err) {
     // The bonus is a reward, not a requirement: if it will not load, award the
     // case that was already won rather than stranding the player in an empty
@@ -1602,8 +1642,58 @@ async function startBonus() {
   updateHud();
 }
 
+/**
+ * Open the room: put its geometry in the scene, its floor in the walkable set,
+ * and its furniture in the blockers.
+ */
+async function openArena() {
+  if (!state.arenaGltf) state.arenaGltf = await load(ARENA_GLB);
+  const g = state.arenaGltf.scene.clone(true);
+  g.position.set(ARENA.x, 0, ARENA.z);
+  scene.add(g);
+
+  const pad = CFG.playerRadius;
+  const rect = {
+    x0: ARENA.x - ARENA.w * 0.5 + pad, x1: ARENA.x + ARENA.w * 0.5 - pad,
+    z0: ARENA.z - ARENA.d * 0.5 + pad, z1: ARENA.z + ARENA.d * 0.5 - pad,
+  };
+  WALK.push(rect);
+  // Table and chairs along the far wall, and the discovery stacked in the
+  // corner it came out of. Both are solid, which also stops counsel walking
+  // through his own furniture.
+  const added = [
+    // table and its chairs down the left wall, discovery stacked on the right
+    { kind: 'table', x0: ARENA.x - 4.5 - pad, x1: ARENA.x - 2.9 + pad,
+      z0: ARENA.z - 2.4 - pad, z1: ARENA.z + 2.4 + pad },
+    { kind: 'discovery', x0: ARENA.x + 4.1 - pad, x1: ARENA.x + 4.9 + pad,
+      z0: ARENA.z - 1.75 - pad, z1: ARENA.z - 0.95 + pad },
+  ];
+  for (const b of added) BLOCKERS.push(b);
+
+  state.arena = { root: g, rect, blockers: added.length };
+  return rect;
+}
+
+/** Put the room away again, so a second round is not built on the first. */
+function closeArena() {
+  const a = state.arena;
+  if (!a) return;
+  scene.remove(a.root);
+  const i = WALK.indexOf(a.rect);
+  if (i >= 0) WALK.splice(i, 1);
+  BLOCKERS.length = Math.max(0, BLOCKERS.length - a.blockers);
+  state.arena = null;
+}
+state.closeArena = closeArena;
+
 /** A spot down a corridor from the player, with a clear line to throw along. */
 function counselSpawnPoint() {
+  // In the room he stands at the far end of it, with the whole width to work.
+  if (state.arena) {
+    // The far end, clear of the table: he needs somewhere to stand that is
+    // not furniture, or his own line-of-sight test fails and he never throws.
+    return { x: ARENA.x + 0.8, z: ARENA.z + ARENA.d * 0.5 - 1.3 };
+  }
   let best = null, bestScore = -1;
   for (let i = 0; i < 200; i++) {
     const r = WALK[Math.floor(Math.random() * WALK.length)];
@@ -1640,6 +1730,21 @@ function updateBoss(dt) {
   tmpV.copy(b.root.position).sub(camera.position);
   tmpV.y = 0;
   b.root.rotation.y = Math.atan2(-tmpV.x, -tmpV.z);
+
+  // He works the room rather than standing at one end of it: pacing changes
+  // the angle every throw comes in at, which is most of what makes the wider
+  // floor worth having.
+  if (state.arena) {
+    // Turn at the FURNITURE, not at an imagined limit. Half his pacing run
+    // used to cross the conference table: he stood inside it, every binder
+    // thrown from there spawned outside the walkable set and was deleted on
+    // the same frame -- and a deleted binder scores as one you dodged. Two
+    // thirds of his throws were being credited to the player for nothing.
+    b.pace = b.pace || 1;
+    const nx = b.root.position.x + b.pace * CFG.bossPace * dt;
+    if (insideWalk(nx, b.root.position.z)) b.root.position.x = nx;
+    else b.pace *= -1;
+  }
 
   // If you walk out of his line he repositions rather than throwing into a
   // wall -- otherwise the corner nearest him is a safe room and the round is
@@ -1680,7 +1785,11 @@ function updateBoss(dt) {
     sfx.windup(b.root.position.x, b.root.position.z);
     // He winds up through the round: by the last third there is one in the
     // air while he is already cocking the next.
-    const k = Math.min(1, 1 - state.clock / CFG.bonusTime);
+    // Clamped at BOTH ends. Math.min alone let k go negative whenever the
+    // clock was above bonusTime -- which a console tweak or a longer round
+    // does -- and at k = -29 the interval came out at 21 seconds, i.e. he
+    // simply stopped throwing.
+    const k = Math.max(0, Math.min(1, 1 - state.clock / CFG.bonusTime));
     b.next = CFG.bossCycle + (CFG.bossCycleMin - CFG.bossCycle) * k
            + CFG.bossWindup;
   }
@@ -1692,6 +1801,13 @@ function throwBinder() {
   if (!b || !state.binderProto) return;
   b.thrown += 1;
 
+  // Belt and braces: if he has somehow ended up somewhere a binder cannot
+  // exist, do not throw one, rather than throwing one that dies instantly and
+  // is scored as a dodge.
+  if (!insideWalk(b.root.position.x, b.root.position.z)) {
+    b.thrown -= 1;
+    return;
+  }
   const g = state.binderProto.clone(true);
   // out of the hand, not out of his navel
   const from = new THREE.Vector3(b.root.position.x, 1.30, b.root.position.z);
@@ -1744,24 +1860,41 @@ function updateBinders(dt) {
   for (const p of state.binders) {
     if (p.done) continue;
     p.life += dt;
+    // Where it was, before it moves: the hit test is swept along the step.
+    const ax = p.root.position.x, az = p.root.position.z;
     p.root.position.addScaledVector(p.dir, CFG.binderSpeed * dt);
     p.root.rotation.x += p.spin * dt;
     p.root.rotation.z += p.spin * 0.4 * dt;
 
-    // did it get you?
-    const dx = p.root.position.x - camera.position.x;
-    const dz = p.root.position.z - camera.position.z;
+    // Did it get you? Tested against the SEGMENT it travelled this frame, not
+    // against where it happened to land.
+    //
+    // At 7.4 m/s and the delta clamped to 0.05 s, a binder can move 0.37 m in
+    // one step, against a hit radius of 0.48 -- so on a slow frame it steps
+    // most of the way through you and whether it connects depends on where the
+    // frames fell. That is not a hypothetical: measured here, a binder whose
+    // trajectory passed exactly through the player (perpendicular distance
+    // 0.00) sometimes registered nothing. A phone at 30 fps and a desktop at
+    // 144 would also be playing subtly different games.
     const dy = p.root.position.y - CFG.eyeHeight;
     const reach = CFG.playerRadius2
                 + (state.touch ? CFG.binderRadiusTouch : CFG.binderRadius);
-    if (Math.hypot(dx, dz) < reach && Math.abs(dy) < 1.0) {
+    if (segmentDistance(ax, az, p.root.position.x, p.root.position.z,
+                        camera.position.x, camera.position.z) < reach
+        && Math.abs(dy) < 1.0) {
       p.done = true;
       scene.remove(p.root);
       hitByBinder();
       continue;
     }
-    // gone past, into a wall, or simply out of the world
-    if (p.life > 3.0 || !insideWalk(p.root.position.x, p.root.position.z)
+    // Gone past, into a wall, or out of the world. Tested against the room's
+    // BOUNDS, not against insideWalk: that one also refuses the furniture,
+    // which is right for feet and wrong for something flying at 1.2 m. It cost
+    // 12 of 15 binders in a round -- counsel paces the top edge of the
+    // conference table, threw diagonally across it, and every one of those
+    // was deleted 0.05 s after leaving his hand and scored to the player as a
+    // dodge. A binder clears a 0.74 m table.
+    if (p.life > 3.0 || !insideBounds(p.root.position.x, p.root.position.z)
         || p.root.position.y < 0.05) {
       p.done = true;
       scene.remove(p.root);
@@ -1771,6 +1904,15 @@ function updateBinders(dt) {
   if (state.binders.some((p) => p.done)) {
     state.binders = state.binders.filter((p) => !p.done);
   }
+}
+
+/** Closest distance from the point (px, pz) to the segment (ax,az)-(bx,bz). */
+function segmentDistance(ax, az, bx, bz, px, pz) {
+  const vx = bx - ax, vz = bz - az;
+  const len2 = vx * vx + vz * vz;
+  let t = len2 > 1e-9 ? ((px - ax) * vx + (pz - az) * vz) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + vx * t), pz - (az + vz * t));
 }
 
 /** One went past you. */
@@ -2250,6 +2392,7 @@ function restart() {
   state.objections.length = 0;
   for (const p of state.binders || []) scene.remove(p.root);
   state.binders = [];
+  closeArena();
 
   // ---- the documents go back to their spawns, un-redacted
   state.enemies.forEach((e, i) => {

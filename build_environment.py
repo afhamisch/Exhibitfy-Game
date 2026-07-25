@@ -533,6 +533,109 @@ def piece_reception_counter(scene):
     return root
 
 
+# The bonus round happens here rather than in a corridor.
+#
+# A corridor is 1.72 m of walkable width, so a full sidestep from its
+# centreline is 0.86 m, and the binder collision had to be shaved twice to keep
+# the dodge winnable at all -- the round was being balanced against the
+# hallway rather than designed. This room is 9 x 7 m of clear floor: enough to
+# commit to a direction, enough for counsel to work the room instead of
+# standing at one end of a tube.
+#
+# The table runs along a SIDE wall, not the far one. In the middle it would be
+# a pillar, and a pillar is where you stand still and win by hiding, which is
+# the opposite of what the round asks for -- and across the far end it takes
+# away the only place counsel can stand, which is worse: he spawned inside it,
+# failed his own line-of-sight test and threw nothing for a whole round.
+# Depth matters as much as width. At 7 m deep, counsel stood 3.7 m from the
+# door and a binder crossed that in 0.49 s -- less reaction time than the
+# corridor's 0.95 s, so the round would have been harder in the bigger room,
+# which is not the point. At 8.5 m he sets up 6.2 m away.
+CONF_W, CONF_D = 10.0, 8.5
+
+
+def piece_conference_room(scene):
+    root = Node("Conference_Room")
+    rnd = random.Random(41)
+
+    floor = M.Mesh("Floor", MAT["carpet"])
+    floor_plate(floor, CONF_W, CONF_D)
+    root.add_mesh(floor)
+
+    walls = M.Mesh("Walls", MAT["wall"])
+    bases = M.Mesh("Baseboards", MAT["base"])
+    hx = (CONF_W + WALL_T) * 0.5
+    hz = (CONF_D + WALL_T) * 0.5
+    wall_panel(walls, bases, hx, 0.0, CONF_D + WALL_T * 2)
+    wall_panel(walls, bases, -hx, 0.0, CONF_D + WALL_T * 2)
+    wall_panel(walls, bases, 0.0, hz, CONF_W + WALL_T * 2, along_z=False)
+    # the -Z wall carries the doorway you are shown in through
+    side = (CONF_W - DOOR_W) * 0.5
+    for sx in (-1.0, 1.0):
+        cx = sx * (DOOR_W * 0.5 + side * 0.5)
+        box(walls, (side, WALL_H, WALL_T), (cx, WALL_H * 0.5, -hz), 0.004, 0,
+            (0, 0, side * 0.55, WALL_H * 0.55))
+        box(bases, (side, BASE_H, WALL_T * 1.3), (cx, BASE_H * 0.5, -hz), 0.004)
+    box(walls, (DOOR_W, WALL_H - DOOR_H, WALL_T),
+        (0.0, DOOR_H + (WALL_H - DOOR_H) * 0.5, -hz), 0.004, 0,
+        (0, 0, DOOR_W * 0.55, (WALL_H - DOOR_H) * 0.55))
+    root.add_mesh(walls)
+    root.add_mesh(bases)
+
+    ceil = M.Mesh("Ceiling", MAT["ceiling"])
+    ceiling_plate(ceil, CONF_W, CONF_D, WALL_H)
+    root.add_mesh(ceil)
+    for x in (-3.0, 0.0, 3.0):
+        for z in (-2.3, 2.3):
+            troffer(scene, root, x, z)
+
+    # ---- the table, against the long wall, with chairs tucked under it
+    # slab_box, not slab, for everything small. slab() chamfers, and a chamfer
+    # is a 24-sided loft: about a hundred quads for a chair leg nobody will
+    # ever look at. Six faces is the right price for a leg. Only the table top
+    # keeps its chamfer, because that edge is at eye height and catches light.
+    table = M.Mesh("Table", MAT["wood"])
+    TL, TD, TH = 4.60, 1.15, 0.74      #長 along Z, deep along X
+    tx = -CONF_W * 0.5 + 1.05
+    slab(table, TD, TL, 0.055, (tx, TH, 0.0), 1.0)
+    for sz in (-1.0, 1.0):
+        slab_box(table, TD * 0.62, TH, 0.09,
+                 (tx, TH * 0.5, sz * (TL * 0.5 - 0.42)), 1.0)
+    root.add_mesh(table)
+
+    chairs = M.Mesh("Chairs", MAT["plastic"])
+    for i in range(6):
+        cz = -TL * 0.5 + 0.6 + i * (TL - 1.2) / 5.0
+        cx = tx + TD * 0.5 + 0.22
+        slab_box(chairs, 0.44, 0.045, 0.46, (cx, 0.45, cz), 1.0)
+        slab_box(chairs, 0.05, 0.42, 0.44, (cx + 0.19, 0.68, cz), 1.0)
+        for ox, oz in ((-0.16, -0.18), (-0.16, 0.18), (0.16, -0.18), (0.16, 0.18)):
+            slab_box(chairs, 0.035, 0.45, 0.035, (cx + ox, 0.225, cz + oz), 1.0)
+    root.add_mesh(chairs)
+
+    # ---- whiteboard on the far wall, because every conference room has one
+    board = M.Mesh("Whiteboard", MAT["laminate"])
+    slab_box(board, 2.60, 1.20, 0.05, (0.0, 1.55, hz - WALL_T * 0.5 - 0.03), 1.0)
+    root.add_mesh(board)
+    trim = M.Mesh("Board_Trim", MAT["metal"])
+    slab_box(trim, 2.70, 0.06, 0.07, (0.0, 0.92, hz - WALL_T * 0.5 - 0.04), 1.0)
+    root.add_mesh(trim)
+
+    # ---- boxes of discovery along the short wall: this is where it came from
+    stack = M.Mesh("Discovery", MAT["card"])
+    for i, (bx, by, bz) in enumerate(((CONF_W * 0.5 - 0.45, 0.0, -1.2),
+                                      (CONF_W * 0.5 - 0.45, 0.28, -1.2),
+                                      (CONF_W * 0.5 - 0.45, 0.56, -1.2),
+                                      (CONF_W * 0.5 - 0.92, 0.0, -1.5))):
+        slab(stack, 0.40, 0.31, 0.265, (bx, by + 0.1325, bz), 2.4, chamfer=0.006)
+    root.add_mesh(stack)
+
+    papers = M.Mesh("Scatter", MAT["paper"])
+    scatter_papers(papers, rnd, 7, (-3.6, 3.6), (-2.8, 2.8))
+    root.add_mesh(papers)
+    return root
+
+
 def piece_ink_pod(scene):
     """Refill canister for the Bates stamp -- the one pickup in the kit.
 
@@ -634,6 +737,7 @@ PIECES = {
     "banker_boxes": (piece_banker_boxes, "Stack of banker's boxes"),
     "reception_counter": (piece_reception_counter, "Reception counter"),
     "ink_pod": (piece_ink_pod, "Stamp ink refill pickup"),
+    "conference_room": (piece_conference_room, "Bonus round arena"),
 }
 
 
