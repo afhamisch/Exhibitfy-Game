@@ -45,6 +45,21 @@
   #hud .score b { color: var(--orange); }
   #hud .sub { opacity: .75; font-size: 12px; letter-spacing: .12em;
               text-transform: uppercase; }
+  /* The binder has lost exhibits: the count itself goes sour. The class lands
+     on #score, which is the <b>, so this has to be an id selector -- as a
+     class it loses to `#hud .score b` above and silently never applies. */
+  #hud #score.struck { color: #ffb020; }
+
+  /* objection callout — centred under the crosshair, brief */
+  #warn {
+    position: fixed; left: 50%; top: 58%; transform: translateX(-50%);
+    pointer-events: none; text-align: center; white-space: nowrap;
+    font-size: 17px; font-weight: 700; letter-spacing: .10em;
+    text-transform: uppercase; color: var(--orange);
+    text-shadow: 0 2px 6px rgba(0,0,0,.95);
+    opacity: 0; transition: opacity .18s ease-out;
+  }
+  #warn.on { opacity: 1; }
 
   /* ink gauge — bottom left, out of the viewmodel's way */
   #inkbox {
@@ -146,6 +161,7 @@
   <div class="score">FILED <b id="score">0 / 4</b></div>
   <div class="sub" id="remaining">4 documents at large</div>
 </div>
+<div id="warn"></div>
 <div id="inkbox" hidden>
   <div class="track"><div id="inkfill"></div></div>
   <div id="inklabel">Stamp ink</div>

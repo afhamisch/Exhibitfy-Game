@@ -102,14 +102,25 @@ roll 35 because the forearm covers the knuckles. What sets the usable roll is
 costs visible fist faster than it buys clearance. Depth-buffer the hand against
 the forearm before believing any pose number.
 
-**Enemies:** pleading 1,392 · privilege 1,392 · binder 2,700 · stack 1,856.
+**Enemies:** four exhibits — pleading 1,392 · privilege 1,392 · binder 2,700 ·
+stack 1,856 — and three objections: hearsay 1,392 · character 1,392 ·
+rule403 1,624. `EXHIBITS` and `OBJECTIONS` name the two groups; nothing in
+`build_enemies.py` should hard-code either list.
 
-Each ships as its own GLB, plus a combined `enemies.glb` (7,340 tris, all eight
-clips, six shared images) for runtimes that would otherwise fetch the same page,
-face and Bates maps four times — 1.12 MB of duplicate pixels. In the combined
-file every node is prefixed `<variant>_` and clips are `<variant>_Run` /
-`<variant>_Stamped`, because three.js binds animation tracks **by node name**
-and four subtrees all calling their root `Rig` would cross-bind.
+Each ships as its own GLB, plus a combined `enemies.glb` (11,748 tris, all
+fourteen clips, seven shared images) for runtimes that would otherwise fetch the
+same page, face and Bates maps seven times. In the combined file every node is
+prefixed `<variant>_` and clips are `<variant>_Run` / `<variant>_Stamped`,
+because three.js binds animation tracks **by node name** and seven subtrees all
+calling their root `Rig` would cross-bind.
+
+**`absorb()` merges materials by NAME.** Two variants that define the same
+material name with different contents silently collapse to whichever was
+absorbed last, and only in the combined file — the per-variant GLBs stay
+correct, so it looks fine everywhere except where the game actually loads from.
+The three objections share one `paper_objection` image and are told apart by
+tint, so their material is `Paper_Objection_<variant>`. Give it one name and
+every objection comes out amber, which is what happened first.
 
 **Environment:** hallway_straight 1,186 · hallway_corner 1,762 · doorway 2,016 ·
 desk_chair 3,110 · file_cabinet 3,080 · banker_boxes 1,546 ·
@@ -149,7 +160,7 @@ the floor. Both were tried and measured.
 | Clip | Frames | fps | Notes |
 |---|---:|---:|---|
 | `Stamp_Swing` | **23** | 30 | 0.733 s. 15 animated nodes, 45 channels, 23 keys each. Impact frames 11–13, trigger on 11. Frames 0 and 22 bit-identical. |
-| `Run` | **per variant** | 30 | Looping, one full stride: pleading 21 · privilege 19 · binder 31 · stack 17 keys. Last key repeats frame 0 bit-identically. |
+| `Run` | **per variant** | 30 | Looping, one full stride: pleading 21 · privilege 19 · binder 31 · stack 17 · hearsay 25 · character 20 · rule403 18 keys. Last key repeats frame 0 bit-identically. |
 | `Stamped` | **26** | 30 | One-shot. Squash on frame 4, Bates impression at 1.28× overshoot. |
 
 The office kit is static.
@@ -160,10 +171,14 @@ The office kit is static.
 
 ```
 pleading 38    privilege 27    binder 20    stack 44
+hearsay  58    character  64   rule403 70
 ```
 
 **Never normalize these toward each other.** They encode personality — the
-binder is heavy and barely swings, the stack is panicking and flails.
+binder is heavy and barely swings, the stack is panicking and flails. The
+objections are all thrown wider than any exhibit on purpose: they are the only
+things in the game that come *at* the player, and the silhouette has to say so
+before the colour is readable.
 
 **The run cycle must close on the clip boundary.** `Run` spans exactly one
 stride: `p = TAU * f / n`, where **cadence sets `n`** (frames per stride at

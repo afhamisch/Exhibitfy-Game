@@ -73,6 +73,37 @@ That chain is the whole point: **miss → burn ink → detour → lose clock →
 verdict.** Before it existed the swing was free, so there was no reason to aim,
 close distance, or fear the clock.
 
+### Objections
+
+Three of them — **Hearsay**, **Character evidence** and **Rule 403** — and they
+invert the game. An exhibit runs away and you want to catch it; an objection
+comes *at* you and you want it gone. Reaching you does not hurt you, because
+there is no health here: it **strikes an exhibit back out of the binder**. 403
+takes two.
+
+That is what makes a 90-second clock work as a structure without waves. The
+score is no longer monotonic, so the round is a total you defend rather than a
+counter you fill, and holding ink back becomes a real decision — your last swing
+either files a new exhibit or overrules the objection walking at you.
+
+Overrule one by stamping it, same verb, and it costs the same ink. The window is
+the standoff band between the range you can stamp one at (~2.4 m) and the range
+at which it strikes (1.0 m): about a second for hearsay, 0.7 s for 403. All
+three are slower than your walk, so breaking off and dealing with one later is
+always available.
+
+A rule only appears once the binder holds enough to be worth striking — character
+evidence is not relevant until you have put character at issue — so an objection
+never lands on an empty binder.
+
+### Closing the binder
+
+A complete binder is not an instant win. It has to be **held for three seconds**,
+and an objection that lands inside that window takes an exhibit back out and the
+round carries on. Without the hold, filing the fourth exhibit ended the round on
+the same frame, which cancelled the whole point of objections: they could
+pressure the middle of a round but never touch a finished binder.
+
 ### The verdict
 
 You do not win or lose so much as get a ruling, graded on how much of the binder
@@ -152,7 +183,7 @@ does something the clip never could: make the thing genuinely harder to hit.
 |---|---|
 | Page + script | 21.5 KB |
 | Three.js (vendored) | 820 KB on disk, ~180 KB gzipped over the wire |
-| Assets actually fetched | 4.07 MB (viewmodel, all four enemies, eight kit pieces) |
+| Assets actually fetched | 4.83 MB (viewmodel, seven enemies, eight kit pieces) |
 | Music bed | 381 KB fetched — one of the two encodings, never both |
 
 The enemies used to be 2.9 MB of that, as four self-contained GLBs. They could
@@ -195,11 +226,13 @@ measures 0.019 at the join for about a decibel of level through the overlap.
 - No score persistence.
 - The bed is one 31.2 s loop with no variation and no reaction to the clock
   running down.
-- The documents still cannot touch you. Ink and the clock are the only pressure;
-  nothing in the office is a threat, so there is no reason to retreat from
-  anything.
-- One round, one layout, four documents, no waves and no difficulty curve — you
-  see everything the game has inside two minutes.
+- Nothing can damage *you* — objections cost you exhibits, not health, so there
+  is no reason to retreat from anything except to buy time.
+- One round, one layout, four documents, no waves and no difficulty curve beyond
+  the objections arriving. A fast player can close the binder before the first
+  one spawns at 22 s and never meet the mechanic at all.
+- Objections path by hunting and wall-sliding like the exhibits, so they grind
+  corners the same way.
 - Enemies path by fleeing and wall-sliding, not by navmesh — they can get
   briefly stuck grinding a corner before they turn out of it.
 - One of each variant spawns, and that is the whole roster — there is no wave

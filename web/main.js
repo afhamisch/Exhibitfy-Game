@@ -72,6 +72,39 @@ const CFG = {
   // near the eye line and against the wall, which is worth more than making
   // the model bigger.
   podFloat: 0.62,
+
+  // Objections. The first is late enough that the player has learned to stamp
+  // and has something in the binder to lose; after that they keep coming, so
+  // there is no point in the round where the total is safe.
+  objFirst: 22,           // seconds into the round
+  objEvery: 15,           // and roughly every this often after
+  objJitter: 4,           // +/- so the rhythm is not metronomic
+  objMax: 3,              // at once -- more than this and the corridor jams
+  // How close it gets before it strikes. This and the speeds below set the only
+  // thing that makes objections fair: the standoff band between the range you
+  // can stamp one at and the range at which it takes an exhibit.
+  //
+  // An objection is stampable out to strikeAhead + strikeRadius + its radius,
+  // measured ~2.4 m; the band is that minus objReach. At the first speeds tried
+  // (reach 1.15, hearsay 1.55 m/s, 403 2.35 m/s) the band was 1.25 m, which is
+  // 0.8 s of window for hearsay and 0.53 s for 403 -- less than the swing's own
+  // 0.37 s wind-up plus any human reaction, so 403 was effectively unstoppable
+  // head-on. Widened to ~1.4 m and slowed, which gives 1.0 s and 0.7 s.
+  //
+  // All three stay well under the 3.1 m/s walk, deliberately: you must always be
+  // able to break off and deal with one later.
+  objReach: 1.00,
+  objSpawnMin: 7.0,       // never spawn one closer to the player than this
+
+  // How long a complete binder has to survive before the case is closed.
+  //
+  // Without this the round ended the instant the fourth exhibit landed, which
+  // quietly cancelled the whole point of objections: they could pressure the
+  // middle of a round but never touch a finished binder, so the endgame was
+  // "reach four and you are safe" and the last objection on the floor was
+  // irrelevant. Now the binder has to be HELD. An objection that lands during
+  // the hold takes an exhibit back out and the round carries on.
+  closeHold: 3.0,
 };
 
 // The four variants, tuned from what build_enemies.py actually baked rather
@@ -94,6 +127,30 @@ const VARIANTS = {
 
 // One of each, so every silhouette is on the floor to be told apart.
 const ROSTER = ['pleading', 'privilege', 'binder', 'stack'];
+
+// Objections are the other half of the game and they invert it. An exhibit runs
+// away and you want to catch it; an objection comes at you and you want it gone.
+// Reaching you does not hurt you -- there is no health here -- it STRIKES an
+// exhibit back out of the binder, which is worse, because it is the only thing
+// in the game that can take a number off the board.
+//
+// That is what makes the clock work as a structure without needing waves: the
+// score is no longer monotonic, so the 90 seconds is a total you are defending
+// rather than a counter you are filling.
+//
+// `strikes` is how many exhibits go if it lands. `after` gates the spawn on the
+// binder having something in it worth striking -- character evidence is not
+// relevant until you have put character at issue, and an objection that lands
+// on an empty binder is a threat that cost the player nothing.
+const OBJECTIONS = {
+  hearsay:   { label: 'Hearsay', speed: 1.35, turn: 2.4, radius: 0.30,
+               strikes: 1, after: 1, weight: 3 },
+  character: { label: 'Character evidence', speed: 1.70, turn: 3.4,
+               radius: 0.29, strikes: 1, after: 2, weight: 2,
+               weave: { rate: 1.9, amp: 0.55 } },
+  rule403:   { label: 'Rule 403', speed: 2.00, turn: 2.0, radius: 0.34,
+               strikes: 2, after: 3, weight: 1 },
+};
 
 // All four come out of one GLB. The per-variant files are the art deliverable
 // and still ship, but four self-contained files cannot share a texture: the
@@ -251,6 +308,7 @@ const els = {
   reticle: document.getElementById('reticle'),
   score: document.getElementById('score'),
   remaining: document.getElementById('remaining'),
+  warn: document.getElementById('warn'),
   inkBox: document.getElementById('inkbox'),
   inkFill: document.getElementById('inkfill'),
   inkLabel: document.getElementById('inklabel'),
@@ -266,7 +324,9 @@ const state = {
   ready: false, score: 0, filed: 0, done: false, t: 0, clock: CFG.dreamTime,
   swinging: false, swingT: 0, hitDone: false,
   ink: CFG.inkMax, dryStamps: 0,
-  enemies: [], pods: [],
+  enemies: [], pods: [], objections: [],
+  struck: 0, overruled: 0, sustained: 0, nextObj: CFG.objFirst,
+  closing: 0, closeBroken: 0,
   keys: Object.create(null),
 };
 
@@ -347,6 +407,15 @@ async function boot() {
     state.pods.push({ root: g, home: new THREE.Vector3(x, 0, z),
                       live: true, cooldown: 0, phase: i * 1.4 });
   });
+
+  // ---- objection prototypes, kept off-scene until one is called
+  state.objProto = {};
+  for (const kind of Object.keys(OBJECTIONS)) {
+    const proto = enemyG.scene.getObjectByName(`Enemy_${kind}`);
+    if (!proto) throw new Error(`Enemy_${kind} missing from ${ENEMIES_GLB}`);
+    state.objProto[kind] = proto;
+  }
+  state.objClips = enemyG.animations;
 
   // ---- enemies
   ROSTER.forEach((kind, i) => {
@@ -485,6 +554,25 @@ const sfx = {
   tick() {
     if (!AC) return;
     playTone(AC.currentTime, 0.03, 'square', 1900, 1500, 0.06);
+  },
+  objection() {                              // one is on the floor: a rasp
+    if (!AC) return;
+    const t = AC.currentTime;
+    playNoise(t, 0.20, 'bandpass', 260, 150, 0.45, 2.2);
+    playTone(t, 0.26, 'sawtooth', 196, 155, 0.20);
+  },
+  sustained() {                              // it landed: a gavel, downward
+    if (!AC) return;
+    const t = AC.currentTime;
+    playTone(t, 0.16, 'sine', 150, 52, 1.0);
+    playNoise(t, 0.09, 'lowpass', 1400, 260, 0.6);
+    playTone(t + 0.13, 0.30, 'sawtooth', 138, 110, 0.22);
+  },
+  overruled() {                              // you got it: bright, upward
+    if (!AC) return;
+    const t = AC.currentTime;
+    playNoise(t, 0.06, 'highpass', 1800, 3000, 0.35);
+    playTone(t, 0.12, 'triangle', 587.33, 880, 0.28);
   },
   sting(win) {
     if (!AC) return;
@@ -634,6 +722,9 @@ function stampCarpet(x, z, yaw, dry) {
   }
 }
 state.DECALS = DECALS;
+state.OBJECTIONS = OBJECTIONS;
+state.insideWalk = insideWalk;          // for tuning from the console
+state.spawnObjection = spawnObjection;      // for tuning from the console
 
 // ---------------------------------------------------------------- input
 els.overlay.addEventListener('click', () => {
@@ -702,6 +793,152 @@ function updateInk() {
     : `Stamp ink · ${Math.floor(state.ink / CFG.inkPerSwing)} left`;
 }
 
+// --------------------------------------------------------------- objections
+
+/** Pick a rule that is allowed to appear yet, weighted so 403 stays rare. */
+function pickObjection() {
+  const pool = [];
+  for (const [kind, o] of Object.entries(OBJECTIONS)) {
+    if (state.filed < o.after) continue;      // nothing worth striking yet
+    for (let i = 0; i < o.weight; i++) pool.push(kind);
+  }
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/** A walkable spot at least objSpawnMin away, so nothing appears on top of you. */
+function objSpawnPoint() {
+  let best = null, bestD = -1;
+  for (let i = 0; i < 48; i++) {
+    const r = WALK[Math.floor(Math.random() * WALK.length)];
+    const x = r.x0 + Math.random() * (r.x1 - r.x0);
+    const z = r.z0 + Math.random() * (r.z1 - r.z0);
+    if (!insideWalk(x, z)) continue;
+    const d = Math.hypot(x - camera.position.x, z - camera.position.z);
+    if (d >= CFG.objSpawnMin) return { x, z };
+    if (d > bestD) { bestD = d; best = { x, z }; }   // fall back to the furthest
+  }
+  return best;
+}
+
+function spawnObjection() {
+  if (state.objections.filter((o) => o.alive).length >= CFG.objMax) return;
+  const kind = pickObjection();
+  if (!kind) return;
+  const at = objSpawnPoint();
+  if (!at) return;
+
+  const o = OBJECTIONS[kind];
+  const g = state.objProto[kind].clone(true);
+  g.position.set(at.x, 0, at.z);
+  g.rotation.y = Math.random() * Math.PI * 2;
+  scene.add(g);
+  const mixer = new THREE.AnimationMixer(g);
+  const run = mixer.clipAction(
+    THREE.AnimationClip.findByName(state.objClips, `${kind}_Run`));
+  run.play();
+  const hit = mixer.clipAction(
+    THREE.AnimationClip.findByName(state.objClips, `${kind}_Stamped`));
+  hit.setLoop(THREE.LoopOnce, 1);
+  hit.clampWhenFinished = true;
+  state.objections.push({
+    kind, o, root: g, mixer, run, hit, alive: true, dead: 0,
+    heading: g.rotation.y, phase: Math.random() * 6.28,
+    baseScale: g.scale.clone(),
+  });
+  warn(`${o.label} — objection!`);
+  sfx.objection();
+}
+
+function updateObjections(dt) {
+  // schedule
+  state.nextObj -= dt;
+  if (state.nextObj <= 0) {
+    spawnObjection();
+    state.nextObj = CFG.objEvery + (Math.random() * 2 - 1) * CFG.objJitter;
+  }
+
+  for (const e of state.objections) {
+    if (!e.alive) {
+      e.dead += dt;
+      e.mixer.update(dt);
+      if (!e.gone && e.dead > 1.1) {          // let Stamped finish, then clear
+        e.gone = true;
+        scene.remove(e.root);
+      }
+      continue;
+    }
+    tmpV.copy(e.root.position).sub(camera.position);
+    tmpV.y = 0;
+    const dist = tmpV.length();
+
+    // it has reached the binder: strike exhibits back out of the record
+    if (dist <= CFG.objReach) {
+      e.alive = false;
+      e.dead = 0;
+      e.run.fadeOut(0.08);
+      sustain(e);
+      continue;
+    }
+
+    // hunt: face the player, which is the opposite sign to a fleeing exhibit
+    let want = Math.atan2(tmpV.x, tmpV.z);
+    if (e.o.weave) {
+      want += Math.sin(state.t * e.o.weave.rate + e.phase) * e.o.weave.amp;
+    }
+    let diff = ((want - e.heading + Math.PI) % (Math.PI * 2)) - Math.PI;
+    if (diff < -Math.PI) diff += Math.PI * 2;
+    const turn = e.o.turn;
+    e.heading += THREE.MathUtils.clamp(diff, -turn * dt, turn * dt);
+
+    const sp = e.o.speed;
+    const mv = resolveMove(e.root.position,
+                           -Math.sin(e.heading) * sp * dt,
+                           -Math.cos(e.heading) * sp * dt);
+    if (mv.dx === 0 && mv.dz === 0) e.heading += 2.4 * dt;
+    e.root.position.x += mv.dx;
+    e.root.position.z += mv.dz;
+    e.root.rotation.y = e.heading;
+    e.mixer.update(dt);
+  }
+}
+
+/** An objection reached the binder and was sustained. */
+function sustain(e) {
+  const n = Math.min(state.filed, e.o.strikes);
+  state.filed -= n;
+  state.struck += n;
+  state.sustained += 1;
+  e.hit.reset().play();
+  sfx.sustained();
+  state.shake = 1;
+  warn(n > 0
+    ? `${e.o.label} sustained — ${n} exhibit${n === 1 ? '' : 's'} struck`
+    : `${e.o.label} sustained — nothing in the binder to strike`);
+  updateHud();
+}
+
+/**
+ * A complete binder has to be held for closeHold before the case is closed, so
+ * an objection can still take it apart on the last second.
+ */
+function updateClosing(dt) {
+  const total = state.enemies.length;
+  if (state.filed < total) {
+    if (state.closing > 0) {          // it was broken into: back to work
+      state.closing = 0;
+      state.closeBroken += 1;
+      warn('Binder reopened');
+      updateHud();
+    }
+    return;
+  }
+  const first = state.closing === 0;
+  state.closing += dt;
+  if (first) updateHud();
+  if (state.closing >= CFG.closeHold) finish(true);
+}
+
 function updatePods(dt) {
   for (const p of state.pods) {
     if (!p.live) {
@@ -747,6 +984,33 @@ function aimStrike() {
 function resolveHit() {
   aimStrike();
 
+  // Objections are checked first and win ties outright. They are the only thing
+  // on the floor that can take a number off the board, so when one is inside
+  // the same swing as an exhibit, overruling it is always the better play and
+  // the game should not make the player fight its target selection to get it.
+  let obj = null, objD = Infinity;
+  for (const e of state.objections) {
+    if (!e.alive) continue;
+    tmpV.copy(e.root.position).sub(strike);
+    tmpV.y = 0;
+    const d = tmpV.length();
+    if (d > CFG.strikeRadius + e.o.radius) continue;
+    if (d < objD) { objD = d; obj = e; }
+  }
+  if (obj) {
+    obj.alive = false;
+    obj.dead = 0;
+    obj.run.fadeOut(0.08);
+    obj.hit.reset().play();
+    state.overruled += 1;
+    warn(`${obj.o.label} overruled`);
+    sfx.overruled();
+    state.lastProbe = { at: performance.now(), nearest: objD, hit: true,
+                        overruled: true };
+    updateHud();
+    return true;
+  }
+
   let best = null, bestD = Infinity;
   for (const e of state.enemies) {
     if (!e.alive) continue;
@@ -773,10 +1037,24 @@ function updateHud() {
   const total = state.enemies.length;
   els.score.textContent = `${state.filed} / ${total}`;
   const left = state.enemies.filter((e) => e.alive).length;
-  const inFlight = state.score - state.filed;
-  els.remaining.textContent = left > 0
-    ? `${left} document${left === 1 ? '' : 's'} at large`
-    : inFlight > 0 ? 'filing…' : 'binder complete';
+  // an exhibit that has been struck is loose again as far as the binder is
+  // concerned, so it is not "in flight" -- only count the ones still travelling
+  const inFlight = Math.max(0, state.score - state.filed - state.struck);
+  els.remaining.textContent = state.closing > 0 ? 'binder closing — hold it'
+    : left > 0 ? `${left} document${left === 1 ? '' : 's'} at large`
+    : inFlight > 0 ? 'filing…'
+    : state.struck > 0 ? `${state.struck} struck from the record`
+    : 'binder complete';
+  els.score.classList.toggle('struck', state.struck > 0);
+}
+
+/** A one-line callout: which objection, and what it just did. */
+let warnTimer = null;
+function warn(text) {
+  els.warn.textContent = text;
+  els.warn.classList.add('on');
+  clearTimeout(warnTimer);
+  warnTimer = setTimeout(() => els.warn.classList.remove('on'), 2200);
 }
 
 function updateClock(dt) {
@@ -852,6 +1130,16 @@ function finish(complete) {
   els.wakeHead.textContent = v.head;
   let body = v.body;
   if (!complete) body += ` You woke with ${state.filed} of ${total} filed.`;
+  if (state.struck > 0) {
+    body += ` ${state.struck} exhibit${state.struck === 1 ? ' was' : 's were'} `
+          + `struck from the record on ${state.sustained} sustained `
+          + `objection${state.sustained === 1 ? '' : 's'}`
+          + (state.overruled > 0
+              ? `; you overruled ${state.overruled}.` : '.');
+  } else if (state.overruled > 0) {
+    body += ` You overruled ${state.overruled} objection`
+          + `${state.overruled === 1 ? '' : 's'} and lost nothing to any of them.`;
+  }
   if (state.dryStamps > 0) {
     body += ` ${state.dryStamps} swing${state.dryStamps === 1 ? '' : 's'} came `
           + 'down on a dry stamp and left nothing but an impression.';
@@ -921,7 +1209,6 @@ function updateEnemies(dt) {
           state.filed += 1;
           sfx.file();
           updateHud();
-          if (state.filed === state.enemies.length) finish(true);
         }
       }
       continue;
@@ -1009,6 +1296,8 @@ function animate() {
     updatePlayer(dt);
     updateSwing(dt);
     updateEnemies(dt);
+    updateObjections(dt);
+    updateClosing(dt);
     updatePods(dt);
   }
   if (state.armMixer) state.armMixer.update(dt);
@@ -1022,6 +1311,17 @@ function animate() {
     camera.fov = 70 + state.kick * 2.4;
     camera.updateProjectionMatrix();
     if (state.arms) state.arms.position.y = state.armsBaseY - state.kick * 0.010;
+  }
+  // A sustained objection shakes the view. It is the only thing that takes a
+  // number off the board, so it gets the only camera effect the player does not
+  // cause themselves -- rotational, not positional, so it cannot push the eye
+  // through a wall.
+  if (state.shake) {
+    state.shake = state.shake < 0.002 ? 0 : state.shake * Math.exp(-6 * dt);
+    const a = state.shake * 0.020;
+    camera.rotation.z = Math.sin(state.t * 47.0) * a;
+  } else if (camera.rotation.z !== 0) {
+    camera.rotation.z = 0;
   }
 
   renderer.render(scene, camera);

@@ -48,7 +48,7 @@ FACE_ZONE = (0.20, 0.36, 0.80, 0.76)   # u0, t0, u1, t1 in front-page space
 
 def pleading_page(size=1024, seed=11, case="000137", privileged=False,
                   density=1.0, title="SUPERIOR COURT OF THE STATE",
-                  face_zone=FACE_ZONE):
+                  face_zone=FACE_ZONE, objection=False):
     """Generic pleading paper: numbered left margin, caption block, text bars.
 
     Legible as "a legal document" at gameplay distance, which is the whole
@@ -150,6 +150,33 @@ def pleading_page(size=1024, seed=11, case="000137", privileged=False,
             c.rect(size * a, fy(0.012), size * b, fy(0.985), PAPER["red"], 0.9)
             c.rect(size * (1 - b), fy(0.012), size * (1 - a), fy(0.985),
                    PAPER["red"], 0.9)
+
+    if objection:
+        # An objection is not a document you file, it is one coming at you, and
+        # the player has under a second to tell them apart. So this goes much
+        # further than the PRIVILEGED marking: a full red wash, a heavy border
+        # on all four sides, and the word twice -- once banner-style across the
+        # top where it survives being seen edge-on, once huge and diagonal.
+        # Kept as a white-paper texture and tinted per rule by the material, so
+        # three objection types share one image.
+        c.rect(size * 0.02, fy(0.010), size * 0.98, fy(0.988),
+               PAPER["red"], 0.20)
+        for (x0, y0, x1, y1) in ((0.02, 0.010, 0.98, 0.030),
+                                 (0.02, 0.968, 0.98, 0.988),
+                                 (0.02, 0.010, 0.045, 0.988),
+                                 (0.955, 0.010, 0.98, 0.988)):
+            c.rect(size * x0, fy(y0), size * x1, fy(y1), PAPER["red"], 0.95)
+        c.rect(size * 0.02, fy(0.038), size * 0.98, fy(0.115),
+               PAPER["red"], 0.90)
+        glyphs.draw_text(c, "OBJECTION", cx, fy(0.098), H * 0.062,
+                         PAPER["white"], 0.16, "center", 1.0, 0.95)
+        for off, col, a in (((7, 7), (0, 0, 0), 0.30),
+                            ((0, 0), PAPER["red"], 1.0)):
+            glyphs.draw_text(c, "OBJECTION", size * 0.52 + off[0],
+                             fy(0.300) + off[1], H * 0.150, col, 0.03,
+                             "center", a, 0.90, 0.0, -0.26)
+        glyphs.draw_text(c, "MOVE TO STRIKE", cx, fy(0.955), H * 0.034,
+                         PAPER["white"], 0.16, "center", 1.0, 0.95)
 
     # ---- honest wear: fold line, a few specks, softened corners
     c.rect(0, fy(0.50), size, fy(0.503), PAPER["shade"], 0.35)
@@ -357,4 +384,8 @@ def build_all(bates="000137"):
         "binder_cover": binder_cover(),
         "faces": faces(),
         "stamp_mark": stamp_mark(bates=bates),
+        # One image for all three objection rules; the material tints it.
+        "paper_objection": pleading_page(seed=59, case=bates, density=0.85,
+                                         title="IN LIMINE",
+                                         objection=True),
     }

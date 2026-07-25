@@ -63,6 +63,7 @@ MAT = {
     "glove": "Glove_White",
     "shoe": "Shoe_Black",
     "ring": "Binder_Rings",
+    "objection": "Paper_Objection",
 }
 
 # ---------------------------------------------------------------- variants
@@ -109,7 +110,61 @@ VARIANTS = {
                 "scatter": 1.0},
         "face": "panic",
     },
+
+    # ------------------------------------------------------------ objections
+    # These three are not exhibits to be filed -- they hunt the player and
+    # strike exhibits back out of the binder, so the runtime treats them as a
+    # separate class entirely. Everything here exists to make them readable as
+    # a threat in the fraction of a second before one reaches you:
+    #
+    #   * one shared OBJECTION page, red-washed and bordered, tinted per rule
+    #   * arms thrown much wider than any exhibit's, so the silhouette differs
+    #     even edge-on and even in a corridor where colour is unreliable
+    #   * the unused "dizzy" face, which is the only one that does not read as
+    #     something running away from you
+    #
+    # Speed and mass follow the rule. Hearsay is the routine one and shambles;
+    # character evidence is quicker and more insinuating; 403 is rare, fast and
+    # heavy, because it is the one that strikes two exhibits at once.
+    "hearsay": {
+        "label": "Hearsay Objection",
+        "paper": "objection",
+        "tint": hex_srgb("#E4B4B0"),          # washed red
+        "sheets": 1,
+        "scale": 1.02,
+        "run": {"cadence": 0.82, "stride": 40.0, "bob": 0.060, "lean": -9.0,
+                "sway": 0.026, "flutter": 9.0, "jitter": 1.4, "arm": 58.0},
+        "face": "dizzy",
+    },
+    "character": {
+        "label": "Character Evidence Objection",
+        "paper": "objection",
+        "tint": hex_srgb("#D9B2D4"),          # violet
+        "sheets": 1,
+        "scale": 0.99,
+        "run": {"cadence": 1.06, "stride": 44.0, "bob": 0.044, "lean": -6.0,
+                "sway": 0.048, "flutter": 12.0, "jitter": 0.8, "arm": 64.0,
+                "dodge": 1.0},
+        "face": "dizzy",
+    },
+    "rule403": {
+        "label": "Rule 403 Objection",
+        "paper": "objection",
+        "tint": hex_srgb("#E8C79A"),          # amber
+        "sheets": 3,
+        "stock": ("objection",),              # three objections, not one plus paper
+        "scale": 1.13,
+        "run": {"cadence": 1.18, "stride": 52.0, "bob": 0.066, "lean": -13.0,
+                "sway": 0.022, "flutter": 6.0, "jitter": 0.6, "arm": 70.0,
+                "thud": 1.0},
+        "face": "dizzy",
+    },
 }
+
+# The four that are exhibits, and the three that are objections. Nothing else
+# in this file should hard-code either list.
+EXHIBITS = ("pleading", "privilege", "binder", "stack")
+OBJECTIONS = ("hearsay", "character", "rule403")
 
 RUN_FRAMES = 20         # frames per stride at cadence 1.0; cadence scales it
 STAMP_FRAMES = 26
@@ -268,6 +323,23 @@ def build_enemy(variant, cfg, images):
     scene.material(Material(MAT["alt"], (1, 1, 1, 1), 0.0, 0.88, "paper_alt"))
     scene.material(Material(MAT["binder"], (1, 1, 1, 1), 0.05, 0.72,
                             "binder_cover"))
+    # Objections share one texture and are told apart by tint, so the material
+    # carries the variant's colour -- and therefore the VARIANT'S NAME. absorb()
+    # merges materials by name into the combined file, so three variants all
+    # calling this "Paper_Objection" collapse to whichever was absorbed last:
+    # every objection came out amber, rule403's colour, in enemies.glb. The
+    # per-variant GLBs looked correct the whole time, which is exactly how this
+    # would have reached the browser unnoticed.
+    obj_mat = "%s_%s" % (MAT["objection"], variant)
+    uses_objection = (cfg["paper"] == "objection"
+                      or "objection" in cfg.get("stock", ()))
+    if uses_objection:
+        scene.material(Material(obj_mat, cfg.get("tint", (1, 1, 1, 1)),
+                                0.0, 0.84, "paper_objection"))
+
+    def mat_for(key):
+        return obj_mat if key == "objection" else MAT[key]
+
     scene.material(Material(MAT["face"], (1, 1, 1, 1), 0.0, 0.90, "faces"))
     scene.material(Material(MAT["mark"], (1, 1, 1, 1), 0.0, 0.86, "stamp_mark"))
     scene.material(Material(MAT["limb"], hex_srgb("#23252B"), 0.0, 0.62))
@@ -275,7 +347,7 @@ def build_enemy(variant, cfg, images):
     scene.material(Material(MAT["shoe"], hex_srgb("#15161A"), 0.05, 0.48))
     scene.material(Material(MAT["ring"], hex_srgb("#B9BEC6"), 1.0, 0.28))
 
-    paper_mat = MAT[cfg["paper"]]
+    paper_mat = mat_for(cfg["paper"])
     root = Node("Enemy_" + variant)
     scene.add_root(root)
     rig = Node("Rig")
@@ -326,9 +398,15 @@ def build_enemy(variant, cfg, images):
                 up_hint=(0, 0, 1), group=0)
         body.add_mesh(rings)
     elif n_sheets > 1:
-        # a loose cluster that flaps as one unit
+        # A loose cluster that flaps as one unit. The stock alternates, which is
+        # the point for the chaotic stack -- a pile of unrelated filings -- but
+        # it must not be hard-coded: the objections are red, and giving them
+        # white pleading sheets both read wrong and pulled two more 1024 maps
+        # into a file that needs neither (enemy_rule403.glb was 1355 KB against
+        # hearsay's 663 KB for the same geometry).
+        stock = cfg.get("stock", ("alt", "paper"))
         for i in range(1, n_sheets):
-            mtl = MAT["alt"] if i % 2 else MAT["paper"]
+            mtl = mat_for(stock[(i - 1) % len(stock)])
             sm = M.Mesh("Sheet_%d" % (i + 1), mtl)
             build_sheet(sm, w * (0.94 - 0.03 * i), h * (0.93 - 0.035 * i), th,
                         front, back, nx=4, ny=5,
@@ -756,7 +834,7 @@ def main(argv=None):
         glb = os.path.join(args.out, "enemies.glb")
         export_glb(combined, glb)
         print("  %-9s %-24s %5d tris  %s (%.0f KB)  [%d clips]"
-              % ("combined", "All four, shared textures",
+              % ("combined", "All seven, shared textures",
                  combined.stats()["triangles"], os.path.basename(glb),
                  os.path.getsize(glb) / 1024.0, len(combined.animations)))
 
