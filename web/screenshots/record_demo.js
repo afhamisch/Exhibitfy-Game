@@ -17,14 +17,15 @@ const FFMPEG = '/opt/pw-browsers/ffmpeg-1011/ffmpeg-linux';
 const OUT = __dirname;
 const FPS = 20;
 // A ceiling, not a length: the capture stops TAIL frames after the run ends, so
-// the reel finishes on the ending screen instead of cutting off mid-fight. A
-// full run -- four exhibits, the hold, then eight pages of summary judgment --
-// is around 45 s of game time, so give it room and let the ending stop it.
+// the reel finishes on the ending screen instead of cutting off mid-round. A
+// full run -- four exhibits, the three-second hold, then thirty seconds of
+// opposing counsel -- is around 60 s of game time, so give it room and let the
+// ending stop it.
 const SECONDS = Number(process.argv[2] || 60);
 const FRAMES = Math.round(FPS * SECONDS);
 const TAIL = Math.round(FPS * 2.5);
-// How many runs to record before settling. The bot wins the bonus round about
-// one in three, so recording once means usually recording a loss.
+// How many runs to record before settling. The bonus round is scored in tiers
+// rather than won outright, so this keeps the attempt that survived the most.
 const TRIES = Number(process.argv[3] || 1);
 const W = 960, H = 600;
 
@@ -66,11 +67,66 @@ const DEMO = () => {
       el.dispatchEvent(new MouseEvent('mousedown', { button, bubbles: true }));
       el.dispatchEvent(new MouseEvent('mouseup', { button, bubbles: true }));
     },
+    /** Closest approach of a thrown binder, and how long until it. */
+    threat() {
+      let best = null, bestT = 1e9;
+      for (const p of s.binders || []) {
+        if (p.done || p.deflected) continue;
+        const rx = s.camera.position.x - p.root.position.x;
+        const rz = s.camera.position.z - p.root.position.z;
+        const t = (rx * p.dir.x + rz * p.dir.z) / s.CFG.binderSpeed;
+        if (t < 0) continue;
+        const cx = p.root.position.x + p.dir.x * s.CFG.binderSpeed * t;
+        const cz = p.root.position.z + p.dir.z * s.CFG.binderSpeed * t;
+        const miss = Math.hypot(cx - s.camera.position.x,
+                                cz - s.camera.position.z);
+        if (miss < 1.1 && t < bestT) { bestT = t; best = { p, t, cx, cz }; }
+      }
+      return best;
+    },
+
+    /**
+     * The bonus round is a different game and needs a different head: nothing
+     * to chase, nothing to file, and the one tool only works every other
+     * binder. Read where each one will PASS you -- not where it is -- and be
+     * somewhere else by then.
+     */
+    bonusTick() {
+      const b = s.boss;
+      if (!b) return 'waiting';
+      this.aim(b.root.position.x, b.root.position.z);
+      const th = this.threat();
+      if (!th) return 'watching';
+      const dist = Math.hypot(th.p.root.position.x - s.camera.position.x,
+                              th.p.root.position.z - s.camera.position.z);
+      const range = s.touch ? s.CFG.deflectRangeTouch : s.CFG.deflectRange;
+      if (s.deflectReady && dist < range - 0.15 && this.cool <= 0) {
+        this.click(0);
+        this.cool = 12;
+        return 'deflect';
+      }
+      const y = s.camera.rotation.y;
+      const rx = Math.cos(y), rz = -Math.sin(y);
+      const side = (th.cx - s.camera.position.x) * rx
+                 + (th.cz - s.camera.position.z) * rz;
+      let want = side > 0 ? 'KeyA' : 'KeyD';
+      const test = (key) => {
+        const sgn = key === 'KeyD' ? 1 : -1;
+        return s.insideWalk(s.camera.position.x + rx * sgn * 0.55,
+                            s.camera.position.z + rz * sgn * 0.55);
+      };
+      if (!test(want)) want = want === 'KeyA' ? 'KeyD' : 'KeyA';
+      if (test(want)) s.keys[want] = true;
+      return 'dodge';
+    },
+
     tick() {
       s.keys.KeyW = false; s.keys.ShiftLeft = false;
       s.keys.KeyA = false; s.keys.KeyD = false;
+      s.keys.KeyS = false;
       if (this.cool > 0) this.cool -= 1;
       if (s.done) return 'done';
+      if (s.phase === 'bonus') return this.bonusTick();
 
       // Stick to a target until it is gone. Re-picking the nearest every frame
       // makes it dither between two documents and never close on either.
@@ -81,21 +137,15 @@ const DEMO = () => {
 
       if (!this.lockOn) {
         let pick = null;
-        // Ink outranks everything, including the boss. Eight pages need eight
-        // wet swings and the bonus starts with barely two in the barrel, so
-        // topping up at two swings left -- rather than at zero -- is the
-        // difference between numbering the motion and dry-stamping at it while
-        // it walks in. Refilling first was the whole reason the last capture
-        // never finished the fight.
-        const floor = s.phase === 'bonus'
-          ? s.CFG.inkPerSwing * 2 : s.CFG.inkPerSwing;
+        // Ink first, always: a dry stamp files nothing however well aimed, and
+        // the bonus round needs a wet one to deflect with.
+        const floor = s.CFG.inkPerSwing * 2;
         if (s.ink < floor) {
           const p = s.pods.filter(x => x.live).sort((a, b) =>
             a.home.distanceTo(s.camera.position)
             - b.home.distanceTo(s.camera.position))[0];
           if (p) pick = { ref: p, kind: 'pod' };
         }
-        if (!pick && s.boss && s.boss.alive) pick = { ref: s.boss, kind: 'boss' };
         if (!pick) {
           const o = s.objections.filter(x => x.alive)[0];
           if (o) pick = { ref: o, kind: 'objection' };
@@ -283,8 +333,9 @@ async function record(browser, framesPath) {
   const out = await page.evaluate(() => ({
     filed: window.__bates.filed, phase: window.__bates.phase,
     done: window.__bates.done, clock: Math.round(window.__bates.clock),
-    redactions: window.__bates.redactions, bossHits: window.__bates.bossHits,
-    pagesLeft: window.__bates.boss ? window.__bates.boss.pages : null,
+    redactions: window.__bates.redactions, survived: window.__bates.survived,
+    tier: window.__bates.bonusTier, deflects: window.__bates.deflects,
+    binderHits: window.__bates.binderHits,
     bonusWon: window.__bates.bonusWon, dryStamps: window.__bates.dryStamps,
     overruled: window.__bates.overruled, struck: window.__bates.struck,
     ending: document.getElementById('wake-tag').textContent.trim() }));
@@ -310,8 +361,7 @@ async function record(browser, framesPath) {
     const path = `${OUT}/frames_${a}.mjpeg`;
     const r = await record(browser, path);
     r.path = path;
-    if (!best || r.bonusWon > best.bonusWon
-        || (r.bonusWon === best.bonusWon && r.bossHits > best.bossHits)) {
+    if (!best || (r.survived || 0) > (best.survived || 0)) {
       if (best) fs.unlinkSync(best.path);
       best = r;
     } else {
@@ -320,7 +370,7 @@ async function record(browser, framesPath) {
     if (best.bonusWon) break;
   }
   await browser.close();
-  console.log('kept:', best.ending, `${best.bossHits}/8 pages,`,
+  console.log('kept:', best.ending, `survived ${best.survived},`,
     `${(best.frames / FPS).toFixed(1)}s`);
 
   const webm = `${OUT}/bates_demo.webm`;

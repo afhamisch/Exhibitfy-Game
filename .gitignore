@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+
+# Capture intermediates: record_demo.js and record_bonus.js concatenate JPEG
+# frames into these before handing them to ffmpeg. Several MB each, and the
+# .webm beside them is the artefact worth keeping.
+web/screenshots/*.mjpeg
