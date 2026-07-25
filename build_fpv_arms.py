@@ -455,7 +455,7 @@ def build_finger(name, root, radius, phal, splay, bends, side_uv, suffix=""):
 
 KNUCKLE_X = [f[1][0] for f in FINGERS]
 
-SIDES = ("R", "L")      # swinging hand, then the carrying hand
+SIDES = ("R", "L")      # right runs the stamp, left carries the exhibits
 
 
 def build_palm(side_uv):
@@ -1085,9 +1085,10 @@ def build_scene(bates="000137", images=None):
     def dir_world(d):
         return vec.norm(vec.xform_dir(stamp_world, d))
 
-    # Both arms: the right swings the tool, the left carries the exhibits and
-    # wears the watch. SIDES drives this loop and the swing bake together, so
-    # the limb count is one tuple rather than two loops to keep in step.
+    # Right hand runs the stamp; left carries the exhibits and wears the watch.
+    # The carrying arm is posed in VIEW space, not stamp space, so the sheaf
+    # does not swing with the tool -- see build_swing. SIDES drives this loop
+    # and the swing bake together, so the limb count is one tuple.
     arms = []
     for side in SIDES:
         if side == "R":

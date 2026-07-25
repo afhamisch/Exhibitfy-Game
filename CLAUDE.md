@@ -75,9 +75,10 @@ python build_environment.py --no-preview
 as one object with 14 material slots and no animation. 8–15k is the usual
 mobile viewmodel allowance.
 
-**Both arms.** The right swings the tool; the left carries the exhibit sheaf and
-wears the watch. `SIDES` drives both the build and the swing bake, so the limb
-count is one tuple rather than two loops to keep in step.
+**Two arms, one tool.** The right hand runs the stamp; the left carries a sheaf
+of exhibits and wears the watch. `SIDES` drives both the build and the swing
+bake, so the limb count lives in one tuple. The carrying arm is posed in **view
+space, not stamp space** — otherwise the sheaf swings with every strike.
 
 The sheaf hangs off `Hand_L` at `HAND["grip_point"]` — the one point the finger
 solver wraps — not off the wrist and not off the arm. Off the arm it stayed put
