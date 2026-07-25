@@ -70,10 +70,16 @@ python build_environment.py --no-preview
 
 ## Budgets — read these back after every rebuild
 
-**Viewmodel:** 12,936 triangles / 9,015 vertices / 17 textures,
-bounds 0.616 × 0.751 × 0.382 m. 16 objects in the rigged GLB; the single-mesh
-copy is the same geometry as one object with 13 material slots and no
-animation. 8–15k is the usual mobile viewmodel allowance.
+**Viewmodel:** 12,492 triangles / 5,350 quads / 8,737 vertices / 17 textures,
+38 nodes / 35 meshes / 14 materials. The single-mesh copy is the same geometry
+as one object with 14 material slots and no animation. 8–15k is the usual
+mobile viewmodel allowance.
+
+**One-handed.** The right hand runs the stamp; the left carries a sheaf of
+exhibits and is **not attached to the tool**, so it does not inherit the swing —
+`build_swing` drives the right arm from the stamp and braces the left against
+its bind pose. A Bates stamp is a one-handed desk tool; the old two-handed grip
+and the foregrip it needed were an invention of the viewmodel.
 
 **Enemies:** pleading 1,392 · privilege 1,392 · binder 2,700 · stack 1,856.
 

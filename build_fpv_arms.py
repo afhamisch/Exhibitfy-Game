@@ -21,6 +21,7 @@ Every tunable number lives in the RIG / STAMP / HAND dicts near the top.
 import argparse
 import math
 import os
+import random
 import sys
 import time
 
@@ -109,6 +110,15 @@ RIG = {
     # by eye against the first-person view, where the back of the hand has to
     # face the player and the fingers wrap away from them.
     "grip_r_roll": 300.0,
+    # The left hand no longer touches the stamp -- it carries the exhibits.
+    # These are VIEW-space, not stamp-space: the sheaf must not swing with the
+    # tool, so it hangs off the root rather than off the stamp.
+    "docs_point": (-0.205, -0.300, -0.430),
+    "docs_axis": (0.86, 0.20, -0.47),
+    "docs_dorsal": (0.10, 1.0, 0.30),
+    "docs_roll": 300.0,
+    "docs_sheets": 7,
+    "docs_size": (0.216, 0.030, 0.279),   # letter width, sheaf thickness, depth
     "grip_l_roll": 300.0,
     "grip_l_point": (-0.0955, 0.0281, 0.0347),  # left hand on the foregrip
     "grip_l_axis": (0.888, 0.363, -0.283),
@@ -188,6 +198,7 @@ MAT = {
     "watch_dial": "Watch_Dial",
     "wheels": "Bates_Number_Wheels",
     "steel_cast": "Steel_Cast",
+    "paper": "Exhibit_Paper",
 }
 
 
@@ -865,26 +876,54 @@ def build_stamp(bates="000137"):
                    hr * 0.95, hr * 0.70, 18, group=0)
     node.add_mesh(caps)
 
-    # ---- side foregrip ---------------------------------------------------
-    gr = M.Mesh("Stamp_Foregrip", MAT["grip"])
-    g0, g1 = S["grip_root"], S["grip_tip"]
-    gp = [vec.lerp(g0, g1, i / 11.0) for i in range(12)]
-    M.tube_along_path(gr, gp, lambda t: M.profile_ellipse(
-        16, S["grip_r"] * (0.94 + 0.09 * math.sin(t * math.pi)),
-        S["grip_r"] * 0.93), up_hint=(0.0, 1.0, 0.0), group=0,
-        cap_start=True, cap_end=True)
-    node.add_mesh(gr)
+    # The side foregrip is gone. A Bates numbering stamp is a one-handed desk
+    # tool -- you hold it and drive it down -- so the two-handed grip was an
+    # invention of the viewmodel rather than anything the object called for.
+    # The left hand now carries the exhibits instead.
 
-    gcap = M.Mesh("Stamp_ForegripFittings", MAT["orange"])
-    d = vec.norm(vec.sub(g1, g0))
-    M.cylinder(gcap, vec.mad(g0, d, -0.004), vec.mad(g0, d, 0.016),
-               S["grip_r"] * 1.20, S["grip_r"] * 1.02, 18, group=0,
-               up_hint=(0.0, 1.0, 0.0))
-    M.cylinder(gcap, vec.mad(g1, d, -0.012), vec.mad(g1, d, 0.006),
-               S["grip_r"] * 1.02, S["grip_r"] * 1.18, 18, group=3,
-               up_hint=(0.0, 1.0, 0.0))
-    node.add_mesh(gcap)
+    return node
 
+
+def build_documents(name="Exhibits"):
+    """The sheaf of exhibits the left hand carries.
+
+    Built in the grip's own frame: +X along the gripped edge, +Y the sheaf
+    normal, +Z running away from the hand. The hand grips the near edge, so the
+    stack extends forward and the fingers close on a slab about as thick as the
+    bar the foregrip used to be.
+    """
+    w, th, d = RIG["docs_size"]
+    n = RIG["docs_sheets"]
+    node = Node(name)
+    mesh = M.Mesh("Exhibit_Stack", MAT["paper"])
+    rnd = random.Random(4021)
+    for i in range(n):
+        # each sheet fanned a little, so the stack reads as paper not a block
+        f = i / max(1, n - 1) - 0.5
+        y = -th * 0.5 + th * (i / max(1, n - 1))
+        sx = rnd.uniform(-0.004, 0.004) + f * 0.010
+        sz = rnd.uniform(-0.006, 0.010)
+        yaw = rnd.uniform(-0.9, 0.9) + f * 2.4
+        c, sn = math.cos(yaw * D2R), math.sin(yaw * D2R)
+        t = th / n * 0.72
+        corners = [(-w * 0.5, 0.0), (w * 0.5, 0.0), (w * 0.5, -d), (-w * 0.5, -d)]
+        pts = []
+        for (px, pz) in corners:
+            rx = px * c - pz * sn + sx
+            rz = px * sn + pz * c + sz
+            pts.append((rx, rz))
+        base = len(mesh.pos)
+        for yy in (y, y + t):
+            for (px, pz) in pts:
+                mesh.add_vertex((px, yy, pz),
+                                ((px / w) + 0.5, pz / d))
+        b0, b1 = base, base + 4
+        mesh.add_face((b1 + 0, b1 + 1, b1 + 2, b1 + 3), 0)      # top
+        mesh.add_face((b0 + 3, b0 + 2, b0 + 1, b0 + 0), 1)      # bottom
+        for k in range(4):
+            k2 = (k + 1) % 4
+            mesh.add_face((b0 + k, b0 + k2, b1 + k2, b1 + k), 2)
+    node.add_mesh(mesh)
     return node
 
 
@@ -916,6 +955,7 @@ def build_scene(bates="000137", images=None):
                             "stamp_die_basecolor", "stamp_die_mr"))
     scene.material(Material(MAT["grip"], (1, 1, 1, 1), 0.0, 1.0,
                             "grip_basecolor", "grip_mr"))
+    scene.material(Material(MAT["paper"], hex_srgb("#F2F0EA"), 0.0, 0.86))
     scene.material(Material(MAT["watch_steel"], hex_srgb("#C9CDD4"), 1.0, 0.16))
     scene.material(Material(MAT["watch_dial"], hex_srgb("#0E1219"), 0.2, 0.18))
     scene.material(Material(MAT["wheels"], (1, 1, 1, 1), 0.85, 0.34,
@@ -938,7 +978,7 @@ def build_scene(bates="000137", images=None):
     stamp_rigid = vec.mat_mul(
         vec.translate(RIG["stamp_pos"]), ready_rotation())
     rig = {"stamp": stamp, "grip_local": {}, "hand_local": {},
-           "arm": {}, "hand": {}, "fingers": {}}
+           "arm_bind": {}, "arm": {}, "hand": {}, "fingers": {}}
     scene.rig = rig
 
     def to_world(p):
@@ -964,20 +1004,22 @@ def build_scene(bates="000137", images=None):
                      "pitch": -22.0}
             roll = RIG["grip_r_roll"]
         else:
-            axis = dir_world(RIG["grip_l_axis"])
-            dorsal = dir_world(RIG["grip_l_dorsal"])
-            point = to_world(RIG["grip_l_point"])
+            # VIEW space, not stamp space: this hand carries the exhibits and
+            # must not swing with the tool.
+            axis = vec.norm(RIG["docs_axis"])
+            dorsal = RIG["docs_dorsal"]
+            point = RIG["docs_point"]
             gp = (-HAND["grip_point"][0], HAND["grip_point"][1],
                   HAND["grip_point"][2])
             elbow_dir = RIG["elbow_dir_l"]
             bow = RIG["forearm_bow_l"]
-            # support hand on the foregrip: firm, a shade more relaxed
-            bar_r = STAMP["grip_r"] * RIG["stamp_scale"]
+            # carrying hand: closes on the sheaf, relaxed rather than locked
+            bar_r = RIG["docs_size"][1] * 0.58
             tighten = {"Index": -0.0008, "Middle": -0.0012,
                        "Ring": -0.0010, "Pinky": -0.0006}
-            thumb = {"curl": (36.0, 30.0), "splay": -52.0, "twist": -26.0,
-                     "pitch": -18.0}
-            roll = RIG["grip_l_roll"]
+            thumb = {"curl": (34.0, 28.0), "splay": -50.0, "twist": -26.0,
+                     "pitch": -16.0}
+            roll = RIG["docs_roll"]
 
         hand_world = grip_frame(axis, dorsal, point, gp, roll)
         wrist_world = (hand_world[3], hand_world[7], hand_world[11])
@@ -996,6 +1038,9 @@ def build_scene(bates="000137", images=None):
         if side == "L":
             twisted, ts, _pts = frame_info
             arm_node.add(build_watch(path_at, twisted, ts))
+            docs = build_documents()
+            docs.matrix = vec.mat_mul(vec.rigid_inverse(arm_world), hand_world)
+            arm_node.add(docs)
 
         root.add(arm_node)
         arms.append(arm_node)
@@ -1005,6 +1050,7 @@ def build_scene(bates="000137", images=None):
         rig["grip_local"][side] = vec.mat_mul(
             vec.rigid_inverse(stamp_rigid), hand_world)
         rig["hand_local"][side] = list(hand.matrix)
+        rig["arm_bind"][side] = list(arm_node.matrix)
         rig["arm"][side] = arm_node
         rig["hand"][side] = hand
         rig["fingers"][side] = [c for c in hand.children
@@ -1141,16 +1187,33 @@ def build_swing(scene, anim=None):
 
         pose = {rig["stamp"]: full}
         for side in ("R", "L"):
-            hand_world = vec.mat_mul(rigid, rig["grip_local"][side])
-            hand_local = vec.mat_mul(rig["hand_local"][side], vec.rot_x(-lag))
-            arm_world = vec.mat_mul(hand_world, vec.rigid_inverse(hand_local))
+            if side == "R":
+                # welded to the tool: hand world is the stamp times a constant
+                # grip offset, and the forearm follows from there
+                hand_world = vec.mat_mul(rigid, rig["grip_local"][side])
+                hand_local = vec.mat_mul(rig["hand_local"][side],
+                                         vec.rot_x(-lag))
+                arm_world = vec.mat_mul(hand_world,
+                                        vec.rigid_inverse(hand_local))
+                sq = squeeze
+            else:
+                # The carrying arm is not attached to the stamp, so it must not
+                # inherit the swing. It braces instead: a small counter-lift as
+                # the tool comes down, which reads as taking the weight rather
+                # than as a limb pasted into frame.
+                brace = SWING.get("carry_brace", 3.2) * D2R * max(0.0, min(1.0, s))
+                arm_world = vec.mat_mul(rig["arm_bind"][side],
+                                        vec.rot_x(-brace))
+                hand_local = vec.mat_mul(rig["hand_local"][side],
+                                         vec.rot_x(brace * 0.5))
+                sq = squeeze * 0.35
             anim.key_matrix(rig["arm"][side], t, arm_world)
             anim.key_matrix(rig["hand"][side], t, hand_local)
             pose[rig["arm"][side]] = arm_world
             pose[rig["hand"][side]] = hand_local
             for node in rig["fingers"][side]:
                 m = vec.mat_mul(node.bind_local,
-                                vec.rot_x(squeeze * node.mirror_sign))
+                                vec.rot_x(sq * node.mirror_sign))
                 anim.key_matrix(node, t, m)
                 pose[node] = m
         poses.append(pose)

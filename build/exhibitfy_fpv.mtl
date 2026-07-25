@@ -97,6 +97,15 @@ map_Pr textures/grip_mr.png
 Pm 0.000
 Pr 1.000
 
+newmtl Exhibit_Paper
+Kd 0.8879 0.8714 0.8228
+Ks 0.2500 0.2500 0.2500
+Ns 17.6
+d 1.0
+illum 2
+Pm 0.000
+Pr 0.860
+
 newmtl Watch_Silver
 Kd 0.5841 0.6105 0.6584
 Ks 0.9000 0.9000 0.9000
