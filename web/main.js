@@ -446,6 +446,9 @@ const els = {
   stickNub: document.getElementById('stick-nub'),
   redactBtn: document.getElementById('redact-btn'),
   rotateHint: document.getElementById('rotate-hint'),
+  intro: document.getElementById('intro'),
+  introVideo: document.getElementById('intro-video'),
+  introSkip: document.getElementById('intro-skip'),
   banner: document.getElementById('banner'),
   bannerTitle: document.getElementById('banner-title'),
   bannerSub: document.getElementById('banner-sub'),
@@ -473,7 +476,7 @@ const state = {
   phase: 'case',          // 'case' -> 'bonus' -> done
   boss: null, bossHits: 0, bonusWon: false, caseWon: false, timeLeft: 0,
   binders: [], binderHits: 0, lastX: 0, lastZ: 0, swearT: 0,
-  deflects: 0, deflectReady: true, survived: 0, bonusTier: null,
+  deflects: 0, deflectReady: true, survived: 0, bonusTier: null, intro: false,
   keys: Object.create(null),
 };
 
@@ -1048,6 +1051,7 @@ state.touch = TOUCH;
 
 /** Is the game meant to be simulating right now? */
 function running() {
+  if (state.intro) return false;      // the world waits behind the video
   return TOUCH ? state.playing : controls.isLocked;
 }
 state.running = running;
@@ -1055,7 +1059,7 @@ state.running = running;
 /** Start play under whichever model this device uses. */
 function beginPlay() {
   if (!state.ready || state.done) return;
-  if (!TOUCH) { controls.lock(); return; }
+  if (!TOUCH) { controls.lock(); playIntro(); return; }
   state.playing = true;
   initAudio();                 // the tap that started us IS the gesture
   startMusic();
@@ -1064,8 +1068,72 @@ function beginPlay() {
   els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = false;
   els.inkBox.hidden = false;
   els.touchUi.hidden = false;
+  playIntro();
 }
 state.beginPlay = beginPlay;
+
+// ---------------------------------------------------------------- the intro
+//
+// Press play, watch the reel, and be in the game when it ends -- no second
+// click, no loading screen between the two.
+//
+// The whole trick is ORDER. Pointer lock is granted to a user gesture and
+// nothing else, so asking for it after a half-minute video is asking with a
+// stale gesture and being refused. The click takes the lock immediately; the
+// video is then drawn over a game that is already live and simply held still
+// by running(). When the video ends the overlay goes and the world is already
+// yours.
+const INTRO_SRC = './screenshots/gameplay_demo.webm';
+let introTimer = null;
+
+function playIntro() {
+  // WebM is all this toolchain can produce -- the ffmpeg here has libvpx and
+  // no H.264 encoder or mp4 muxer at all -- and Safari's WebM support is
+  // version-dependent. A browser that cannot play it goes straight to the
+  // game rather than sitting on a black rectangle.
+  const v = els.introVideo;
+  const can = v.canPlayType && v.canPlayType('video/webm; codecs="vp8"');
+  if (!can || sessionStorage.getItem('bates-intro') === 'seen') return;
+  try { sessionStorage.setItem('bates-intro', 'seen'); } catch (e) { /* private mode */ }
+
+  state.intro = true;
+  els.intro.hidden = false;
+  if (!v.src) v.src = INTRO_SRC;
+  v.currentTime = 0;
+  const done = () => endIntro();
+  v.addEventListener('ended', done, { once: true });
+  v.addEventListener('error', done, { once: true });
+  // A reel that will not start is not a reason to keep somebody waiting.
+  clearTimeout(introTimer);
+  introTimer = setTimeout(() => { if (v.readyState < 2) endIntro(); }, 4000);
+  const p = v.play();
+  if (p && p.catch) p.catch(() => endIntro());
+}
+
+function endIntro() {
+  if (!state.intro) return;
+  state.intro = false;
+  clearTimeout(introTimer);
+  els.intro.hidden = true;
+  try { els.introVideo.pause(); } catch (e) { /* nothing to pause */ }
+  banner('Bates & Destroy', 'Ninety seconds — stamp everything');
+}
+state.endIntro = endIntro;
+
+// Skip on anything deliberate. Under pointer lock every mouse event goes to
+// the locked canvas rather than to the overlay, so this listens on the
+// document instead of on the button.
+els.introSkip.addEventListener('click', endIntro);
+els.introSkip.addEventListener('touchstart', (e) => {
+  e.preventDefault(); endIntro();
+}, { passive: false });
+addEventListener('mousedown', () => { if (state.intro) endIntro(); });
+addEventListener('touchstart', () => { if (state.intro) endIntro(); },
+                 { passive: true });
+addEventListener('keydown', (e) => {
+  if (state.intro && (e.code === 'Escape' || e.code === 'Space'
+                      || e.code === 'Enter')) endIntro();
+});
 
 els.overlay.addEventListener('click', beginPlay);
 controls.addEventListener('lock', () => {
@@ -1222,7 +1290,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
 });
 
 function startSwing() {
-  if (!state.swing) return;
+  if (!state.swing || state.intro) return;
   if (state.swinging && state.swingT < CFG.swingRefire) return;
   state.swinging = true;
   state.swingT = 0;
@@ -1285,6 +1353,7 @@ function redactable() {
 /** Black out every page of a document. Cheaper than a stamp, and reversible by
  *  nothing at all -- a redacted exhibit is still filed, just unreadable. */
 function redact() {
+  if (state.intro) return;
   if (state.phase === 'bonus') return;         // nothing to redact in there
   if (state.ink < CFG.inkPerRedact) { sfx.dry(); warn('No ink to redact with'); return; }
   const e = redactable();
