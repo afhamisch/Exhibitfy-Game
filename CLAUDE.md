@@ -177,6 +177,16 @@ attempts. `tryDeflect()` runs every frame the swing is up. **Never two in a
 row:** a deflection disarms it until some binder resolves by dodge or hit,
 which is what stops the round becoming a metronome.
 
+**It plays on a phone, and that is a second input model rather than an
+adaptation.** iOS Safari has no Pointer Lock API at all, so touch cannot be a
+tweak of the mouse path: `state.touch` is decided once from `(pointer: fine)`,
+`running()` stands in for `controls.isLocked`, and the loop, the HUD and the
+collisions all read that flag. Left thumb is a virtual stick drawn wherever it
+lands, right thumb drags to look, a tap on the right side swings, redaction has
+an on-screen button, and sprint is the far end of the stick. World FOV widens as
+the frame gets taller — three.js `fov` is vertical, so portrait keeps the
+vertical angle and throws away horizontal — and the arms shrink to match.
+
 **Aim is locked at the start of the wind-up, never at the release.** The
 walkable strip is 1.72 m wide, so a full sidestep from the centreline is
 0.86 m; against a 0.48 m hit radius that is 0.38 m of margin. Aiming where the

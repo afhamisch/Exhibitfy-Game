@@ -57,12 +57,27 @@ No internet connection is needed. Three.js r160 is vendored into
 third-party CDN dependency — which also matters if this ends up embedded on a
 landing page.
 
-**It needs a mouse, a keyboard and WebGL**, and over anything but `localhost`
-it needs **HTTPS** — pointer lock is refused outside a secure context, and
-pointer lock is not a nicety here, it is the aiming. A small gate in
-`index.html` checks all of that *before* `main.js` is fetched and says which
-one failed, so a phone gets a sentence and a link to the demo video rather than
-a black screen and 12 MB off its data plan.
+**It plays on a phone.** iOS Safari has no Pointer Lock API at all — not
+"needs a gesture", it does not exist — so touch is a second input model rather
+than an adaptation of the first: left thumb anywhere on the left of the screen
+is a virtual stick, right thumb drags to look, a tap on the right stamps, and
+redaction gets an on-screen button because there is no second mouse button to
+put it on. Sprint is the far end of the stick. Which model is live is decided
+once, from `(pointer: fine)`, and everything downstream reads `state.touch`.
+
+Two things the phone build changes on purpose. The world FOV opens up as the
+frame gets taller — three.js `fov` is vertical, so a portrait phone keeps the
+vertical angle and throws away the horizontal, and the viewmodel authored for a
+landscape frame ends up filling half the screen with stamp; the arms shrink to
+match. And the binder collision is smaller on touch (`binderRadiusTouch`),
+because a thumb on a stick cannot commit to a direction as sharply as a finger
+on a key, which does mean the bonus tiers ask slightly less of a phone.
+
+**WebGL is still required**, and over anything but `localhost` you still need
+**HTTPS**, since pointer lock is refused outside a secure context on desktop.
+A small gate in `index.html` checks WebGL *before* `main.js` is fetched, so a
+browser that cannot render gets a sentence and a link to the demo video rather
+than a black screen and 12 MB off its data plan.
 
 Deploying is just static files: `build/` and `web/` uploaded together, with
 `build/` kept as a sibling of `web/` because `main.js` fetches `../build`.
@@ -72,15 +87,17 @@ works — the only host-side requirements are HTTPS and serving `.glb`, `.webm`,
 
 ## Controls
 
-| | |
-|---|---|
-| Move | `W` `A` `S` `D` |
-| Look | Mouse |
-| Stamp | Left click |
-| Redact | Right click |
-| Sprint | `Shift` |
-| Mute | `M` |
-| Release cursor | `Esc` |
+| | Desktop | Phone |
+|---|---|---|
+| Move | `W` `A` `S` `D` | Left thumb, anywhere on the left |
+| Look | Mouse | Right thumb, drag |
+| Stamp | Left click | Tap, right side |
+| Redact | Right click | The orange button |
+| Sprint | `Shift` | Push the stick to its edge |
+| Mute | `M` | — |
+| Release cursor | `Esc` | — |
+
+The title card shows whichever set applies before you start.
 
 You fell asleep assembling a trial binder. Chase the paperwork down and stamp
 it — Bates numbering is how exhibits get indexed, so a stamped document isn't

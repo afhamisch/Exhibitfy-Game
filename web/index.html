@@ -74,6 +74,56 @@
     border-bottom: 0;
   }
 
+  /* ---- thumb controls, phones only ------------------------------------ */
+  #touch-ui { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  /* The stick draws itself wherever the thumb lands rather than sitting in a
+     fixed corner: on a phone held one-handed, "wherever I put my thumb" is the
+     only position that is right for every hand and every case. */
+  #stick {
+    position: fixed; width: 124px; height: 124px; margin: -62px 0 0 -62px;
+    border: 2px solid rgba(242,241,236,.34); border-radius: 50%;
+    background: rgba(0,0,0,.22);
+  }
+  #stick-nub {
+    position: absolute; left: 50%; top: 50%; width: 44px; height: 44px;
+    border-radius: 50%; background: rgba(242,241,236,.62);
+  }
+  #redact-btn {
+    position: fixed; right: 18px; bottom: 26px; width: 92px; height: 92px;
+    border-radius: 50%; pointer-events: auto;
+    background: rgba(20,22,26,.62); border: 2px solid var(--orange);
+    color: var(--orange); font-size: 12px; font-weight: 700;
+    letter-spacing: .10em; display: flex; align-items: center;
+    justify-content: center; -webkit-tap-highlight-color: transparent;
+  }
+  #redact-btn:active { background: var(--orange); color: #fff; }
+  /* Under the HUD, not at the bottom of the screen: the bottom edge is where
+     the ink gauge and the thumbs are. */
+  #touch-hint {
+    position: fixed; left: 0; right: 0; top: 74px; text-align: center;
+    font-size: 10px; letter-spacing: .10em; text-transform: uppercase;
+    opacity: .40; animation: hintFade 1s ease-out 6s forwards;
+  }
+  @keyframes hintFade { to { opacity: 0; } }
+  /* Portrait is playable and landscape is much better: the corridor is wide,
+     the binders come from the sides, and a 9:19.5 slot hides both. Said once,
+     not enforced. */
+  #rotate-hint {
+    position: fixed; left: 12px; right: 12px; top: 30%;
+    text-align: center; font-size: 13px; line-height: 1.5;
+    color: var(--orange); text-shadow: 0 2px 8px rgba(0,0,0,.95);
+    animation: hintFade 1.2s ease-out 5s forwards;
+  }
+
+  /* On a phone the ink gauge and the swear bubble sit exactly where the thumbs
+     go, so both move up and in. */
+  @media (pointer: coarse) {
+    #inkbox { bottom: 132px; width: 150px; }
+    #swear { bottom: 140px; right: 18px; font-size: 20px; }
+    #hud .score { font-size: 22px; }
+    #wakeclock .t { font-size: 22px; }
+  }
+
   /* objection callout — centred under the crosshair, brief */
   #warn {
     position: fixed; left: 50%; top: 58%; transform: translateX(-50%);
@@ -224,6 +274,16 @@
 </div>
 <div id="warn"></div>
 <div id="swear"></div>
+
+<!-- Thumb controls. Hidden until play starts, and only ever shown on a device
+     that reported a coarse pointer. -->
+<div id="touch-ui" hidden>
+  <div id="stick" hidden><div id="stick-nub"></div></div>
+  <div id="redact-btn">REDACT</div>
+  <div id="touch-hint">Left thumb walks · right thumb looks · tap to stamp</div>
+  <div id="rotate-hint" hidden>↻ Turn your phone sideways — you need the width
+    to see what is coming</div>
+</div>
 <div id="banner">
   <div class="t" id="banner-title">Motion for summary judgment</div>
   <div class="s" id="banner-sub">Stamp every page</div>
@@ -251,7 +311,7 @@
   <div class="card">
     <h1>Tom Rexington, Esq.<br><b>Bates &amp; Destroy</b></h1>
     <div class="tag">Playable prototype</div>
-    <table>
+    <table id="keys-desktop">
       <tr><td class="k">Move</td><td class="v"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td></tr>
       <tr><td class="k">Look</td><td class="v">Mouse</td></tr>
       <tr><td class="k">Stamp</td><td class="v">Left click</td></tr>
@@ -259,6 +319,13 @@
       <tr><td class="k">Sprint</td><td class="v"><kbd>Shift</kbd></td></tr>
       <tr><td class="k">Mute</td><td class="v"><kbd>M</kbd></td></tr>
       <tr><td class="k">Release</td><td class="v"><kbd>Esc</kbd></td></tr>
+    </table>
+    <table id="keys-touch" hidden>
+      <tr><td class="k">Move</td><td class="v">Left thumb, anywhere</td></tr>
+      <tr><td class="k">Look</td><td class="v">Right thumb, drag</td></tr>
+      <tr><td class="k">Stamp</td><td class="v">Tap, right side</td></tr>
+      <tr><td class="k">Redact</td><td class="v">The orange button</td></tr>
+      <tr><td class="k">Sprint</td><td class="v">Push the stick further</td></tr>
     </table>
     <div id="loading">Loading assets…</div>
     <div class="go" id="go" hidden>Click to play</div>
@@ -298,13 +365,10 @@
 -->
 <script>
 (function () {
-  // An unsupported media query reports `not all`, and reading .matches on one
-  // returns false. Treating that as "no mouse" would lock out the older
-  // desktop browsers this is meant to let through, so unsupported means yes.
-  const q = matchMedia('(pointer: fine)');
-  const fine = q.media === 'not all' ? true : q.matches;
-  const lock = 'pointerLockElement' in document
-            || 'webkitPointerLockElement' in document;
+  // Touch is a supported input model now, not a reason to turn somebody away,
+  // so the pointer and pointer-lock checks are gone from the gate: a phone
+  // gets the virtual stick instead. WebGL is still fatal, because there is
+  // nothing to fall back to.
   let gl = false;
   try {
     const c = document.createElement('canvas');
@@ -314,7 +378,18 @@
     gl = false;
   }
 
-  if (fine && lock && gl) {
+  if (gl) {
+    // Show the scheme this device will actually use.
+    const q = matchMedia('(pointer: fine)');
+    const fine = q.media === 'not all' ? true : q.matches;
+    if (!fine || navigator.maxTouchPoints > 1) {
+      document.getElementById('keys-desktop').hidden = true;
+      document.getElementById('keys-touch').hidden = false;
+      document.getElementById('go').textContent = 'Tap to play';
+      document.getElementById('note').textContent =
+        'Chase the paperwork down and tap to stamp it. Do not stamp the '
+        + 'privileged one — redact that.';
+    }
     const s = document.createElement('script');
     s.type = 'module';
     s.src = './main.js';
@@ -324,19 +399,11 @@
 
   const head = document.getElementById('blocked-head');
   const body = document.getElementById('blocked-body');
-  if (!fine || !lock) {
-    head.textContent = 'This one needs a mouse.';
-    body.textContent = 'The Bates stamp is aimed with the mouse pointer '
-      + 'locked to the screen, and you move with the keyboard. A touchscreen '
-      + 'has neither, so there is no honest way to play it on a phone or '
-      + 'tablet. Open it on a laptop or desktop and it will work.';
-  } else {
-    head.textContent = 'WebGL is switched off.';
-    body.textContent = 'The office, the paperwork and the stamp are all 3D, '
-      + 'and this browser will not give the page a 3D context. It is usually '
-      + 'hardware acceleration turned off in the browser settings, or a very '
-      + 'old browser.';
-  }
+  head.textContent = 'WebGL is switched off.';
+  body.textContent = 'The office, the paperwork and the stamp are all 3D, '
+    + 'and this browser will not give the page a 3D context. It is usually '
+    + 'hardware acceleration turned off in the browser settings, or a very '
+    + 'old browser.';
   document.getElementById('loading').hidden = true;
   document.getElementById('note').hidden = true;
   document.getElementById('blocked').hidden = false;

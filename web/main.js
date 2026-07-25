@@ -143,6 +143,11 @@ const CFG = {
   // 0.86 m. At 0.56 m total that left 0.30 m of margin, which is a dodge you
   // win or lose on a rounding error. 0.48 leaves 0.38 m and still requires
   // committing to a direction.
+  // A thumb on a virtual stick cannot commit to a direction as sharply as a
+  // finger on a key, so the touch build gets a smaller collision. The tiers
+  // then mean very slightly different things on a phone, which is the honest
+  // cost of the round being playable there at all.
+  binderRadiusTouch: 0.15,
   binderRadius: 0.20,     // about the real half-width of the thing
   binderSpin: 9.0,        // rad/s, end over end
   binderLead: 0.20,       // he leads your movement, but not perfectly
@@ -156,6 +161,7 @@ const CFG = {
   // into standing still and swinging on a metronome. It is a get-out for the
   // one you read too late, not a strategy.
   deflectRange: 2.30,     // how far ahead of the eye a swing can reach one
+  deflectRangeTouch: 2.75,
   deflectSpeed: 5.0,      // m/s it leaves at, back the way it came
   // Tiers, on binders survived -- dodged or deflected, both count as not
   // having been hit by a binder.
@@ -362,12 +368,41 @@ const VIEW_FOV = 70;                     // must match the world camera
 const viewCamera = new THREE.PerspectiveCamera(VIEW_FOV, innerWidth / innerHeight, 0.01, 5);
 const viewScene = new THREE.Scene();
 
-addEventListener('resize', () => {
-  camera.aspect = viewCamera.aspect = innerWidth / innerHeight;
+/**
+ * Fit the view to the screen, including the shape of it.
+ *
+ * three.js `fov` is VERTICAL, so a portrait phone keeps the vertical angle and
+ * throws away horizontal: the world narrows and the viewmodel -- authored for
+ * a landscape frame -- ends up filling the lower half of the screen with
+ * stamp. Widening the vertical fov on a tall screen gives back roughly the
+ * horizontal angle a desktop has, and the arms are pushed down and out of the
+ * way to match.
+ */
+function fitView() {
+  const aspect = innerWidth / innerHeight;
+  camera.aspect = viewCamera.aspect = aspect;
+  // 70 deg vertical at 16:9; on a 9:19.5 phone that leaves a letterbox slot of
+  // a world, so open it up as the frame gets taller.
+  const widen = aspect < 1 ? Math.min(26, (1 / aspect - 1) * 22) : 0;
+  camera.fov = state.baseFov = 70 + widen;
+  viewCamera.fov = VIEW_FOV + widen;
   camera.updateProjectionMatrix();
   viewCamera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
-});
+  if (state.arms) {
+    // shrink and drop the tool on a narrow screen so it frames rather than fills
+    const k = aspect < 1 ? Math.max(0.62, aspect * 0.95) : 1;
+    state.arms.scale.setScalar(k);
+    state.arms.position.y = state.armsBaseY - (1 - k) * 0.10;
+  }
+  els.rotateHint.hidden = !(state.touch && aspect < 0.95);
+}
+addEventListener('resize', fitView);
+addEventListener('orientationchange', () => setTimeout(fitView, 120));
+// NB: `state` is declared further down, so nothing here may touch it at module
+// scope -- an assignment like `state.fitView = fitView` right here throws on
+// the temporal dead zone and takes the whole game down before it boots. It is
+// exposed with the other console hooks instead.
 
 // Metals need something to reflect. Without an environment map every metallic
 // surface in the kit -- the watch, the stamp's steel, the cabinet -- renders
@@ -406,6 +441,11 @@ const els = {
   remaining: document.getElementById('remaining'),
   warn: document.getElementById('warn'),
   swear: document.getElementById('swear'),
+  touchUi: document.getElementById('touch-ui'),
+  stick: document.getElementById('stick'),
+  stickNub: document.getElementById('stick-nub'),
+  redactBtn: document.getElementById('redact-btn'),
+  rotateHint: document.getElementById('rotate-hint'),
   banner: document.getElementById('banner'),
   bannerTitle: document.getElementById('banner-title'),
   bannerSub: document.getElementById('banner-sub'),
@@ -596,6 +636,10 @@ async function boot() {
   // instantly. Failure here is not fatal -- loadMusic warns and leaves
   // MUSIC.buf null, and every music call no-ops on that.
   await loadMusic();
+
+  // Fit the frame now that there is a viewmodel to fit: bound to resize alone,
+  // none of it applied on the orientation the page happened to load in.
+  fitView();
 
   state.ready = true;
   els.loading.hidden = true;
@@ -978,6 +1022,7 @@ function stampCarpet(x, z, yaw, dry) {
 state.DECALS = DECALS;
 state.OBJECTIONS = OBJECTIONS;
 state.insideWalk = insideWalk;          // for tuning from the console
+state.fitView = fitView;
 state.sfx = sfx;                        // same object the loops call through
 state.spawnObjection = spawnObjection;      // for tuning from the console
 // `startBonus` is a hoisted function declaration so this is safe here; BOSS_GLB
@@ -985,9 +1030,44 @@ state.spawnObjection = spawnObjection;      // for tuning from the console
 state.startBonus = startBonus;              // for tuning from the console
 
 // ---------------------------------------------------------------- input
-els.overlay.addEventListener('click', () => {
-  if (state.ready && !state.done) controls.lock();
-});
+//
+// Two input models, because iOS Safari has no Pointer Lock API at all -- not
+// "needs a gesture", not "needs a flag", it does not exist. Aiming is pointer
+// lock on a desktop, so a phone cannot be given a slightly adapted version of
+// the same thing; it needs its own.
+//
+// TOUCH is decided once, from whether the device reports a coarse pointer, and
+// everything downstream keys off `state.touch` rather than sniffing the event
+// type at each site.
+const TOUCH = (() => {
+  const q = matchMedia('(pointer: fine)');
+  const fine = q.media === 'not all' ? true : q.matches;
+  return !fine || navigator.maxTouchPoints > 1;
+})();
+state.touch = TOUCH;
+
+/** Is the game meant to be simulating right now? */
+function running() {
+  return TOUCH ? state.playing : controls.isLocked;
+}
+state.running = running;
+
+/** Start play under whichever model this device uses. */
+function beginPlay() {
+  if (!state.ready || state.done) return;
+  if (!TOUCH) { controls.lock(); return; }
+  state.playing = true;
+  initAudio();                 // the tap that started us IS the gesture
+  startMusic();
+  musicTo(MUSIC.level, 0.6);
+  els.overlay.style.display = 'none';
+  els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = false;
+  els.inkBox.hidden = false;
+  els.touchUi.hidden = false;
+}
+state.beginPlay = beginPlay;
+
+els.overlay.addEventListener('click', beginPlay);
 controls.addEventListener('lock', () => {
   initAudio();
   startMusic();
@@ -1007,7 +1087,7 @@ controls.addEventListener('unlock', () => {
 });
 document.getElementById('again').addEventListener('click', () => {
   restart();
-  controls.lock();          // the click is the gesture; spend it
+  beginPlay();              // the tap or click is the gesture; spend it
 });
 addEventListener('keydown', (e) => {
   state.keys[e.code] = true;
@@ -1019,6 +1099,122 @@ addEventListener('keydown', (e) => {
   }
 });
 addEventListener('keyup', (e) => { state.keys[e.code] = false; });
+
+// ------------------------------------------------------------ touch input
+//
+// Left half of the screen drives a virtual stick, right half looks and taps to
+// stamp. The split is by where the touch STARTED, held for the life of that
+// finger, so a look-drag that wanders across the middle does not suddenly
+// start walking -- which is what happens if you test the current position.
+//
+// Everything here is analogue where the keyboard is binary: the stick reports
+// a magnitude, so a phone gets fine movement the keyboard cannot express, and
+// sprint is just the far end of the same stick rather than a second control
+// there is no room for.
+const TOUCHES = new Map();
+const STICK = { id: null, cx: 0, cy: 0, dx: 0, dy: 0 };
+const LOOK = { id: null, x: 0, y: 0, moved: 0, t0: 0 };
+const STICK_R = 62;          // px of travel for full deflection
+const LOOK_SENS = 0.0042;    // radians per px
+const TAP_MS = 260;          // shorter than this, and barely moved, is a tap
+const TAP_SLOP = 14;         // px
+
+function touchStart(e) {
+  if (!state.playing) return;
+  for (const t of e.changedTouches) {
+    const left = t.clientX < innerWidth * 0.42;
+    if (left && STICK.id === null) {
+      STICK.id = t.identifier;
+      STICK.cx = t.clientX; STICK.cy = t.clientY;
+      STICK.dx = 0; STICK.dy = 0;
+      showStick(true, t.clientX, t.clientY);
+    } else if (!left && LOOK.id === null) {
+      LOOK.id = t.identifier;
+      LOOK.x = t.clientX; LOOK.y = t.clientY;
+      LOOK.moved = 0; LOOK.t0 = performance.now();
+    }
+    TOUCHES.set(t.identifier, t);
+  }
+  e.preventDefault();
+}
+
+function touchMove(e) {
+  if (!state.playing) return;
+  for (const t of e.changedTouches) {
+    if (t.identifier === STICK.id) {
+      STICK.dx = (t.clientX - STICK.cx) / STICK_R;
+      STICK.dy = (t.clientY - STICK.cy) / STICK_R;
+      const m = Math.hypot(STICK.dx, STICK.dy);
+      if (m > 1) { STICK.dx /= m; STICK.dy /= m; }
+      moveStickNub(STICK.dx, STICK.dy);
+    } else if (t.identifier === LOOK.id) {
+      const dx = t.clientX - LOOK.x;
+      const dy = t.clientY - LOOK.y;
+      LOOK.moved += Math.hypot(dx, dy);
+      camera.rotation.y -= dx * LOOK_SENS;
+      camera.rotation.x = Math.max(-1.2, Math.min(1.2,
+        camera.rotation.x - dy * LOOK_SENS));
+      LOOK.x = t.clientX; LOOK.y = t.clientY;
+    }
+  }
+  e.preventDefault();
+}
+
+/**
+ * Reconcile against the touches STILL down, rather than trusting
+ * changedTouches to name the one that left.
+ *
+ * Some event sources hand you a touchend with an empty changedTouches -- the
+ * headless driver does exactly that -- and a handler that only reads
+ * changedTouches then never releases the finger. The symptom was subtle and
+ * total: the first look-drag worked, LOOK.id was never cleared, and every tap
+ * to stamp afterwards was silently dropped for the rest of the session.
+ */
+function touchEnd(e) {
+  const live = new Set();
+  for (const t of e.touches) live.add(t.identifier);
+  if (STICK.id !== null && !live.has(STICK.id)) {
+    STICK.id = null; STICK.dx = 0; STICK.dy = 0;
+    showStick(false);
+  }
+  if (LOOK.id !== null && !live.has(LOOK.id)) {
+    // a quick stab that did not really travel is a swing, not a look
+    const quick = performance.now() - LOOK.t0 < TAP_MS;
+    if (quick && LOOK.moved < TAP_SLOP && state.playing) startSwing();
+    LOOK.id = null;
+  }
+  for (const id of [...TOUCHES.keys()]) if (!live.has(id)) TOUCHES.delete(id);
+  e.preventDefault();
+}
+
+if (TOUCH) {
+  const el = renderer.domElement;
+  el.addEventListener('touchstart', touchStart, { passive: false });
+  el.addEventListener('touchmove', touchMove, { passive: false });
+  el.addEventListener('touchend', touchEnd, { passive: false });
+  el.addEventListener('touchcancel', touchEnd, { passive: false });
+  // Redaction has no second mouse button to live on, so it gets a key of its
+  // own on screen. Sized for a thumb, not for a cursor.
+  els.redactBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (state.playing) redact();
+  }, { passive: false });
+}
+
+function showStick(on, x, y) {
+  els.stick.hidden = !on;
+  if (on) {
+    els.stick.style.left = x + 'px';
+    els.stick.style.top = y + 'px';
+    moveStickNub(0, 0);
+  }
+}
+
+function moveStickNub(dx, dy) {
+  els.stickNub.style.transform =
+    `translate(${dx * STICK_R - 22}px, ${dy * STICK_R - 22}px)`;
+}
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (e.button === 2 && controls.isLocked) { redact(); return; }
@@ -1467,7 +1663,7 @@ function tryDeflect() {
     const dx = p.root.position.x - camera.position.x;
     const dz = p.root.position.z - camera.position.z;
     const d = Math.hypot(dx, dz);
-    if (d > CFG.deflectRange) continue;
+    if (d > (state.touch ? CFG.deflectRangeTouch : CFG.deflectRange)) continue;
     if (dx * fwd.x + dz * fwd.z <= 0.0) continue;    // behind you
     deflectBinder(p);
     return;
@@ -1487,8 +1683,9 @@ function updateBinders(dt) {
     const dx = p.root.position.x - camera.position.x;
     const dz = p.root.position.z - camera.position.z;
     const dy = p.root.position.y - CFG.eyeHeight;
-    if (Math.hypot(dx, dz) < CFG.playerRadius2 + CFG.binderRadius
-        && Math.abs(dy) < 1.0) {
+    const reach = CFG.playerRadius2
+                + (state.touch ? CFG.binderRadiusTouch : CFG.binderRadius);
+    if (Math.hypot(dx, dz) < reach && Math.abs(dy) < 1.0) {
       p.done = true;
       scene.remove(p.root);
       hitByBinder();
@@ -2051,7 +2248,7 @@ function restart() {
   camera.rotation.set(0, 0, 0);
   camera.fov = VIEW_FOV;
   camera.updateProjectionMatrix();
-  if (state.arms) state.arms.position.y = state.armsBaseY;
+  if (state.arms) fitView();
 
   // ---- chrome
   els.wake.classList.remove('on');
@@ -2177,11 +2374,28 @@ function updatePlayer(dt) {
     (k.KeyS ? 1 : 0) - (k.KeyW ? 1 : 0));
   if (wish.lengthSq() > 0) wish.normalize();
 
+  // The stick is analogue and overrides the keys when it is being held: a
+  // phone can ask for half speed, which no combination of WASD can express.
+  let push = 1.0;
+  if (TOUCH && STICK.id !== null) {
+    const m = Math.min(1, Math.hypot(STICK.dx, STICK.dy));
+    if (m > 0.12) {
+      wish.set(STICK.dx, 0, STICK.dy).normalize();
+      push = m;
+    } else {
+      wish.set(0, 0, 0);
+    }
+  }
+
   // camera-relative, flattened
   const yaw = new THREE.Euler(0, camera.rotation.y, 0, 'YXZ');
   wish.applyEuler(yaw);
 
-  const speed = (k.ShiftLeft || k.ShiftRight) ? CFG.sprint : CFG.walk;
+  // Sprint is the far end of the stick rather than a second control there is
+  // no thumb left for.
+  const sprinting = (k.ShiftLeft || k.ShiftRight)
+    || (TOUCH && push > 0.86);
+  const speed = (sprinting ? CFG.sprint : CFG.walk) * (TOUCH ? push : 1);
   vel.x += (wish.x * speed - vel.x) * Math.min(1, CFG.accel * dt);
   vel.z += (wish.z * speed - vel.z) * Math.min(1, CFG.accel * dt);
   if (wish.lengthSq() === 0) {
@@ -2329,7 +2543,7 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
   state.t += dt;
-  if (state.ready && controls.isLocked) {
+  if (state.ready && running()) {
     if (state.phase === 'bonus') {
       updateBonusClock(dt);
       updatePlayer(dt);
@@ -2356,7 +2570,7 @@ function animate() {
   // while the kick is live cannot fight the resize handler.
   if (state.kick) {
     state.kick = state.kick < 0.002 ? 0 : state.kick * Math.exp(-9 * dt);
-    camera.fov = 70 + state.kick * 2.4;
+    camera.fov = (state.baseFov || 70) + state.kick * 2.4;
     camera.updateProjectionMatrix();
     if (state.arms) state.arms.position.y = state.armsBaseY - state.kick * 0.010;
   }
