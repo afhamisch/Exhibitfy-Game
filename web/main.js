@@ -228,7 +228,14 @@ const LAYOUT = {
     { x: 0, z: 2.0, rot: 0 },
     { x: -12, z: 2.0, rot: 0 },
   ],
-  spawns: [[0, -6], [-5.5, -12], [-12, -6], [-1.0, -10.5], [-9.5, -12]],
+  // Every one of these must satisfy insideWalk, which boot() now asserts.
+  // `[-1.0, -10.5]` did not: x was outside the corridor's +/-0.86 half-width
+  // and z past the end of the last straight hall, so it sat in the wall. With
+  // four documents indexing `spawns[i % 5]` that slot is always used, so the
+  // stack spawned out of bounds every single round -- free to be walked to,
+  // but resolveMove will not let anything outside the set move except by luck
+  // of heading, so it could stand there indefinitely.
+  spawns: [[0, -6], [-5.5, -12], [-12, -6], [-0.4, -11.5], [-9.5, -12]],
   // Ink pods, pushed out to the far ends and the two corners rather than sat
   // along the route you would walk anyway. A pod you pass over for free is not
   // a decision; these cost you the length of a corridor.
@@ -262,7 +269,19 @@ for (const c of LAYOUT.corners) {
   WALK.push(rect(c.x, c.z, c.rot, -HALF, -HALF, MODULE / 2, HALF));
 }
 
+// Props used to be scenery you walked through: a filing cabinet was a picture
+// of a filing cabinet. Their footprints are measured off the placed geometry in
+// boot() rather than written down here, so the collision cannot drift from the
+// model the way a hand-copied table would.
+//
+// Everything in WALK is already inset by playerRadius, so these are inset the
+// same way and the whole set stays a test on the player's centre.
+const BLOCKERS = [];
+
 function insideWalk(x, z) {
+  for (const b of BLOCKERS) {
+    if (x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1) return false;
+  }
   for (const r of WALK) {
     if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) return true;
   }
@@ -412,9 +431,32 @@ async function boot() {
   for (const h of LAYOUT.halls) scene.add(place(hallG.scene.clone(true), h.x, h.z, h.rot));
   for (const c of LAYOUT.corners) scene.add(place(cornerG.scene.clone(true), c.x, c.z, c.rot));
   for (const d of LAYOUT.doors) scene.add(place(doorG.scene.clone(true), d.x, d.z, d.rot));
+  const propBox = new THREE.Box3();
   for (const p of LAYOUT.props) {
-    scene.add(place(props[p.kind].clone(true), p.x, p.z, p.rot));
+    const obj = place(props[p.kind].clone(true), p.x, p.z, p.rot);
+    scene.add(obj);
+    // Measured after placing, so rotation is already in it.
+    obj.updateMatrixWorld(true);
+    propBox.setFromObject(obj);
+    BLOCKERS.push({
+      kind: p.kind,
+      x0: propBox.min.x - CFG.playerRadius, x1: propBox.max.x + CFG.playerRadius,
+      z0: propBox.min.z - CFG.playerRadius, z1: propBox.max.z + CFG.playerRadius,
+    });
   }
+  // A prop dropped on a spawn or a pod would strand whatever stands there, and
+  // one dropped across a corridor would cut the loop in two. Neither is true of
+  // the current layout -- the tightest gap is 0.65 m of centre-line past the
+  // banker's boxes -- but the layout is a table somebody will edit.
+  const trapped = [];
+  LAYOUT.spawns.forEach((s, i) => {
+    if (!insideWalk(s[0], s[1])) trapped.push(`spawn ${i} (${s[0]}, ${s[1]})`);
+  });
+  LAYOUT.pods.forEach((p, i) => {
+    if (!insideWalk(p[0], p[1])) trapped.push(`pod ${i} (${p[0]}, ${p[1]})`);
+  });
+  if (trapped.length) console.warn('layout: unreachable —', trapped.join('; '));
+  state.BLOCKERS = BLOCKERS;
 
   // ---- viewmodel: authored in view space, so it drops straight in
   const arms = viewG.scene;

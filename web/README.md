@@ -308,6 +308,13 @@ not butt-join at sample level, so plain looping steps 0.178 across the seam
 every 31.2 s; consecutive passes are equal-power crossfaded instead, which
 measures 0.019 at the join for about a decibel of level through the overlap.
 
+Props are solid. Their footprints are measured off the placed geometry at boot
+with a `Box3` and inset by `playerRadius`, the same inset the walkable
+rectangles already carry, so collision cannot drift from the model the way a
+copied table would. The tightest gap left is 0.65 m of centre-line past the
+banker's boxes; boot flood-checks that every spawn and every pod is still
+reachable and warns if a layout edit walls one in.
+
 ## Known limits of this slice
 
 - No score persistence.
