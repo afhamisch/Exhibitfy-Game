@@ -70,7 +70,7 @@ python build_environment.py --no-preview
 
 ## Budgets — read these back after every rebuild
 
-**Viewmodel:** 12,866 triangles / 5,728 quads / 8,592 vertices / 17 textures,
+**Viewmodel:** 12,936 triangles / 9,015 vertices / 17 textures,
 bounds 0.616 × 0.751 × 0.382 m. 16 objects in the rigged GLB; the single-mesh
 copy is the same geometry as one object with 13 material slots and no
 animation. 8–15k is the usual mobile viewmodel allowance.
@@ -93,7 +93,7 @@ view is ~11k.
 
 | Clip | Frames | fps | Notes |
 |---|---:|---:|---|
-| `Stamp_Swing` | **23** | 30 | 0.767 s. 15 animated nodes, 31 channels, 23 keys each. Impact frames 11–13, trigger on 11. Frames 0 and 22 bit-identical. |
+| `Stamp_Swing` | **23** | 30 | 0.733 s. 15 animated nodes, 45 channels, 23 keys each. Impact frames 11–13, trigger on 11. Frames 0 and 22 bit-identical. |
 | `Run` | **per variant** | 30 | Looping, one full stride: pleading 21 · privilege 19 · binder 31 · stack 17 keys. Last key repeats frame 0 bit-identically. |
 | `Stamped` | **26** | 30 | One-shot. Squash on frame 4, Bates impression at 1.28× overshoot. |
 

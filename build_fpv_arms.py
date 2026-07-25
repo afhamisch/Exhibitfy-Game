@@ -104,6 +104,12 @@ RIG = {
     "grip_r_point": (0.040, 0.2245, 0.0),     # right hand on the T-bar
     "grip_r_axis": (1.0, 0.0, 0.0),
     "grip_r_dorsal": (0.06, 1.0, 0.22),
+    # spin about the bar. The grip solve cannot see this -- rolling the hand
+    # keeps every fingertip the same distance from the bar axis -- so it is set
+    # by eye against the first-person view, where the back of the hand has to
+    # face the player and the fingers wrap away from them.
+    "grip_r_roll": 300.0,
+    "grip_l_roll": 300.0,
     "grip_l_point": (-0.0955, 0.0281, 0.0347),  # left hand on the foregrip
     "grip_l_axis": (0.888, 0.363, -0.283),
     "grip_l_dorsal": (-0.14, 1.0, 0.32),
@@ -123,6 +129,7 @@ RIG = {
     "cuff_t0": 0.29,          # where the roll starts
     "cuff_bulge": 0.0105,
     "watch_t": 0.862,
+    "watch_roll": 120.0,  # spin about the forearm; see build_watch
 }
 
 # ---------------------------------------------------------------- impact
@@ -222,10 +229,25 @@ def mirror_node(node, mirror_matrix=False):
     return node
 
 
-def grip_frame(axis, dorsal, point, grip_local):
+def grip_frame(axis, dorsal, point, grip_local, roll=0.0):
     """Rigid transform placing a hand so `grip_local` lands on `point`
-    with hand-local +X along `axis` and +Y towards `dorsal`."""
+    with hand-local +X along `axis` and +Y towards `dorsal`.
+
+    `roll` spins the hand about the bar in degrees, which is the one degree of
+    freedom the grip is blind to: every fingertip stays exactly as far from the
+    bar axis however far you roll it, so a measured-clean grip can still be
+    showing the player its palm. Positive rolls the back of the hand towards
+    the camera.
+    """
     x = vec.norm(axis)
+    if roll:
+        # Rodrigues: spin the dorsal reference about the bar itself
+        a = roll * D2R
+        c, s = math.cos(a), math.sin(a)
+        d = vec.norm(dorsal)
+        dorsal = vec.add(
+            vec.add(vec.mul(d, c), vec.mul(vec.cross(x, d), s)),
+            vec.mul(x, vec.dot(x, d) * (1.0 - c)))
     y = vec.norm(vec.sub(dorsal, vec.mul(x, vec.dot(dorsal, x))))
     z = vec.cross(x, y)
     origin = vec.sub(point, (
@@ -594,6 +616,19 @@ def build_watch(path_at, frame_fn, ts):
     # match the forearm's own twisted frame at the nearest sample
     i = min(range(len(ts)), key=lambda k: abs(ts[k] - t))
     x, y = frame_fn(i)
+    # The forearm's twist is derived from the hand, so rolling the grip rolls
+    # the watch with it and can bury the case under the wrist. This offset
+    # spins it back around the arm so the dial stays where it can be read.
+    if RIG.get("watch_roll"):
+        a = RIG["watch_roll"] * D2R
+        c, s = math.cos(a), math.sin(a)
+
+        def spin(v):
+            return vec.add(
+                vec.add(vec.mul(v, c), vec.mul(vec.cross(fwd, v), s)),
+                vec.mul(fwd, vec.dot(fwd, v) * (1.0 - c)))
+
+        x, y = spin(x), spin(y)
     rx, ry = forearm_profile(t)
 
     node = Node("Watch_L")
@@ -927,6 +962,7 @@ def build_scene(bates="000137", images=None):
                        "Ring": -0.0016, "Pinky": -0.0010}
             thumb = {"curl": (40.0, 34.0), "splay": -56.0, "twist": -20.0,
                      "pitch": -22.0}
+            roll = RIG["grip_r_roll"]
         else:
             axis = dir_world(RIG["grip_l_axis"])
             dorsal = dir_world(RIG["grip_l_dorsal"])
@@ -941,8 +977,9 @@ def build_scene(bates="000137", images=None):
                        "Ring": -0.0010, "Pinky": -0.0006}
             thumb = {"curl": (36.0, 30.0), "splay": -52.0, "twist": -26.0,
                      "pitch": -18.0}
+            roll = RIG["grip_l_roll"]
 
-        hand_world = grip_frame(axis, dorsal, point, gp)
+        hand_world = grip_frame(axis, dorsal, point, gp, roll)
         wrist_world = (hand_world[3], hand_world[7], hand_world[11])
 
         arm_node, arm_world, path_at, frame_info = build_arm(
