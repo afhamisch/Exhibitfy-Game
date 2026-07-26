@@ -661,6 +661,7 @@ const els = {
   clockLabel: document.getElementById('clock-label'),
   clockBox: document.getElementById('wakeclock'),
   markers: document.getElementById('markers'),
+  prompt: document.getElementById('prompt'),
   lids: document.getElementById('lids'),
   lidTop: document.querySelector('#lids i.t'),
   lidBottom: document.querySelector('#lids i.b'),
@@ -1872,7 +1873,13 @@ function redact() {
   if (state.phase === 'bonus') return;         // nothing to redact in there
   if (state.ink < CFG.inkPerRedact) { sfx.dry(); warn('No ink to redact with'); return; }
   const e = redactable();
-  if (!e) return;
+  // A press that does nothing teaches nothing. This is the moment the player
+  // is asking "what does redact do" -- answer it.
+  if (!e) {
+    sfx.dry();
+    warn('Nothing in reach to redact — it is for the PRIVILEGED memo');
+    return;
+  }
   state.ink -= CFG.inkPerRedact;
   updateInk();
   e.redacted = true;
@@ -1966,7 +1973,20 @@ function spawnObjection() {
     heading: g.rotation.y, phase: Math.random() * 6.28,
     baseScale: g.scale.clone(),
   });
-  warn(`${o.label} — objection!`);
+  // Say what it is AND what to do about it -- "objection!" alone left players
+  // reading red letters with no idea where it was or that the stamp answers
+  // it. The amber warning marker carries the bearing; this carries the verb.
+  warn(`${o.label} objection incoming — stamp it to overrule`);
+  // And let it be HEARD from where it stands, so "where did that come from"
+  // has an answer before the marker is even read: a gavel knock, panned.
+  if (AC) {
+    const dest = ear(at.x, at.z, 1.4);
+    if (dest) {
+      const t = AC.currentTime;
+      playTone(t, 0.09, 'square', 220, 180, 0.5, dest);
+      playTone(t + 0.12, 0.14, 'square', 180, 130, 0.6, dest);
+    }
+  }
   sfx.objection();
 }
 
@@ -2709,14 +2729,60 @@ function updateMarkers() {
     // reported as such). Objection markers do NOT: they are a threat warning,
     // and a player who turned the wayfinding off has not asked to be ambushed.
     if (state.markers) {
+      // Which room is a point in? Markers project straight through walls, so
+      // a document inside a side office reads as "somewhere in the middle of
+      // the map" with no way to it -- reported as exactly that. When a live
+      // document is in a room and the player is not, its DOORWAY gets a
+      // marker too: the chevron says where the paper is, the door marker says
+      // where to walk.
+      const roomOf = (px, pz) => {
+        for (const r of LAYOUT.rooms) {
+          const dirx = Math.round(Math.cos(r.rot));
+          if ((px - r.x) * dirx > 0.2 && (px - r.x) * dirx < r.w
+              && Math.abs(pz - r.z) < r.d / 2) return r;
+        }
+        return null;
+      };
+      const myRoom = roomOf(camera.position.x, camera.position.z);
+      const doorsShown = new Set();
       for (const e of state.enemies) {
-        if (e.alive) targets.push({ p: e.root.position, cls: 'mark', sym: '\u25bc' });
+        if (!e.alive) continue;
+        const room = roomOf(e.root.position.x, e.root.position.z);
+        if (room && room !== myRoom && !doorsShown.has(room)) {
+          doorsShown.add(room);
+          targets.push({ p: { x: room.x, y: 1.1, z: room.z },
+                         cls: 'mark door', sym: '\u2302' });
+        }
+        // The un-redacted privilege paper is the one document that punishes a
+        // plain stamp, so its marker says so before the mistake: amber and
+        // section-signed until it is redacted, ordinary afterwards.
+        const priv = e.kind === 'privilege' && !e.redacted;
+        targets.push({ p: e.root.position, cls: priv ? 'mark priv' : 'mark',
+                       sym: priv ? '\u00a7' : '\u25bc' });
       }
     }
     for (const o of state.objections) {
       if (o.alive) targets.push({ p: o.root.position, cls: 'mark obj', sym: '\u26a0', warn: true });
     }
   }
+  // The redact prompt. Shown whenever an un-redacted privilege paper is
+  // close, whatever the marker toggle says: this is the game teaching its one
+  // trap at the moment it matters, not wayfinding. Text matches the input
+  // model -- there is no Space bar on a phone.
+  let priv = null;
+  if (running() && !state.done && state.phase !== 'bonus') {
+    for (const e of state.enemies) {
+      if (e.alive && e.kind === 'privilege' && !e.redacted
+          && e.root.position.distanceTo(camera.position) < 5.0) { priv = e; break; }
+    }
+  }
+  els.prompt.classList.toggle('on', !!priv);
+  if (priv) {
+    els.prompt.textContent = TOUCH
+      ? 'PRIVILEGED — hit REDACT before you stamp it'
+      : 'PRIVILEGED — Space to redact before you stamp it';
+  }
+
   const w = innerWidth, h = innerHeight;
   // The pool grows to the population, whatever it is. It was capped at a
   // literal 8 -- exactly the roster size, so nothing was visibly wrong, and

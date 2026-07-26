@@ -63,18 +63,24 @@
   /* What Tom says when a binder finds him. Bottom right, out of the
      viewmodel's way and away from the ink gauge, with a tail so it reads as
      speech rather than as another HUD label. */
+  /* Bottom-CENTRE, tail pointing straight down: in first person the player
+     is the body under the camera, so "coming from you" means coming from the
+     bottom middle of the frame. It used to sit in the bottom-right corner
+     with the tail aimed off-screen, which read as a bubble from nobody --
+     reported as exactly that. The slight tilt is what makes it a yelp rather
+     than a caption. */
   #swear {
-    position: fixed; right: 26px; bottom: 96px; pointer-events: none;
+    position: fixed; left: 50%; bottom: 150px; pointer-events: none;
     background: #f2f1ec; color: #14161a; border-radius: 14px;
     padding: 10px 16px; font-size: 24px; font-weight: 700;
     letter-spacing: .06em; font-family: ui-monospace, monospace;
     box-shadow: 0 4px 14px rgba(0,0,0,.5);
-    opacity: 0; transform: scale(.7) translateY(8px);
+    opacity: 0; transform: translateX(-50%) scale(.7) translateY(8px) rotate(-3deg);
     transition: opacity .12s ease-out, transform .12s ease-out;
   }
-  #swear.on { opacity: 1; transform: scale(1) translateY(0); }
+  #swear.on { opacity: 1; transform: translateX(-50%) scale(1) translateY(0) rotate(-3deg); }
   #swear::after {
-    content: ""; position: absolute; right: 22px; bottom: -9px;
+    content: ""; position: absolute; left: 50%; margin-left: -10px; bottom: -9px;
     border: 10px solid transparent; border-top-color: #f2f1ec;
     border-bottom: 0;
   }
@@ -136,7 +142,7 @@
      go, so both move up and in. */
   @media (pointer: coarse) {
     #inkbox { bottom: 132px; width: 150px; }
-    #swear { bottom: 210px; right: 18px; font-size: 20px; }
+    #swear { bottom: 190px; font-size: 20px; }
     #hud .score { font-size: 22px; }
     #wakeclock .t { font-size: 22px; }
   }
@@ -167,6 +173,24 @@
     animation: objPulse .6s steps(2) infinite;
   }
   @keyframes objPulse { 50% { opacity: .5; } }
+
+  /* The redact teaching line. Amber like everything that can cost you, under
+     the crosshair where the eyes already are, and only ever shown while an
+     un-redacted privileged memo is close enough to matter. */
+  #prompt {
+    position: fixed; left: 50%; top: 64%; transform: translateX(-50%);
+    pointer-events: none; text-align: center; white-space: nowrap;
+    font-size: 14px; font-weight: 700; letter-spacing: .10em;
+    text-transform: uppercase; color: #ffb020;
+    text-shadow: 0 2px 6px rgba(0,0,0,.95);
+    opacity: 0; transition: opacity .25s ease-out;
+  }
+  #prompt.on { opacity: 1; }
+
+  /* the un-redacted privilege paper's marker: amber until it is made safe */
+  #markers .mark.priv { color: #ffb020; }
+  /* a doorway with a document behind it: the route, not the target */
+  #markers .mark.door { color: #f2f1ec; opacity: .9; }
 
   /* objection callout — centred under the crosshair, brief */
   #warn {
@@ -342,6 +366,7 @@
   <div class="sub" id="remaining">4 documents at large</div>
 </div>
 <div id="markers"></div>
+<div id="prompt"></div>
 <div id="warn"></div>
 <div id="swear"></div>
 
