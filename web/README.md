@@ -7,7 +7,9 @@ shared-texture `enemies.glb`, opposing counsel out of `enemy_counsel.glb`, and
 the modular office kit including the conference room he fights you in. No
 geometry is authored here.
 
-**[▶ Watch a full run](screenshots/bates_demo.webm)** (45 s, silent) — waking up
+**[▶ Watch a full run](screenshots/bates_demo.webm)** (45 s, silent; recorded
+before the eight-document rebalance, so it shows the four-document U-shaped
+level) — waking up
 at the desk, chasing the four documents down, redacting the privileged one
 before stamping it, overruling an objection, closing the binder, and then
 surviving the bonus round: opposing counsel throwing binders down a conference
@@ -186,7 +188,7 @@ per session, not once per reload: `sessionStorage` remembers.
 |---|---|---|
 | Walk | `↑` `↓` | Left thumb, anywhere on the left |
 | **Turn** | `←` `→` | Right thumb, drag |
-| Face nearest exhibit | `F` | — |
+| Face nearest exhibit | `F` | The FIND button |
 | Stamp | Left click | Tap, right side |
 | Redact | Right click | The orange button |
 | Sprint | `Shift` | Push the stick to its edge |

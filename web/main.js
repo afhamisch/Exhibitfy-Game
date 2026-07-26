@@ -611,6 +611,7 @@ const els = {
   stick: document.getElementById('stick'),
   stickNub: document.getElementById('stick-nub'),
   redactBtn: document.getElementById('redact-btn'),
+  findBtn: document.getElementById('find-btn'),
   rotateHint: document.getElementById('rotate-hint'),
   intro: document.getElementById('intro'),
   introVideo: document.getElementById('intro-video'),
@@ -1305,7 +1306,10 @@ function introSource() {
 // already fetching GLBs when this runs, so the reel buffers alongside them and
 // the click has something to play instead of four seconds of stall timeout on
 // a phone connection.
-if (introSource()) els.introVideo.src = introSource();
+{
+  const src = introSource();
+  if (src) els.introVideo.src = src;
+}
 
 function playIntro() {
   const v = els.introVideo;
@@ -1407,6 +1411,8 @@ function lidAt(t) {
 
 function startWake() {
   if (!state.deskProto || state.done) { finishWake(); return; }
+  // An F-turn still in flight would keep rotating the scripted camera.
+  state.snap = null;
   state.waking = true;
   state.wakeT = 0;
   state.wakeFading = false;
@@ -1700,6 +1706,13 @@ if (TOUCH) {
     e.preventDefault();
     e.stopPropagation();
     if (state.playing) redact();
+  }, { passive: false });
+  // The F key, for thumbs. stopPropagation so the tap is not also read as a
+  // look-drag landing on the right half of the screen.
+  els.findBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (state.playing) faceNearest();
   }, { passive: false });
 }
 
@@ -2541,13 +2554,16 @@ state.faceNearest = faceNearest;
 // These are the smallest thing that fixes that: one chevron per live exhibit,
 // projected to the screen, clamped to the edge with an arrow when it is behind
 // you. They fade out inside 4 m, where the paper speaks for itself.
-const MARK = { pool: [], max: 8 };
+const MARK = { pool: [] };
 
 function updateMarkers() {
   const live = running() && !state.done
     ? state.enemies.filter((e) => e.alive) : [];
   const w = innerWidth, h = innerHeight;
-  for (let i = 0; i < MARK.max; i++) {
+  // The pool grows to the roster, whatever the roster is. It was capped at a
+  // literal 8 -- exactly the roster size, so nothing was visibly wrong, and
+  // the ninth enemy anyone adds would have silently gone unmarked.
+  for (let i = 0; i < Math.max(MARK.pool.length, live.length); i++) {
     let el = MARK.pool[i];
     if (!el && i < live.length) {
       el = document.createElement('div');

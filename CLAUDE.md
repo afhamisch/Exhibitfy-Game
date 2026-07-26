@@ -8,7 +8,7 @@ dependency-free Python. No DCC app, no third-party packages.
 |---|---|---|
 | **Viewmodel** — FPV arms + Exhibitfy Bates stamp, `Stamp_Swing` | `build_fpv_arms.py` | `build/` |
 | **Enemies** — four anthropomorphic legal documents, `Run` + `Stamped` | `build_enemies.py` | `build/enemies/` |
-| **Environment** — eight-piece modular law office kit | `build_environment.py` | `build/environment/` |
+| **Environment** — eleven-piece modular law office kit | `build_environment.py` | `build/environment/` |
 
 Shared code lives in `tools/`. `build/` is committed so the assets are usable
 as-is.
@@ -33,8 +33,14 @@ Never add a third-party import. Never `pip install` anything. The confirmed
 import set across the whole repo is:
 
 ```
-argparse   math   os   random   sys   time   + the local tools package
+argparse   json   math   os   random   struct   sys   time   zlib
++ the local tools package
 ```
+
+(`json`, `struct` and `zlib` live in the exporters and validators — GLB is a
+JSON-plus-binary container and PNG needs a deflate — and `tools/
+blender_stamp_swing.py` imports `bpy`, which only exists inside Blender and is
+never run by the build.)
 
 Anything outside that needs to be raised, not added. Dependency-free
 reproduction is the point of the pipeline, not an accident of it.

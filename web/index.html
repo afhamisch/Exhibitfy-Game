@@ -102,6 +102,18 @@
     justify-content: center; -webkit-tap-highlight-color: transparent;
   }
   #redact-btn:active { background: var(--orange); color: #fff; }
+  /* FIND is the touch half of the F key: there is no keyboard on a phone, and
+     the phone is where turning to face a 0.6 m document is hardest. Above
+     REDACT, smaller -- it aims, it does not act, so it earns less thumb. */
+  #find-btn {
+    position: fixed; right: 30px; bottom: 132px; width: 68px; height: 68px;
+    border-radius: 50%; pointer-events: auto;
+    background: rgba(20,22,26,.62); border: 2px solid rgba(242,241,236,.55);
+    color: #f2f1ec; font-size: 11px; font-weight: 700;
+    letter-spacing: .10em; display: flex; align-items: center;
+    justify-content: center; -webkit-tap-highlight-color: transparent;
+  }
+  #find-btn:active { background: rgba(242,241,236,.85); color: #14161a; }
   /* Under the HUD, not at the bottom of the screen: the bottom edge is where
      the ink gauge and the thumbs are. */
   #touch-hint {
@@ -124,7 +136,7 @@
      go, so both move up and in. */
   @media (pointer: coarse) {
     #inkbox { bottom: 132px; width: 150px; }
-    #swear { bottom: 140px; right: 18px; font-size: 20px; }
+    #swear { bottom: 210px; right: 18px; font-size: 20px; }
     #hud .score { font-size: 22px; }
     #wakeclock .t { font-size: 22px; }
   }
@@ -329,6 +341,7 @@
 <div id="touch-ui" hidden>
   <div id="stick" hidden><div id="stick-nub"></div></div>
   <div id="redact-btn">REDACT</div>
+  <div id="find-btn">FIND</div>
   <div id="touch-hint">Left thumb walks · right thumb looks · tap to stamp</div>
   <div id="rotate-hint" hidden>↻ Turn your phone sideways — you need the width
     to see what is coming</div>
@@ -389,6 +402,7 @@
       <tr><td class="k">Look</td><td class="v">Right thumb, drag</td></tr>
       <tr><td class="k">Stamp</td><td class="v">Tap, right side</td></tr>
       <tr><td class="k">Redact</td><td class="v">The orange button</td></tr>
+      <tr><td class="k">Face nearest</td><td class="v">The FIND button</td></tr>
       <tr><td class="k">Sprint</td><td class="v">Push the stick further</td></tr>
     </table>
     <div id="loading">Loading assets…</div>
