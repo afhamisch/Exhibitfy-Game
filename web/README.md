@@ -107,9 +107,10 @@ landing page.
 "needs a gesture", it does not exist — so touch is a second input model rather
 than an adaptation of the first: left thumb anywhere on the left of the screen
 is a virtual stick, right thumb drags to look, a tap on the right stamps, and
-the FIND button turns you to face the nearest document, because hunting a
-fleeing sheet by dragging a thumb across glass is the hardest version of the
-game's hardest skill. Sprint is the far end of the stick. Which model is live is decided
+a tap anywhere stamps — in a panic nobody audits which half of the glass
+their thumb landed on. Sprint is the far end of the stick. (A continuous
+auto-look shipped for one release and was removed at the playtester's verdict;
+the markers and double-size documents carry the finding problem now.) Which model is live is decided
 once, from `(pointer: fine)`, and everything downstream reads `state.touch`.
 
 Two things the phone build changes on purpose. The world FOV opens up as the
@@ -196,7 +197,7 @@ fifteen seconds, and anyone in a hurry is one click from the game.
 |---|---|---|
 | Walk | `↑` `↓` | Left thumb, anywhere on the left |
 | **Turn** | `←` `→` | Right thumb, drag |
-| Face nearest exhibit | `F` | The FIND button |
+| Face nearest exhibit | `F` | — |
 | Stamp | Left click | Tap, right side |
 | Sprint | `Shift` | Push the stick to its edge |
 | Exhibit markers on/off | `H` | — |

@@ -1275,6 +1275,13 @@ state.startBonus = startBonus;              // for tuning from the console
 // TOUCH is decided once, from whether the device reports a coarse pointer, and
 // everything downstream keys off `state.touch` rather than sniffing the event
 // type at each site.
+// NOTE: touch had a continuous auto-look for one release -- whenever the
+// right thumb was off the glass, the camera eased toward the nearest target.
+// It was requested, built, played on a real iPhone, and REMOVED at the same
+// player's verdict: "now that I played it with the auto look, I don't like
+// it." The markers, door markers and 2x documents already carry the finding
+// problem, and a camera that moves on its own reads as the game wrestling the
+// player. Do not re-add it without a new playtest saying so.
 const TOUCH = (() => {
   const q = matchMedia('(pointer: fine)');
   const fine = q.media === 'not all' ? true : q.matches;
@@ -3275,46 +3282,8 @@ function finish(complete, fromBonus) {
 const vel = new THREE.Vector3();
 const clock = new THREE.Clock();
 
-/**
- * The phone aims itself. Hunting a fleeing document by dragging a thumb
- * across glass was the hardest thing on the hardest platform, and a button
- * (FIND) that had to be found and pressed was the wrong answer -- the player
- * said auto look is crucial, and it is. So on touch, whenever the right thumb
- * is NOT on the glass, the camera eases toward the current target: the
- * closest thing that matters, threats first. The drag always wins the moment
- * it lands, so the assist never fights a deliberate look; it only fills the
- * silence between them. Desktop keeps the F key and gets no assist -- a mouse
- * does not need its wrist held.
- */
-function touchAutoLook(dt) {
-  if (!TOUCH || LOOK.id !== null || state.snap) return;
-  const here = camera.position;
-  const pick = (list, live) => list
-    .filter(live)
-    .sort((a, b) => a.root.position.distanceTo(here)
-                  - b.root.position.distanceTo(here))[0];
-  // An objection inside its hunting radius outranks everything -- it is the
-  // thing the alarm is already yelling about. Otherwise the nearest document,
-  // and in Round 2 the boss, who is where the binders come from.
-  const obj = pick(state.objections, (o) => o.alive
-    && o.root.position.distanceTo(here) < 9.0);
-  const t = obj || pick(state.enemies, (e) => e.alive)
-    || (state.boss ? state.boss : null);
-  if (!t) return;
-  const want = Math.atan2(here.x - t.root.position.x,
-                          here.z - t.root.position.z);
-  let d = ((want - camera.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
-  if (d < -Math.PI) d += Math.PI * 2;
-  if (Math.abs(d) < 0.04) return;               // close enough; stop nudging
-  // Proportional and capped: quick over big errors, gentle near centre, and
-  // never so fast that it reads as the game grabbing the camera.
-  const rate = Math.max(-2.2, Math.min(2.2, d * 3.0));
-  camera.rotation.y += rate * dt;
-}
-
 function updatePlayer(dt) {
   const k = state.keys;
-  touchAutoLook(dt);
 
   // The arrows are the 1992 scheme on purpose: up/down walk, LEFT/RIGHT TURN.
   // WASD strafes and needs the mouse to turn, which is the whole difficulty --

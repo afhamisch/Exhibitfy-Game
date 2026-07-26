@@ -201,8 +201,11 @@ adaptation.** iOS Safari has no Pointer Lock API at all, so touch cannot be a
 tweak of the mouse path: `state.touch` is decided once from `(pointer: fine)`,
 `running()` stands in for `controls.isLocked`, and the loop, the HUD and the
 collisions all read that flag. Left thumb is a virtual stick drawn wherever it
-lands, right thumb drags to look, a tap on the right side swings, FIND turns
-you to the nearest document, and sprint is the far end of the stick. World FOV widens as
+lands, right thumb drags to look, a tap anywhere swings — measured by event
+timestamps, not handler time, so frame hitches cannot eat a tap — and sprint
+is the far end of the stick. A continuous touch auto-look was built, played on
+a real iPhone, and removed at the same player's verdict; do not re-add it
+without a new playtest saying so. World FOV widens as
 the frame gets taller — three.js `fov` is vertical, so portrait keeps the
 vertical angle and throws away horizontal — and the arms shrink to match.
 
