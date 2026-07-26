@@ -84,7 +84,44 @@ Deploying is just static files: `build/` and `web/` uploaded together, with
 `build/` kept as a sibling of `web/` because `main.js` fetches `../build`.
 There is no server code, no build step and no database, so any static host
 works — the only host-side requirements are HTTPS and serving `.glb`, `.webm`,
-`.ogg` and `.m4a` rather than 404ing on the extension.
+`.mp4`, `.ogg` and `.m4a` rather than 404ing on the extension.
+
+### The intro hands over to a live game
+
+One click. **Play the game** starts `web/video/intro.mp4`, and when it ends
+you are already playing — no second click, no loading screen between the two.
+
+The whole trick is order, and it is the opposite of the obvious one. Pointer
+lock is granted to a **fresh** user gesture and to nothing else, so asking for
+it after a fifteen-second video is asking with a stale gesture and being
+refused. So the click takes the lock *immediately* and starts the world; the
+video is then drawn over a game that is already live and simply held still by
+`running()`, which returns false while `state.intro` is up. When the video ends
+the overlay goes and the world is already yours — measured, the clock reads
+90.0 through the whole reel and 89.9 a second after it. The music bed is held
+back the same way (`startBed()`), so the reel's own audio is not competing with
+it.
+
+Fifteen seconds is the brief. `INTRO_MAX` caps it at 16 s regardless of the
+file — a second clear of the authored cut's 15.04 s, so the video's own `ended`
+normally does the handover and the timer is only the backstop for a file that
+is longer, stalled or still buffering. There is a shorter 4 s timeout too, for
+a reel that never reaches `readyState 2` at all: nobody waits on a video that
+is not coming. Any click, tap, Escape, Space or Enter skips.
+
+`introSource()` picks the file rather than assuming one: H.264 MP4 first, VP8
+WebM second, and if neither is playable it skips the reel and starts the game
+with the music up rather than sitting on a black rectangle. That last branch is
+not hypothetical — Playwright's bundled Chromium reports no H.264 at all, which
+is also why the MP4 path cannot be exercised in this repo's tests and the WebM
+is what they actually play. The WebM is a gameplay cut, not the authored intro,
+because the ffmpeg available here has libvpx and **no H.264 decoder** — the
+authored file cannot be transcoded, only shipped as-is.
+
+Sound is attempted unmuted, since the click that got us here is a gesture. If
+the browser refuses anyway the code retries muted rather than losing the intro
+over it, and only gives up and skips if that is refused too. It replays once
+per session, not once per reload: `sessionStorage` remembers.
 
 ## Controls
 

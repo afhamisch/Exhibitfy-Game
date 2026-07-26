@@ -1077,8 +1077,6 @@ function beginPlay() {
   if (!TOUCH) { controls.lock(); playIntro(); return; }
   state.playing = true;
   initAudio();                 // the tap that started us IS the gesture
-  startMusic();
-  musicTo(MUSIC.level, 0.6);
   els.overlay.style.display = 'none';
   els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = false;
   els.inkBox.hidden = false;
@@ -1098,24 +1096,52 @@ state.beginPlay = beginPlay;
 // video is then drawn over a game that is already live and simply held still
 // by running(). When the video ends the overlay goes and the world is already
 // yours.
-// The 15 s cut, not the full reel: nobody should wait a minute to be allowed
-// to play, and a reel you want to skip is a bad reel.
-const INTRO_SRC = './screenshots/intro.webm';
+// The authored intro first, the generated gameplay cut second.
+//
+// The MP4 is H.264, which every shipping browser plays -- including Safari,
+// where WebM support is version-dependent. The WebM is what this toolchain can
+// produce (libvpx only; the ffmpeg here has no H.264 encoder and no mp4 muxer)
+// and covers builds without the proprietary codecs, which is not a hypothetical:
+// the Chromium these tests run in reports no H.264 at all.
+const INTRO_MP4 = './video/intro.mp4';
+const INTRO_WEBM = './screenshots/intro.webm';
+// However long the file is, the intro ends here. Fifteen seconds is the brief
+// and the authored cut is 15.04 s (read off its mvhd), so the ceiling sits a
+// second clear of it: the video's own `ended` is what normally hands over, and
+// this is the backstop for a file that is longer, or stalled, or buffering.
+// Set flush at 15.0 it would win the race every time and clip the last frames.
+const INTRO_MAX = 16.0;
 let introTimer = null;
+let introCap = null;
+
+function introSource() {
+  const v = els.introVideo;
+  if (!v.canPlayType) return null;
+  if (v.canPlayType('video/mp4; codecs="avc1.42E01E"')) return INTRO_MP4;
+  if (v.canPlayType('video/webm; codecs="vp8"')) return INTRO_WEBM;
+  return null;
+}
+
+// Point the element at the file now rather than at the click. The game is
+// already fetching GLBs when this runs, so the reel buffers alongside them and
+// the click has something to play instead of four seconds of stall timeout on
+// a phone connection.
+if (introSource()) els.introVideo.src = introSource();
 
 function playIntro() {
-  // WebM is all this toolchain can produce -- the ffmpeg here has libvpx and
-  // no H.264 encoder or mp4 muxer at all -- and Safari's WebM support is
-  // version-dependent. A browser that cannot play it goes straight to the
-  // game rather than sitting on a black rectangle.
   const v = els.introVideo;
-  const can = v.canPlayType && v.canPlayType('video/webm; codecs="vp8"');
-  if (!can || sessionStorage.getItem('bates-intro') === 'seen') return;
+  const src = introSource();
+  // Nothing playable, or seen already this session: straight to the game
+  // rather than a black rectangle or a reel on every replay.
+  if (!src || sessionStorage.getItem('bates-intro') === 'seen') {
+    startBed();
+    return;
+  }
   try { sessionStorage.setItem('bates-intro', 'seen'); } catch (e) { /* private mode */ }
 
   state.intro = true;
   els.intro.hidden = false;
-  if (!v.src) v.src = INTRO_SRC;
+  if (!v.src) v.src = src;
   v.currentTime = 0;
   const done = () => endIntro();
   v.addEventListener('ended', done, { once: true });
@@ -1123,16 +1149,42 @@ function playIntro() {
   // A reel that will not start is not a reason to keep somebody waiting.
   clearTimeout(introTimer);
   introTimer = setTimeout(() => { if (v.readyState < 2) endIntro(); }, 4000);
+  clearTimeout(introCap);
+  introCap = setTimeout(endIntro, INTRO_MAX * 1000);
+
+  // With sound if the browser will allow it. The click that got us here is a
+  // user gesture, so it usually will; if it refuses, fall back to muted rather
+  // than losing the intro over it.
+  v.muted = false;
+  v.volume = 0.9;
   const p = v.play();
-  if (p && p.catch) p.catch(() => endIntro());
+  if (p && p.catch) {
+    p.catch(() => {
+      v.muted = true;
+      const q = v.play();
+      if (q && q.catch) q.catch(() => endIntro());
+    });
+  }
+}
+
+/** The music bed, held back until the intro is out of the way. */
+function startBed() {
+  // Ordinarily the lock/tap handler has already done this, but the no-intro
+  // path runs synchronously inside beginPlay -- ahead of the lock event -- and
+  // a context still suspended there would start the bed into silence.
+  initAudio();
+  startMusic();
+  musicTo(MUSIC.level, 0.6);
 }
 
 function endIntro() {
   if (!state.intro) return;
   state.intro = false;
   clearTimeout(introTimer);
+  clearTimeout(introCap);
   els.intro.hidden = true;
   try { els.introVideo.pause(); } catch (e) { /* nothing to pause */ }
+  startBed();
   banner('Bates & Destroy', 'Ninety seconds — stamp everything');
 }
 state.endIntro = endIntro;
@@ -1155,8 +1207,8 @@ addEventListener('keydown', (e) => {
 els.overlay.addEventListener('click', beginPlay);
 controls.addEventListener('lock', () => {
   initAudio();
-  startMusic();
-  musicTo(MUSIC.level, 0.6);
+  // The bed waits for the intro -- see startBed. If there is no intro, it
+  // starts immediately, which is what playIntro does on the way out.
   els.overlay.style.display = 'none';
   els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = false;
   els.inkBox.hidden = false;

@@ -13,11 +13,17 @@ dependency-free Python. No DCC app, no third-party packages.
 Shared code lives in `tools/`. `build/` is committed so the assets are usable
 as-is.
 
-One exception to "everything is generated": `web/audio/calm_loop.*` is an
-authored music track, not pipeline output. It is the only binary asset in the
-repo that no script can reproduce, so it cannot be regenerated if lost — the
-game's sound effects, by contrast, are synthesized in the browser at play time
-and ship as no files at all.
+Two exceptions to "everything is generated": `web/audio/calm_loop.*` is an
+authored music track and `web/video/intro.mp4` is an authored intro film. They
+are the only binary assets in the repo that no script can reproduce, so they
+cannot be regenerated if lost — the game's sound effects, by contrast, are
+synthesized in the browser at play time and ship as no files at all.
+
+The MP4 is doubly irreplaceable: the ffmpeg available here has libvpx and
+**no H.264 decoder or mp4 demuxer**, so it cannot even be transcoded, only
+copied. `web/screenshots/intro.webm` is a VP8 fallback for browsers without
+H.264 and is a *gameplay cut*, not the same film — it is sliced from the
+recorded reel by `record_demo.js`, not derived from the MP4.
 
 ## Non-negotiables
 
@@ -266,6 +272,28 @@ its own value.
 Do not "simplify" the beacon back to a cylinder, and do not put the pod back on
 the floor. Both were tried and measured.
 
+## The intro takes the pointer lock BEFORE the video, not after
+
+`beginPlay()` calls `controls.lock()` and *then* `playIntro()`. That order is
+the whole feature and it looks backwards, so it gets rewritten by anyone who
+has not hit the failure: pointer lock is granted to a **fresh** user gesture
+and to nothing else, so requesting it when the film ends is requesting it with
+a fifteen-second-old gesture, and the browser refuses. The video is drawn over
+a game that is already live and already holds the mouse; `running()` returns
+false while `state.intro` is up, so the world is held still rather than paused,
+and the handover is one click with no second prompt. Measured: clock 90.0
+throughout the reel, 89.9 a second after it.
+
+Everything else about the intro is a fallback and none of it is decorative.
+`introSource()` chooses H.264 then VP8 then nothing; `INTRO_MAX = 16.0` is a
+backstop set deliberately a second clear of the 15.04 s film so `ended` wins
+the race; a 4 s `readyState` timeout covers a reel that never arrives; sound is
+attempted unmuted and retried muted before being given up on. Music is held
+back by `startBed()` so it does not play under the film — which is why
+`startBed()` calls `initAudio()` itself: on the no-video path it runs
+synchronously inside `beginPlay`, ahead of the lock event that normally does
+that, and a context still suspended there would start the bed into silence.
+
 ## Clips
 
 | Clip | Frames | fps | Notes |
@@ -379,7 +407,9 @@ tools/
 build/                outputs (committed)
   enemies/  environment/
 web/                  playable browser prototype (Three.js, vendored)
-  main.js             player, enemies, layout, swing timing, HUD, audio
+  main.js             player, enemies, layout, swing timing, HUD, audio, intro
   audio/calm_loop.*   music bed, shipped as Ogg/Opus + M4A/AAC
+  video/intro.mp4     authored intro film, 15.04 s — H.264, not reproducible
+  screenshots/        recorded reels + the VP8 intro fallback
   vendor/three/       vendored r160 — never edited, no CDN
 ```
