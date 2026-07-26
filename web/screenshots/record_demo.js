@@ -367,7 +367,9 @@ async function record(browser, framesPath) {
     } else {
       fs.unlinkSync(path);
     }
-    if (best.bonusWon) break;
+    // The round is tiered rather than won, so stop as soon as an attempt takes
+    // the top one.
+    if (best.tier === 'lawyer') break;
   }
   await browser.close();
   console.log('kept:', best.ending, `survived ${best.survived},`,

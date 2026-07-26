@@ -3,8 +3,9 @@
 A first-person slice of **Tom Rexington, Esq.: Bates & Destroy**, in the
 browser. Everything it renders is loaded from the GLBs in `../build` — the FPV
 viewmodel with its `Stamp_Swing` clip, the seven paper enemies out of the
-shared-texture `enemies.glb`, the boss out of `enemy_motion.glb`, and the
-modular office kit. No geometry is authored here.
+shared-texture `enemies.glb`, opposing counsel out of `enemy_counsel.glb`, and
+the modular office kit including the conference room he fights you in. No
+geometry is authored here.
 
 **[▶ Watch a full run](screenshots/gameplay_demo.webm)** (31 s, silent) —
 chasing the four documents down, redacting the privileged one before stamping
@@ -169,24 +170,42 @@ pressure the middle of a round but never touch a finished binder.
 
 Closing the binder used to buy nothing — beat the clock by a minute and you got
 the same screen as someone who scraped it. Close it with **32 seconds still on
-the clock** and opposing counsel moves for **summary judgment** instead: a boss
-round on a fresh 40-second clock.
+the clock** and opposing counsel turns up **in person**, and you are both shown
+into a conference room for thirty seconds.
 
-The motion has **eight pages** and a Bates stamp is exactly the tool for that, so
-the only health bar in the game is really a page count. Each stamp numbers a page
-and knocks it back half a metre; it keeps calling objections in its own defence.
-Number all eight and the motion is denied — **Lawyer of the Year**, the one
-ending above `Verdict for the defense`.
+He throws binders. The round inverts everything before it: up to here you have
+been closing on paper that runs away, and now paper is coming at you and the
+stamp does not solve it. Swinging at *him* does nothing at all — that is the
+joke, and the reason the round exists.
 
-You can only lose the *bonus*, never the case: the binder was closed before any
-of it began, so if the motion reaches you summary judgment is granted, the round
-ends, and the verdict on the binder still stands. The endings say so explicitly,
-because losing a round you were awarded for winning otherwise reads as a
-punishment.
+What the stamp does do is **swat a binder out of the air**, and that counts as
+surviving it. But never twice running: a deflection disarms it until some
+binder resolves by dodge or hit, so you cannot stand still and swing on a
+metronome. It is a get-out for the one you read too late.
 
-`enemy_motion.glb` is fetched **on qualification, not at boot** — 664 KB is too
-much to charge every player to discover they were too slow. If it fails to load
-the case is awarded rather than leaving the player in an empty round.
+Scored on what you survive, in tiers, because a clock makes an endurance test
+where a fixed pile makes a checklist. He throws 15 to 18 in the thirty seconds:
+
+| Survived | |
+|---|---|
+| 13+ | **Motion denied · Lawyer of the Year** |
+| 8–12 | **Motion denied · Super Lawyer** |
+| 4–7 | the verdict on the binder stands |
+| 0–3 | **In re Rexington · disbarment** |
+
+Disbarment outranks the won case deliberately. Every other outcome leaves the
+verdict standing; standing still while a man throws thirty seconds of discovery
+at you does not, and the binder being immaculate is the joke rather than a
+defence.
+
+Aim is locked when he starts the **wind-up**, not when the binder leaves his
+hand — that is what makes the animation a tell you can read, and gives you
+0.40 s at 3.1 m/s to be somewhere else.
+
+`enemy_counsel.glb` and `conference_room.glb` are fetched **on qualification,
+not at boot** — most players never see either, and nobody should pay for a
+lawyer and a room to find out they were too slow. If they fail to load the case
+is awarded rather than leaving the player in an empty round.
 
 ### The verdict
 
@@ -350,9 +369,10 @@ reachable and warns if a layout edit walls one in.
   objections arriving. A fast player can still close the binder before the first
   one spawns at 22 s — that now earns the bonus round rather than skipping
   content, but it does mean the objections themselves can go unmet.
-- The boss only walks at you and calls objections. It has no attack of its own
-  beyond arriving, so the fight is a kiting exercise rather than a pattern to
-  learn.
+- Counsel throws one binder at a time on a cadence, and paces while he does it.
+  That is his whole repertoire — no feints, no volleys, no reading of which way
+  you dodged last time. Thirty seconds is short enough that it does not wear
+  out, but it is a rhythm rather than a pattern to learn.
 - Objections path by hunting and wall-sliding like the exhibits, so they grind
   corners the same way.
 - Enemies path by fleeing and wall-sliding, not by navmesh — they can get
