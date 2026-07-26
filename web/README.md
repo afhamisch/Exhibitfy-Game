@@ -44,6 +44,21 @@ the office is a corridor kit, so it needs a sidestep watchdog to get round them.
 
 ![corridor](screenshots/prototype_corridor.png)
 
+### The floor plan is a ring with two side offices
+
+It used to be a U, and the two dead ends were capped with the `doorway` module
+— whose leaf is modelled standing 62° open. So the art said *walk through* and
+the collision said *wall*, and the first person to play it said "I can't go
+through the doors." Fair.
+
+Closing the loop deletes the dead ends rather than closing the doors: the
+corridor is now a 12 × 16 m ring, you can always keep walking, and you can
+never be cornered — which was the same player's other complaint. Two side
+offices hang off it through real openings (`hallway_door`, a corridor section
+with a hole in its *side*, as opposed to `doorway`, which is a wall laid across
+one). Two of the five document spawns are inside those rooms, so a room is
+somewhere you have to go rather than somewhere you glance into.
+
 ## Run it
 
 The page loads assets from `../build`, so **serve the repository root**, not

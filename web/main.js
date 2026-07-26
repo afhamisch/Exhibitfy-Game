@@ -273,13 +273,12 @@ const LAYOUT = {
   // both doors: you can always keep walking, and you can never be cornered,
   // which was the other half of the same complaint.
   halls: [
-    // the x = 0 leg
-    { x: 0, z: 0, rot: 0 }, { x: 0, z: -4, rot: 0 }, { x: 0, z: -8, rot: 0 },
+    // the x = 0 leg -- the z = -4 module is a doorHall, below
+    { x: 0, z: 0, rot: 0 }, { x: 0, z: -8, rot: 0 },
     // the z = -12 leg, across the bottom
     { x: -4, z: -12, rot: Math.PI / 2 }, { x: -8, z: -12, rot: Math.PI / 2 },
     // the x = -12 leg, back up
-    { x: -12, z: -8, rot: 0 }, { x: -12, z: -4, rot: 0 },
-    { x: -12, z: 0, rot: 0 },
+    { x: -12, z: -8, rot: 0 }, { x: -12, z: 0, rot: 0 },
     // and the z = +4 leg that closes it
     { x: -4, z: 4, rot: Math.PI / 2 }, { x: -8, z: 4, rot: Math.PI / 2 },
   ],
@@ -294,17 +293,38 @@ const LAYOUT = {
     { x: -12, z: 4, rot: 0 },
   ],
   props: [
-    { kind: 'file_cabinet', x: 0.92, z: -3.4, rot: -Math.PI / 2 },
+    { kind: 'file_cabinet', x: 5.4, z: -5.2, rot: -Math.PI / 2 },
+    { kind: 'banker_boxes', x: 5.2, z: -2.9, rot: 0.4 },
+    { kind: 'file_cabinet', x: -17.5, z: -5.2, rot: Math.PI / 2 },
+    { kind: 'banker_boxes', x: -17.3, z: -2.9, rot: 0.4 },
     { kind: 'banker_boxes', x: -0.85, z: -7.4, rot: 0.24 },
     { kind: 'desk_chair', x: -6.2, z: -13.2, rot: Math.PI },
     { kind: 'reception_counter', x: -10.9, z: -5.6, rot: Math.PI / 2 },
     { kind: 'banker_boxes', x: -9.6, z: -10.9, rot: -0.5 },
     { kind: 'file_cabinet', x: -12.9, z: -2.0, rot: Math.PI / 2 },
   ],
-  // Nothing to cap any more -- the ring has no dead ends. Kept as an empty
-  // list rather than deleted, because the doorway module is still built, still
-  // validated, and is what a side room will be entered through.
+  // Nothing to cap any more -- the ring has no dead ends. The `doorway` module
+  // is still built and still validated; it is simply not what a room is
+  // entered through. That is `hallway_door`: a corridor section with an
+  // opening in its SIDE, rather than a wall laid across the corridor.
   doors: [],
+
+  // Straight sections whose +X wall carries an opening. Same footprint as a
+  // plain hall, so they sit on the grid in place of one.
+  doorHalls: [
+    { x: 0, z: -4, rot: 0 },              // opening faces +X, into room A
+    { x: -12, z: -4, rot: Math.PI },      // flipped, so it faces -X
+  ],
+
+  // Rooms hanging off those openings. `x, z` is the middle of the doorway on
+  // the outer face of the corridor wall -- the hall centre plus
+  // (CORRIDOR + WALL_T) / 2 + WALL_T / 2 = 1.35 -- and the room runs out along
+  // its local +X from there. Both sit OUTSIDE the ring: the middle of the ring
+  // is solid, and a room there would have to cut through two legs to fit.
+  rooms: [
+    { x: 1.35, z: -4, rot: 0, w: 5.0, d: 4.0 },
+    { x: -13.35, z: -4, rot: Math.PI, w: 5.0, d: 4.0 },
+  ],
   // Every one of these must satisfy insideWalk, which boot() now asserts.
   // `[-1.0, -10.5]` did not: x was outside the corridor's +/-0.86 half-width
   // and z past the end of the last straight hall, so it sat in the wall. With
@@ -312,7 +332,9 @@ const LAYOUT = {
   // stack spawned out of bounds every single round -- free to be walked to,
   // but resolveMove will not let anything outside the set move except by luck
   // of heading, so it could stand there indefinitely.
-  spawns: [[0, -6], [-5.5, -12], [-12, -6], [-6.5, 4], [-9.5, -12]],
+  // Two of the five sit inside the side rooms, so a room is somewhere you have
+  // to go rather than somewhere you may glance into.
+  spawns: [[3.6, -4], [-5.5, -12], [-15.8, -4], [-6.5, 4], [-9.5, -12]],
   // Ink pods, pushed out to the far ends and the two corners rather than sat
   // along the route you would walk anyway. A pod you pass over for free is not
   // a decision; these cost you the length of a corridor.
@@ -344,6 +366,24 @@ for (const c of LAYOUT.corners) {
   // entry leg runs down local -Z; exit leg runs out along local +X
   WALK.push(rect(c.x, c.z, c.rot, -HALF, -MODULE / 2, HALF, HALF));
   WALK.push(rect(c.x, c.z, c.rot, -HALF, -HALF, MODULE / 2, HALF));
+}
+// A doorHall walks exactly like the straight section it replaces.
+for (const h of LAYOUT.doorHalls) {
+  WALK.push(rect(h.x, h.z, h.rot, -HALF, -MODULE / 2, HALF, MODULE / 2));
+}
+// Rooms are two rects each: the threshold through the wall, and the floor.
+//
+// The threshold has to OVERLAP the corridor rather than abut it. Rects that
+// merely touch leave resolveMove with no cell to step into, and the opening
+// becomes a wall you can see through -- which is the same defect this layout
+// exists to stop shipping.
+const DOOR_HALF = 0.95 / 2;              // DOOR_W, from build_environment.py
+for (const r of LAYOUT.rooms) {
+  const slot = DOOR_HALF - CFG.playerRadius;
+  WALK.push(rect(r.x, r.z, r.rot, -0.65, -slot, 0.40, slot));
+  const inset = 0.15 + CFG.playerRadius;
+  WALK.push(rect(r.x, r.z, r.rot, 0.40, -(r.d / 2 - inset),
+                 r.w - inset, r.d / 2 - inset));
 }
 
 // Props used to be scenery you walked through: a filing cabinet was a picture
@@ -605,10 +645,13 @@ function place(obj, x, z, rot = 0) {
 }
 
 async function boot() {
-  const [hallG, cornerG, doorG, viewG, enemyG, ...propGs] = await Promise.all([
+  const [hallG, cornerG, doorG, doorHallG, officeG, viewG, enemyG,
+         ...propGs] = await Promise.all([
     load(`${ASSETS}/environment/hallway_straight.glb`),
     load(`${ASSETS}/environment/hallway_corner.glb`),
     load(`${ASSETS}/environment/doorway.glb`),
+    load(`${ASSETS}/environment/hallway_door.glb`),
+    load(`${ASSETS}/environment/side_office.glb`),
     load(`${ASSETS}/exhibitfy_fpv_arms.glb`),
     load(ENEMIES_GLB),
     load(`${ASSETS}/environment/file_cabinet.glb`),
@@ -633,6 +676,12 @@ async function boot() {
   for (const h of LAYOUT.halls) scene.add(place(hallG.scene.clone(true), h.x, h.z, h.rot));
   for (const c of LAYOUT.corners) scene.add(place(cornerG.scene.clone(true), c.x, c.z, c.rot));
   for (const d of LAYOUT.doors) scene.add(place(doorG.scene.clone(true), d.x, d.z, d.rot));
+  for (const h of LAYOUT.doorHalls) {
+    scene.add(place(doorHallG.scene.clone(true), h.x, h.z, h.rot));
+  }
+  for (const r of LAYOUT.rooms) {
+    scene.add(place(officeG.scene.clone(true), r.x, r.z, r.rot));
+  }
   const propBox = new THREE.Box3();
   for (const p of LAYOUT.props) {
     const obj = place(props[p.kind].clone(true), p.x, p.z, p.rot);

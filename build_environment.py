@@ -231,6 +231,110 @@ def piece_hallway_straight(scene):
     return root
 
 
+def piece_hallway_door(scene):
+    """A straight section whose +X wall carries a real opening.
+
+    Identical footprint to hallway_straight, so it drops into the grid in place
+    of one -- the only difference is that one side wall is split around a
+    doorway instead of running solid. The `doorway` module could not do this
+    job: it is a wall to cap a dead end with, laid ACROSS the corridor, and its
+    leaf stands 62 degrees open, which is what made two dead ends read as
+    passages you could walk through when they were not.
+
+    The opening is always on +X. Face it the other way by placing the piece at
+    rot 180; the corridor is symmetric, so nothing else changes.
+    """
+    root = Node("Hallway_Door")
+    rnd = random.Random(29)
+    floor = M.Mesh("Floor", MAT["carpet"])
+    floor_plate(floor, CORRIDOR, MODULE)
+    root.add_mesh(floor)
+
+    walls = M.Mesh("Walls", MAT["wall"])
+    bases = M.Mesh("Baseboards", MAT["base"])
+    half = (CORRIDOR + WALL_T) * 0.5
+    wall_panel(walls, bases, -half, 0.0, MODULE)
+
+    # +X wall, in three parts: two returns and a header over the opening.
+    side = (MODULE - DOOR_W) * 0.5
+    for sz in (-1.0, 1.0):
+        wall_panel(walls, bases, half, sz * (DOOR_W * 0.5 + side * 0.5), side)
+    box(walls, (WALL_T, WALL_H - DOOR_H, DOOR_W),
+        (half, DOOR_H + (WALL_H - DOOR_H) * 0.5, 0.0), 0.004, 0,
+        (0, 0, DOOR_W * 0.55, (WALL_H - DOOR_H) * 0.55))
+    root.add_mesh(walls)
+    root.add_mesh(bases)
+
+    # A lined frame, so the opening reads as a door and not as a hole where
+    # the wall failed to generate.
+    frame = M.Mesh("Frame", MAT["wood_dk"])
+    ft = 0.055
+    for sz in (-1.0, 1.0):
+        box(frame, (WALL_T + 0.03, DOOR_H + ft, ft),
+            (half, (DOOR_H + ft) * 0.5, sz * (DOOR_W * 0.5 + ft * 0.5)), 0.006)
+    box(frame, (WALL_T + 0.03, ft, DOOR_W + ft * 2),
+        (half, DOOR_H + ft * 0.5, 0.0), 0.006)
+    root.add_mesh(frame)
+
+    ceil = M.Mesh("Ceiling", MAT["ceiling"])
+    ceiling_plate(ceil, CORRIDOR, MODULE, WALL_H)
+    root.add_mesh(ceil)
+
+    troffer(scene, root, 0.0, -1.0)
+    troffer(scene, root, 0.0, 1.0)
+
+    papers = M.Mesh("Scatter", MAT["paper"])
+    scatter_papers(papers, rnd, 3, (-0.9, 0.9), (-1.7, 1.7))
+    root.add_mesh(papers)
+    return root
+
+
+SIDE_W, SIDE_D = 5.00, MODULE       # depth matches the module it opens off
+
+
+def piece_side_office(scene):
+    """A room off the corridor, entered through hallway_door.
+
+    Origin is the middle of the doorway at floor level, on the OUTER face of
+    the corridor wall, and the room runs out along +X from there. That is what
+    makes placement one number: put it at the hall centre plus (CORRIDOR +
+    WALL_T) / 2 + WALL_T / 2 and the two line up exactly.
+
+    It has no -X wall on purpose. Its depth is one module, so the hallway_door
+    it opens off already covers that whole face -- building a second wall there
+    would mean two coplanar slabs fighting over the same pixels.
+    """
+    root = Node("Side_Office")
+    rnd = random.Random(37)
+    inner = WALL_T * 0.5
+
+    floor = M.Mesh("Floor", MAT["carpet"])
+    floor_plate(floor, SIDE_W, SIDE_D, (SIDE_W * 0.5, 0.0, 0.0))
+    root.add_mesh(floor)
+
+    walls = M.Mesh("Walls", MAT["wall"])
+    bases = M.Mesh("Baseboards", MAT["base"])
+    wall_panel(walls, bases, SIDE_W + inner, 0.0, SIDE_D + WALL_T)
+    for sz in (-1.0, 1.0):
+        wall_panel(walls, bases, SIDE_W * 0.5,
+                   sz * (SIDE_D * 0.5 + inner), SIDE_W, along_z=False)
+    root.add_mesh(walls)
+    root.add_mesh(bases)
+
+    ceil = M.Mesh("Ceiling", MAT["ceiling"])
+    slab_box(ceil, SIDE_W, CEIL_T, SIDE_D,
+             (SIDE_W * 0.5, WALL_H + CEIL_T * 0.5, 0.0), 1.6)
+    root.add_mesh(ceil)
+
+    troffer(scene, root, SIDE_W * 0.35, -1.0)
+    troffer(scene, root, SIDE_W * 0.35, 1.0)
+
+    papers = M.Mesh("Scatter", MAT["paper"])
+    scatter_papers(papers, rnd, 5, (0.6, SIDE_W - 0.5), (-1.5, 1.5))
+    root.add_mesh(papers)
+    return root
+
+
 def piece_hallway_corner(scene):
     """L-shaped: the corridor enters from -Z and turns out to +X.
 
@@ -732,6 +836,8 @@ PIECES = {
     "hallway_straight": (piece_hallway_straight, "Straight hallway section"),
     "hallway_corner": (piece_hallway_corner, "90 degree corner"),
     "doorway": (piece_doorway, "Office entrance with door"),
+    "hallway_door": (piece_hallway_door, "Straight section with a side opening"),
+    "side_office": (piece_side_office, "Room off the corridor"),
     "desk_chair": (piece_desk_chair, "Desk, chair, lamp and clutter"),
     "file_cabinet": (piece_file_cabinet, "Lateral file cabinet"),
     "banker_boxes": (piece_banker_boxes, "Stack of banker's boxes"),

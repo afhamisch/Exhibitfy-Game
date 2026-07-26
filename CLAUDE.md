@@ -229,10 +229,41 @@ tint, so their material is `Paper_Objection_<variant>`. Give it one name and
 every objection comes out amber, which is what happened first.
 
 **Environment:** hallway_straight 1,186 · hallway_corner 1,762 · doorway 2,016 ·
-desk_chair 3,110 · file_cabinet 3,080 · banker_boxes 1,546 ·
-reception_counter 1,600 · ink_pod 298 · conference_room 4,754. **Kit total
-19,352**; a corridor run with props in view is ~11.4k, and the room is only
-ever loaded by the bonus round.
+hallway_door 2,338 · side_office 1,574 · desk_chair 3,110 · file_cabinet 3,080 ·
+banker_boxes 1,546 · reception_counter 1,600 · ink_pod 298 ·
+conference_room 4,754. **Kit total 23,264**; a corridor run with props in view
+is ~11.4k, and the conference room is only ever loaded by the bonus round.
+
+**The corridor is a closed ring, and that is a rule not a shape.** It was a U
+with two dead ends, each capped by the `doorway` module — whose leaf is
+modelled standing 62° open, so the art said *walk through* and the collision
+said *wall*. That got reported by a player within one session. Closing the loop
+deletes the dead ends instead of closing the doors: you can always keep
+walking, and you can never be cornered.
+
+`doorway` is a wall laid **across** a corridor to end it. `hallway_door` is a
+corridor section with an opening in its **side**, which is what a room is
+actually entered through. Do not use the first for the second — that swap is
+the original bug.
+
+A corner joins a leg running out along local +X to one running out along local
+−Z; `rot` picks which world pair that lands on, and only two of its four values
+were ever exercised before the ring:
+
+```
+rot   0 -> +X and -Z        rot  90 -> -X and -Z
+rot 180 -> -X and +Z        rot -90 -> +X and +Z
+```
+
+`side_office` has **no −X wall** on purpose: its depth is one module, so the
+`hallway_door` it opens off already covers that whole face, and a second slab
+there would be two coplanar walls fighting over the same pixels. Its origin is
+the middle of the doorway on the outer face of the corridor wall — hall centre
+plus 1.35 — so placement is one number.
+
+Room walk rects must **overlap** the corridor, not abut it. Rects that merely
+touch leave `resolveMove` no cell to step into, and the opening becomes a wall
+you can see through.
 
 `conference_room` is the arena, 10 x 8.5 m of clear floor, and it exists
 because a corridor is 1.72 m wide — the dodge was being balanced against the
