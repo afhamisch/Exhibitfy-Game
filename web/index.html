@@ -189,6 +189,18 @@
   }
   #intro-skip:hover { opacity: 1; background: rgba(255,255,255,.08); }
 
+  /* Eyelids. Two bars closing from top and bottom rather than one black
+     overlay fading up: a fade is a camera dissolve, and this has to read as a
+     face. The inner edge is a short gradient so the lid has a soft lash line
+     instead of a ruled one, and both bars carry a slight inward curve from the
+     radial tint on #lids, which is what keeps it from looking letterboxed. */
+  #lids { position: fixed; inset: 0; pointer-events: none; z-index: 6; }
+  #lids i {
+    position: absolute; left: -4%; right: -4%; height: 0; display: block;
+  }
+  #lids i.t { top: 0; background: linear-gradient(#000 78%, rgba(0,0,0,0)); }
+  #lids i.b { bottom: 0; background: linear-gradient(rgba(0,0,0,0), #000 22%); }
+
   #overlay {
     position: fixed; inset: 0; display: flex; align-items: center;
     justify-content: center; background: rgba(10,11,13,.86);
@@ -329,6 +341,11 @@
   <div id="intro-skip">Skip &#9654;</div>
 </div>
 
+<!-- The eyelids for the wake-up. Driven per frame from main.js rather than by
+     a CSS animation, because they have to stay in step with the camera lifting
+     off the desk and a keyframe animation would drift from it. -->
+<div id="lids" hidden><i class="t"></i><i class="b"></i></div>
+
 <div id="overlay">
   <div class="card">
     <h1>Tom Rexington, Esq.<br><b>Bates &amp; Destroy</b></h1>
@@ -354,7 +371,7 @@
     <div id="blocked" hidden>
       <h2 id="blocked-head"></h2>
       <p id="blocked-body"></p>
-      <a href="./screenshots/gameplay_demo.webm">Watch the 31-second demo</a>
+      <a href="./screenshots/bates_demo.webm">Watch the 45-second demo</a>
     </div>
     <div class="note" id="note">Chase the paperwork down and stamp it. Do not
       stamp the privileged one — redact that.</div>

@@ -7,13 +7,21 @@ shared-texture `enemies.glb`, opposing counsel out of `enemy_counsel.glb`, and
 the modular office kit including the conference room he fights you in. No
 geometry is authored here.
 
-**[▶ Watch a full run](screenshots/gameplay_demo.webm)** (31 s, silent) —
-chasing the four documents down, redacting the privileged one before stamping
-it, overruling an objection, closing the binder with 28 s to spare, and then
-numbering all eight pages of the Motion for Summary Judgment that turns up
-because of it. It ends on Lawyer of the Year, which is the run's actual
-outcome and not a scripted one: the bot wins that fight about one attempt in
-three, so the harness records up to `tries` runs and keeps the best.
+**[▶ Watch a full run](screenshots/bates_demo.webm)** (45 s, silent) — waking up
+at the desk, chasing the four documents down, redacting the privileged one
+before stamping it, overruling an objection, closing the binder, and then
+surviving the bonus round: opposing counsel throwing binders down a conference
+room for thirty seconds, two of them swatted out of the air and fourteen
+dodged, none taken. It ends on Lawyer of the Year, which is the run's actual
+outcome and not a scripted one — the harness records up to `tries` runs and
+keeps the best, and this is what the run reported when it finished:
+
+```
+final: {"filed":4,"phase":"bonus","done":true,"clock":0,"redactions":1,
+        "survived":14,"tier":"lawyer","deflects":2,"binderHits":0,
+        "bonusWon":true,"dryStamps":0,"overruled":1,"struck":0,
+        "ending":"Motion denied · Lawyer of the Year"}
+```
 
 The capture harness stubs `requestAnimationFrame` and steps the page one frame
 at a time. It has to: this renders on SwiftShader at a few frames a second, so

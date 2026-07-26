@@ -51,6 +51,13 @@ const CFG = {
   dreamTime: 90,
   dreamPanic: 20,         // the countdown goes orange under this
 
+  // Falling asleep at the desk is where the dream comes from, so that is where
+  // play starts: the head comes up off the desk before the clock does anything.
+  // 2.4 s is long enough for two blinks to land and short enough that nobody
+  // waits through it twice -- and it is skippable on any input anyway.
+  wakeTime: 2.4,
+  wakeDeskZ: 0.35,        // clear of the pod at z 0.9; see startWake
+
   // Ink is what makes a miss cost something. Without it the swing was free, so
   // there was no reason to aim, no reason to close distance, and nothing the
   // clock could actually pressure. The chain is: miss -> burn ink -> detour to
@@ -477,6 +484,9 @@ const els = {
   clock: document.getElementById('clock'),
   clockLabel: document.getElementById('clock-label'),
   clockBox: document.getElementById('wakeclock'),
+  lids: document.getElementById('lids'),
+  lidTop: document.querySelector('#lids i.t'),
+  lidBottom: document.querySelector('#lids i.b'),
 };
 
 const state = {
@@ -531,6 +541,10 @@ async function boot() {
     reception_counter: propGs[3].scene,
   };
   const podProto = propGs[4].scene;
+  // The desk you wake up at is the same module the office uses, instanced once
+  // more and never added to BLOCKERS -- it exists for the length of the wake
+  // and is then dissolved, so it must not be part of the collision world.
+  state.deskProto = props.desk_chair;
 
   // ---- office
   for (const h of LAYOUT.halls) scene.add(place(hallG.scene.clone(true), h.x, h.z, h.rot));
@@ -1067,6 +1081,7 @@ state.touch = TOUCH;
 /** Is the game meant to be simulating right now? */
 function running() {
   if (state.intro) return false;      // the world waits behind the video
+  if (state.waking) return false;     // ...and behind the head coming up
   return TOUCH ? state.playing : controls.isLocked;
 }
 state.running = running;
@@ -1135,6 +1150,7 @@ function playIntro() {
   // rather than a black rectangle or a reel on every replay.
   if (!src || sessionStorage.getItem('bates-intro') === 'seen') {
     startBed();
+    startWake();
     return;
   }
   try { sessionStorage.setItem('bates-intro', 'seen'); } catch (e) { /* private mode */ }
@@ -1185,9 +1201,171 @@ function endIntro() {
   els.intro.hidden = true;
   try { els.introVideo.pause(); } catch (e) { /* nothing to pause */ }
   startBed();
-  banner('Bates & Destroy', 'Ninety seconds — stamp everything');
+  startWake();
 }
 state.endIntro = endIntro;
+
+// ----------------------------------------------------------- waking up
+//
+// The ending screen has always said "you wake up" -- this is the other end of
+// that. You start face-down on your own desk and the office dissolves into the
+// corridor you dream about, which is the only explanation the game owes anyone
+// for why a lawyer is hunting paper with a Bates stamp.
+//
+// It is a camera move and an overlay, not a cutscene: the world is already
+// live, `running()` simply holds it still exactly as it does under the intro,
+// so the handover at the end costs nothing and cannot desync. The desk is the
+// real office kit's `desk_chair`, instanced a second time and dissolved on the
+// way out. It is deliberately NOT in BLOCKERS -- it is scenery for 2.4 s and
+// then it is gone, and a collision box left behind would wall off the corridor
+// you spawn in.
+const WAKE_FROM = { x: -0.05, y: 0.87, z: 0.70, pitch: -0.62, yaw: 0.055, roll: 0.42 };
+
+// Lid coverage over time, as a fraction of half the frame each bar takes.
+// Two blinks, because one reads as a fade and three reads as a malfunction:
+// the eyes crack at 0.18, shut again at 0.34, and the second one at 0.80 is
+// shallower than the first, which is what makes it look involuntary.
+const LIDS = [
+  [0.00, 0.97], [0.18, 0.62], [0.34, 0.90], [0.62, 0.42],
+  [0.80, 0.72], [1.15, 0.20], [1.60, 0.06], [2.10, 0.00],
+];
+
+function lidAt(t) {
+  if (t <= LIDS[0][0]) return LIDS[0][1];
+  for (let i = 1; i < LIDS.length; i++) {
+    if (t <= LIDS[i][0]) {
+      const [t0, v0] = LIDS[i - 1], [t1, v1] = LIDS[i];
+      return v0 + (v1 - v0) * ((t - t0) / (t1 - t0));
+    }
+  }
+  return 0;
+}
+
+function startWake() {
+  if (!state.deskProto || state.done) { finishWake(); return; }
+  state.waking = true;
+  state.wakeT = 0;
+  state.wakeFading = false;
+
+  const desk = place(state.deskProto.clone(true), 0, CFG.wakeDeskZ, 0);
+  // Clone the materials too. Without this the fade at the end would take every
+  // other desk in the building with it -- GLTFLoader shares one material across
+  // every clone of a subtree, and `.clone()` does not deep-copy them.
+  desk.traverse((o) => {
+    if (!o.material) return;
+    o.material = Array.isArray(o.material)
+      ? o.material.map((m) => m.clone()) : o.material.clone();
+  });
+  scene.add(desk);
+  state.wakeDesk = desk;
+
+  // The ink pods sit out for the duration. One of them is parked at z 0.9 --
+  // "back at the entrance you started from" -- and the camera slides from 0.70
+  // to 1.20 as you sit back, straight through it. Its beacon is a pair of
+  // crossed emissive quads, so passing through it fills half the frame with a
+  // flat orange wedge. They come back the moment the eyes are open, which also
+  // reads correctly: the dream furnishes itself as you arrive in it.
+  for (const p of state.pods) p.root.visible = false;
+
+  camera.position.set(WAKE_FROM.x, WAKE_FROM.y, WAKE_FROM.z);
+  camera.rotation.set(WAKE_FROM.pitch, WAKE_FROM.yaw, WAKE_FROM.roll);
+  els.lids.hidden = false;
+  // The whole HUD goes, not just the reticle. A document count and a countdown
+  // reading over a desk you have not lifted your head off yet is the game
+  // telling you the rules before the character knows there are any.
+  els.reticle.hidden = true;
+  els.hud.hidden = els.clockBox.hidden = els.inkBox.hidden = true;
+  els.touchUi.hidden = true;
+  if (state.arms) state.arms.position.y = state.armsBaseY - 0.17;
+
+  if (AC) {
+    const t = AC.currentTime;
+    playNoise(t, 0.40, 'bandpass', 2600, 1100, 0.13, 0.8);   // cheek off paper
+    playTone(t + 0.55, 0.30, 'sawtooth', 210, 128, 0.026);   // the chair gives
+    playNoise(t + 0.58, 0.22, 'lowpass', 700, 240, 0.10);
+    playNoise(t + 1.45, 0.55, 'lowpass', 820, 300, 0.085);   // the first breath
+  }
+  updateWake(0);
+}
+
+function updateWake(dt) {
+  state.wakeT += dt;
+  const T = CFG.wakeTime;
+  const t = Math.min(state.wakeT, T);
+
+  // The lift is weighted late: the head stays down through the first blink and
+  // most of the travel happens once the eyes are actually open, so the camera
+  // is not doing its best work behind a closed lid.
+  const e = smoothstep(Math.max(0, Math.min(1, (t - 0.45) / (T - 0.75))));
+  camera.position.set(
+    WAKE_FROM.x + (0 - WAKE_FROM.x) * e,
+    WAKE_FROM.y + (CFG.eyeHeight - WAKE_FROM.y) * e,
+    WAKE_FROM.z + (1.2 - WAKE_FROM.z) * e);
+  // Written as a whole Euler every frame. Setting one component at a time
+  // re-derives the camera quaternion from the others, which is the trap the
+  // shake handler documents further down.
+  camera.rotation.set(WAKE_FROM.pitch * (1 - e), WAKE_FROM.yaw * (1 - e),
+                      WAKE_FROM.roll * (1 - e));
+  state.rolled = false;
+
+  const lid = lidAt(t) * 50;
+  els.lidTop.style.height = `${lid}vh`;
+  els.lidBottom.style.height = `${lid}vh`;
+
+  // The arms come up with the head rather than appearing on a frame boundary.
+  if (state.arms) state.arms.position.y = state.armsBaseY - 0.17 * (1 - e);
+
+  // The office fades out over the last stretch: real desk into dreamt corridor.
+  const a = Math.max(0, Math.min(1, (t - (T - 0.75)) / 0.6));
+  if (state.wakeDesk && a > 0) {
+    // `transparent` is flipped once, on the frame the fade starts, and it
+    // carries needsUpdate because it changes the material's program. Flipping
+    // it at clone time instead would put the desk on the blended path for the
+    // whole two seconds it is meant to look solid, and a self-overlapping
+    // model sorts badly there.
+    const first = !state.wakeFading;
+    state.wakeFading = true;
+    state.wakeDesk.traverse((o) => {
+      if (!o.material) return;
+      for (const m of [].concat(o.material)) {
+        if (first) { m.transparent = true; m.needsUpdate = true; }
+        m.opacity = 1 - a;
+      }
+    });
+  }
+
+  if (state.wakeT >= T) finishWake();
+}
+
+function finishWake() {
+  state.waking = false;
+  els.lids.hidden = true;
+  if (state.wakeDesk) {
+    scene.remove(state.wakeDesk);
+    state.wakeDesk.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      for (const m of (o.material ? [].concat(o.material) : [])) m.dispose();
+    });
+    state.wakeDesk = null;
+  }
+  // Only the pods that are actually out come back -- updatePods owns `live`,
+  // and a taken one on cooldown must stay hidden.
+  for (const p of state.pods) p.root.visible = p.live;
+  camera.position.set(0, CFG.eyeHeight, 1.2);
+  camera.rotation.set(0, 0, 0);
+  if (state.arms) state.arms.position.y = state.armsBaseY;
+  if (!state.done) {
+    els.reticle.hidden = false;
+    els.hud.hidden = els.clockBox.hidden = els.inkBox.hidden = false;
+    els.touchUi.hidden = !TOUCH;      // desktop never had one to restore
+  }
+  banner('Bates & Destroy', 'Ninety seconds — stamp everything');
+}
+state.startWake = startWake;
+state.finishWake = finishWake;
+
+/** Smoothstep. Local, so the wake does not reach into three.js maths. */
+function smoothstep(x) { return x * x * (3 - 2 * x); }
 
 // Skip on anything deliberate. Under pointer lock every mouse event goes to
 // the locked canvas rather than to the overlay, so this listens on the
@@ -1196,12 +1374,19 @@ els.introSkip.addEventListener('click', endIntro);
 els.introSkip.addEventListener('touchstart', (e) => {
   e.preventDefault(); endIntro();
 }, { passive: false });
-addEventListener('mousedown', () => { if (state.intro) endIntro(); });
-addEventListener('touchstart', () => { if (state.intro) endIntro(); },
-                 { passive: true });
+addEventListener('mousedown', () => {
+  if (state.intro) endIntro();
+  else if (state.waking) finishWake();
+});
+addEventListener('touchstart', () => {
+  if (state.intro) endIntro();
+  else if (state.waking) finishWake();
+}, { passive: true });
 addEventListener('keydown', (e) => {
-  if (state.intro && (e.code === 'Escape' || e.code === 'Space'
-                      || e.code === 'Enter')) endIntro();
+  const deliberate = e.code === 'Escape' || e.code === 'Space'
+                  || e.code === 'Enter';
+  if (state.intro && deliberate) endIntro();
+  else if (state.waking && deliberate) finishWake();
 });
 
 els.overlay.addEventListener('click', beginPlay);
@@ -1210,6 +1395,12 @@ controls.addEventListener('lock', () => {
   // The bed waits for the intro -- see startBed. If there is no intro, it
   // starts immediately, which is what playIntro does on the way out.
   els.overlay.style.display = 'none';
+  // Not while a reel or a wake is up. `lock` is asynchronous -- beginPlay asks
+  // for the lock and then calls playIntro synchronously, so on the paths where
+  // the wake starts inside that same call (no video, or a restart) this event
+  // lands AFTER startWake has hidden the HUD and would put it straight back.
+  // finishWake is what reveals it in every case.
+  if (state.intro || state.waking) return;
   els.hud.hidden = els.reticle.hidden = els.clockBox.hidden = false;
   els.inkBox.hidden = false;
 });
@@ -1276,7 +1467,9 @@ function touchStart(e) {
 }
 
 function touchMove(e) {
-  if (!state.playing) return;
+  // running(), not state.playing: a look-drag during the reel or the wake
+  // would fight a camera that is being written every frame from a script.
+  if (!running()) return;
   for (const t of e.changedTouches) {
     if (t.identifier === STICK.id) {
       STICK.dx = (t.clientX - STICK.cx) / STICK_R;
@@ -1359,7 +1552,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
 });
 
 function startSwing() {
-  if (!state.swing || state.intro) return;
+  if (!state.swing || state.intro || state.waking) return;
   if (state.swinging && state.swingT < CFG.swingRefire) return;
   state.swinging = true;
   state.swingT = 0;
@@ -2437,6 +2630,9 @@ state.SPECIALS = SPECIALS;
  * back on their own.
  */
 function restart() {
+  // ---- a wake still in flight is torn down before another one is started
+  if (state.waking || state.wakeDesk) finishWake();
+
   // ---- the boss and any objections leave with the round that made them
   if (state.boss) {
     scene.remove(state.boss.root);
@@ -2828,6 +3024,7 @@ function animate() {
       updatePods(dt);
     }
   }
+  if (state.waking) updateWake(dt);
   if (state.armMixer) state.armMixer.update(dt);
   pumpMusic();
 

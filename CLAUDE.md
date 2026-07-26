@@ -294,6 +294,28 @@ back by `startBed()` so it does not play under the film — which is why
 synchronously inside `beginPlay`, ahead of the lock event that normally does
 that, and a context still suspended there would start the bed into silence.
 
+**Then you wake up at the desk.** `startWake()` runs after the reel on every
+path, 2.4 s of camera lifting off a `desk_chair` instanced one more time and
+dissolved on the way out — the other end of the ending screen, which has always
+said *you wake up*. It is not a cutscene: `running()` holds the world still
+exactly as it does under the intro, so the clock reads 90.0 throughout and the
+handover costs nothing.
+
+Three things about it are load-bearing. The desk is **never added to
+`BLOCKERS`** — it is scenery for two seconds and a collision box left behind
+would wall off the corridor you spawn in. Its materials are **cloned**, because
+GLTFLoader shares one material across every clone of a subtree and fading the
+instance would otherwise fade every desk in the building. And the **ink pods are
+hidden for the duration**: one is parked at z 0.9, the camera slides 0.70 → 1.20
+straight through it, and its beacon is crossed emissive quads, so passing
+through fills half the frame with a flat orange wedge.
+
+`controls.lock` must not reveal the HUD while `state.intro` or `state.waking` is
+set. Lock is asynchronous, so on the paths where the wake starts inside the same
+call as `controls.lock()` — no video, or a restart — the event lands *after*
+`startWake()` hid the HUD and puts it straight back. `finishWake()` is the only
+thing that reveals it.
+
 ## Clips
 
 | Clip | Frames | fps | Notes |
