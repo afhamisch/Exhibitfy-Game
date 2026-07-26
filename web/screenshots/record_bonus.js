@@ -7,8 +7,8 @@
 // Capture-only: this drops straight into the bonus round rather than playing
 // the ninety seconds that earn it. The case phase is what record_demo.js
 // already shows; what this reel is for is the round most players will never
-// reach. The binder is closed honestly first -- four exhibits filed, the memo
-// redacted -- so the ending screen reports a real run.
+// reach. The binder is closed honestly first -- every exhibit filed -- so the
+// ending screen reports a real run.
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
@@ -144,15 +144,12 @@ async function record(browser, framesPath) {
     s.muted = true;
     if (s.MUSIC) s.MUSIC.on = false;
     // A binder closed the way the game intends, so the ending screen is
-    // reporting a real one: four filed, the privileged memo redacted.
+    // reporting a real one: every document filed.
     s.enemies.forEach((e) => {
       e.alive = false; e.filed = true; e.root.visible = false;
-      if (e.kind === 'privilege') e.redacted = true;
     });
     s.filed = s.enemies.length;
     s.score = s.filed;
-    s.redactions = 1;
-    s.privilegeSaved = true;
     s.setInk(100);
     await s.startBonus();
   });

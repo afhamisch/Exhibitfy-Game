@@ -158,7 +158,14 @@ prefixed `<variant>_` and clips are `<variant>_Run` / `<variant>_Stamped`,
 because three.js binds animation tracks **by node name** and seven subtrees all
 calling their root `Rig` would cross-bind.
 
-**The bonus round is a dodge, not a fight.** Opposing counsel (`enemy_counsel.glb`,
+**Round 2 (the bonus round) is a dodge, not a fight.** Its player-facing
+name is **Round 2** and its gate is `filed == total`, full stop — there was a
+`bonusAt` clock gate (32 s spare required) and it silently denied the round to
+a player who filed all eight, so it was removed. **Redaction was also cut as a
+mechanic** ("too confusing for the game play — maybe we just stamp"): one
+verb, everything stamps, no waiver branch in the endings.
+
+ Opposing counsel (`enemy_counsel.glb`,
 2,298 tris, built by `build_counsel()` rather than `build_enemy()`) is the only
 thing in the game that is not a document: a person at a person's scale, 1.78 m
 against a sheet of paper 0.6 m tall wearing shoes. He throws binders down the
@@ -194,8 +201,8 @@ adaptation.** iOS Safari has no Pointer Lock API at all, so touch cannot be a
 tweak of the mouse path: `state.touch` is decided once from `(pointer: fine)`,
 `running()` stands in for `controls.isLocked`, and the loop, the HUD and the
 collisions all read that flag. Left thumb is a virtual stick drawn wherever it
-lands, right thumb drags to look, a tap on the right side swings, redaction has
-an on-screen button, and sprint is the far end of the stick. World FOV widens as
+lands, right thumb drags to look, a tap on the right side swings, FIND turns
+you to the nearest document, and sprint is the far end of the stick. World FOV widens as
 the frame gets taller — three.js `fov` is vertical, so portrait keeps the
 vertical angle and throws away horizontal — and the arms shrink to match.
 
@@ -289,7 +296,7 @@ than off this table when they matter.
 **Eight documents, two minutes, six ink pods.** `ROSTER` is two of each variant
 interleaved, not four — the ring is twice the floor area the U was, and four
 documents in that much corridor is a search rather than a chase. The clock went
-90 → 120 with it, because the bonus round needs every document filed and eight
+90 → 120 with it, because Round 2 needs every document filed and eight
 in ninety seconds put it out of reach. `updateClosing` and `verdictFor` both
 read `state.enemies.length`, so neither needed touching; nothing should
 hard-code either number.

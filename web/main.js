@@ -124,16 +124,14 @@ const CFG = {
   // irrelevant. Now the binder has to be HELD. An objection that lands during
   // the hold takes an exhibit back out and the round carries on.
   closeHold: 3.0,
-  inkPerRedact: 8,        // cheaper than a stamp; you are only drawing bars
 
   // ---- the bonus round, and the reason to be fast
   //
   // Closing the binder early used to buy nothing: the round simply ended, so a
   // player who beat the clock by a minute got the same screen as one who
-  // scraped it. Beat it by BONUS_AT and opposing counsel files a motion for
-  // summary judgment instead -- a bonus round you can only lose the bonus in,
-  // never the case you already won.
-  bonusAt: 32,            // seconds that must still be on the clock
+  // scraped it. Now: close the binder at all and opposing counsel files a
+  // motion for summary judgment -- Round 2, which you can only lose the round
+  // in, never the case you already won.
   // Thirty seconds, and what matters is how many you survive in them rather
   // than working through a fixed pile. A count makes the round a checklist you
   // finish; a clock makes it an endurance test you score on, which is what
@@ -641,7 +639,6 @@ const els = {
   touchUi: document.getElementById('touch-ui'),
   stick: document.getElementById('stick'),
   stickNub: document.getElementById('stick-nub'),
-  redactBtn: document.getElementById('redact-btn'),
   findBtn: document.getElementById('find-btn'),
   rotateHint: document.getElementById('rotate-hint'),
   intro: document.getElementById('intro'),
@@ -662,6 +659,7 @@ const els = {
   clockBox: document.getElementById('wakeclock'),
   markers: document.getElementById('markers'),
   prompt: document.getElementById('prompt'),
+  danger: document.getElementById('danger'),
   lids: document.getElementById('lids'),
   lidTop: document.querySelector('#lids i.t'),
   lidBottom: document.querySelector('#lids i.b'),
@@ -674,7 +672,6 @@ const state = {
   ink: CFG.inkMax, dryStamps: 0,
   enemies: [], pods: [], objections: [],
   struck: 0, overruled: 0, sustained: 0, nextObj: CFG.objFirst,
-  redactions: 0, overRedacted: 0, privilegeSaved: false, waived: false,
   misses: 0, muted: false,
   closing: 0, closeBroken: 0,
   phase: 'case',          // 'case' -> 'bonus' -> done
@@ -1010,11 +1007,7 @@ const sfx = {
     playNoise(t, 0.22, 'bandpass', 500, 2400, 0.3, 1.4);
     playTone(t + 0.20, 0.09, 'triangle', 660, 660, 0.25);
   },
-  redact() {                                 // a marker dragged across a page
-    if (!AC) return;
-    playNoise(AC.currentTime, 0.19, 'lowpass', 1500, 380, 0.34, 0.7);
-  },
-  dry() {                                    // the stamp lands on nothing
+ dry() {                                    // the stamp lands on nothing
     if (!AC) return;
     playNoise(AC.currentTime, 0.07, 'highpass', 2200, 3400, 0.22);
   },
@@ -1656,14 +1649,7 @@ addEventListener('keydown', (e) => {
     state.markers = !state.markers;
     warn(state.markers ? 'Markers on' : 'Markers off');
   }
-  // Space redacts. The redact hand is on the mouse's second button, which is
-  // fine until the same hand is also steering -- a keyboard redact means the
-  // left hand can do it mid-chase. Guarded so the same press that skips the
-  // intro or the wake does not also fire a redaction.
-  if (e.code === 'Space' && !state.intro && !state.waking && running()) {
-    e.preventDefault();
-    redact();
-  }
+
   // The arrows scroll the page otherwise, which drags the canvas off screen
   // on the one browser that is not holding the pointer.
   if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -1770,13 +1756,6 @@ if (TOUCH) {
   el.addEventListener('touchmove', touchMove, { passive: false });
   el.addEventListener('touchend', touchEnd, { passive: false });
   el.addEventListener('touchcancel', touchEnd, { passive: false });
-  // Redaction has no second mouse button to live on, so it gets a key of its
-  // own on screen. Sized for a thumb, not for a cursor.
-  els.redactBtn.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (state.playing) redact();
-  }, { passive: false });
   // The F key, for thumbs. stopPropagation so the tap is not also read as a
   // look-drag landing on the right half of the screen.
   els.findBtn.addEventListener('touchstart', (e) => {
@@ -1801,7 +1780,6 @@ function moveStickNub(dx, dy) {
 }
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('mousedown', (e) => {
-  if (e.button === 2 && controls.isLocked) { redact(); return; }
   if (e.button === 0 && controls.isLocked) startSwing();
 });
 
@@ -1844,72 +1822,6 @@ function updateInk() {
     : `Stamp ink · ${Math.floor(state.ink / CFG.inkPerSwing)} left`;
 }
 
-// ---------------------------------------------------------------- redaction
-//
-// The joke, and the one trap in the game. A Bates stamp indexes a document for
-// production -- so stamping the PRIVILEGE paper produces privileged material to
-// the other side, which is the single worst thing a litigator can do by
-// accident. That one has to be REDACTED (right mouse) instead, and everything
-// else is fair game to over-redact if you feel like blacking out a pleading.
-
-function redactable() {
-  aimStrike();
-  let best = null, bestD = Infinity;
-  for (const e of state.enemies) {
-    if (!e.alive || e.redacted) continue;
-    tmpV.copy(e.root.position).sub(strike);
-    tmpV.y = 0;
-    const d = tmpV.length();
-    if (d > CFG.strikeRadius + CFG.enemyRadius * e.v.radius) continue;
-    if (d < bestD) { bestD = d; best = e; }
-  }
-  return best;
-}
-
-/** Black out every page of a document. Cheaper than a stamp, and reversible by
- *  nothing at all -- a redacted exhibit is still filed, just unreadable. */
-function redact() {
-  if (state.intro) return;
-  if (state.phase === 'bonus') return;         // nothing to redact in there
-  if (state.ink < CFG.inkPerRedact) { sfx.dry(); warn('No ink to redact with'); return; }
-  const e = redactable();
-  // A press that does nothing teaches nothing. This is the moment the player
-  // is asking "what does redact do" -- answer it.
-  if (!e) {
-    sfx.dry();
-    warn('Nothing in reach to redact — it is for the PRIVILEGED memo');
-    return;
-  }
-  state.ink -= CFG.inkPerRedact;
-  updateInk();
-  e.redacted = true;
-  // Materials are shared by name across the combined GLB, so clone before
-  // darkening or every document of this kind goes black at once.
-  e.root.traverse((o) => {
-    if (!o.isMesh || !o.material) return;
-    const mats = Array.isArray(o.material) ? o.material : [o.material];
-    // Keep what was there. Restarting has to put the document back, and by the
-    // time it does, the only reference to the original material is this one.
-    if (o.userData.mat0 === undefined) o.userData.mat0 = o.material;
-    o.material = (Array.isArray(o.material) ? mats : mats).map((m) => {
-      if (/Face|Limb|Glove|Shoe|Ring/i.test(m.name)) return m;   // keep the face
-      const c = m.clone();
-      c.color.setRGB(0.045, 0.045, 0.05);
-      c.map = null;                            // the point is that it is gone
-      return c;
-    });
-    if (!Array.isArray(o.material)) o.material = o.material[0];
-  });
-  state.redactions += 1;
-  if (e.kind === 'privilege') {
-    state.privilegeSaved = true;
-    warn('Privileged material redacted');
-  } else {
-    state.overRedacted += 1;
-    warn('Redacted — nobody asked you to');
-  }
-  sfx.redact();
-}
 
 // --------------------------------------------------------------- objections
 
@@ -2165,7 +2077,7 @@ async function startBonus() {
   state.phase = 'bonus';
   state.caseWon = true;
   state.timeLeft = state.clock;          // banked, and reported in the ending
-  banner('Opposing counsel', 'Dodge every binder');
+  banner('Round 2: opposing counsel', 'Dodge the binders — or swat one back');
   musicTo(MUSIC.level * 1.15, 0.8);
 
   let g, clips;
@@ -2753,34 +2665,29 @@ function updateMarkers() {
           targets.push({ p: { x: room.x, y: 1.1, z: room.z },
                          cls: 'mark door', sym: '\u2302' });
         }
-        // The un-redacted privilege paper is the one document that punishes a
-        // plain stamp, so its marker says so before the mistake: amber and
-        // section-signed until it is redacted, ordinary afterwards.
-        const priv = e.kind === 'privilege' && !e.redacted;
-        targets.push({ p: e.root.position, cls: priv ? 'mark priv' : 'mark',
-                       sym: priv ? '\u00a7' : '\u25bc' });
+        targets.push({ p: e.root.position, cls: 'mark', sym: '\u25bc' });
       }
     }
     for (const o of state.objections) {
       if (o.alive) targets.push({ p: o.root.position, cls: 'mark obj', sym: '\u26a0', warn: true });
     }
   }
-  // The redact prompt. Shown whenever an un-redacted privilege paper is
-  // close, whatever the marker toggle says: this is the game teaching its one
-  // trap at the moment it matters, not wayfinding. Text matches the input
-  // model -- there is no Space bar on a phone.
-  let priv = null;
-  if (running() && !state.done && state.phase !== 'bonus') {
-    for (const e of state.enemies) {
-      if (e.alive && e.kind === 'privilege' && !e.redacted
-          && e.root.position.distanceTo(camera.position) < 5.0) { priv = e; break; }
+  // The spidey sense. An objection inside 7 m puts a pulsing red line under
+  // the crosshair and a vignette round the frame edge, whatever the marker
+  // toggle says -- being hunted is not optional information. It clears the
+  // moment nothing is close, so its absence is information too.
+  let hunted = null;
+  if (running() && !state.done) {
+    for (const o of state.objections) {
+      if (o.alive
+          && o.root.position.distanceTo(camera.position) < 7.0) { hunted = o; break; }
     }
   }
-  els.prompt.classList.toggle('on', !!priv);
-  if (priv) {
-    els.prompt.textContent = TOUCH
-      ? 'PRIVILEGED — hit REDACT before you stamp it'
-      : 'PRIVILEGED — Space to redact before you stamp it';
+  els.prompt.classList.toggle('on', !!hunted);
+  els.danger.classList.toggle('on', !!hunted);
+  if (hunted) {
+    els.prompt.textContent =
+      `YOU ARE BEING ATTACKED — stamp the ${hunted.o.label.toUpperCase()} objection!`;
   }
 
   const w = innerWidth, h = innerHeight;
@@ -2887,14 +2794,6 @@ function resolveHit() {
   state.hitstop = 0.07;
   paperBurst(best.root.position, 14, 1.0);
   state.score += 1;
-  // The trap: Bates-stamping the privilege paper indexes it for production, so
-  // an unredacted one goes out to the other side. It still files -- that is
-  // what makes it a mistake rather than a miss.
-  if (best.kind === 'privilege' && !best.redacted) {
-    state.waived = true;
-    warn('Privilege WAIVED — you produced it unredacted');
-    sfx.sustained();
-  }
   updateHud();
   return true;
 }
@@ -3123,15 +3022,6 @@ const DISBARRED = {
 // earned, these are mostly self-inflicted.
 const SPECIALS = [
   {
-    when: (s) => s.overRedacted >= 3,
-    tag: 'In re Exhibitfy · sanctions',
-    head: 'You produced a binder of black rectangles.',
-    body: 'Somewhere in there was a case. You redacted almost all of it, on no '
-        + "instruction from anybody, and what went over was a stack of pages "
-        + 'redacted edge to edge. Opposing counsel filed a motion to compel '
-        + 'that is four words long. The court granted it from the bench.',
-  },
-  {
     when: (s) => s.misses >= 8 && s.filed <= 2,
     tag: 'Facilities has questions',
     head: 'You Bates-stamped the building.',
@@ -3191,7 +3081,7 @@ state.SPECIALS = SPECIALS;
  *
  * The invariant to keep: anything a round mutates has to be listed here. That
  * is the cost of not reloading, and it is why the pods, the decals and the
- * redaction materials are all handled explicitly rather than trusted to come
+ * pod state and decals are all handled explicitly rather than trusted to come
  * back on their own.
  */
 function restart() {
@@ -3209,7 +3099,7 @@ function restart() {
   state.binders = [];
   closeArena();
 
-  // ---- the documents go back to their spawns, un-redacted
+  // ---- the documents go back to their spawns
   state.enemies.forEach((e, i) => {
     const spawn = LAYOUT.spawns[i % LAYOUT.spawns.length];
     e.root.position.set(spawn[0], 0, spawn[1]);
@@ -3220,19 +3110,6 @@ function restart() {
     e.alive = true;
     e.filed = false;
     e.dead = 0;
-    if (e.redacted) {
-      // Restore the material the redaction replaced, and drop the clone it
-      // made -- the GPU keeps every texture it is handed until told otherwise,
-      // and a restart per round would accumulate them.
-      e.root.traverse((o) => {
-        if (!o.isMesh || o.userData.mat0 === undefined) return;
-        for (const m of [].concat(o.material)) {
-          if (![].concat(o.userData.mat0).includes(m)) m.dispose();
-        }
-        o.material = o.userData.mat0;
-      });
-      e.redacted = false;
-    }
     e.hit.stop();
     e.run.reset().play();
     // a fresh case, a clean page: the impression goes back to hidden
@@ -3262,8 +3139,7 @@ function restart() {
     swinging: false, swingT: 0, hitDone: false, swingDry: false,
     ink: CFG.inkMax, dryStamps: 0,
     struck: 0, overruled: 0, sustained: 0, nextObj: CFG.objFirst,
-    redactions: 0, overRedacted: 0, privilegeSaved: false, waived: false,
-    misses: 0, closing: 0, closeBroken: 0,
+      misses: 0, closing: 0, closeBroken: 0,
     phase: 'case', bossHits: 0, binderHits: 0, bonusWon: false,
     bonusGranted: false, deflects: 0, deflectReady: true, survived: 0,
     bonusTier: null,
@@ -3308,10 +3184,13 @@ state.settleBonusRef = settleBonus;
  */
 function finish(complete, fromBonus) {
   if (state.done) return;
-  // Closing the binder with time to spare does not end the round -- it earns
-  // one. Only reachable from the case phase, so the bonus cannot recurse.
-  if (complete && !fromBonus && state.phase === 'case'
-      && state.clock >= CFG.bonusAt) {
+  // Closing the binder does not end the game -- it earns Round 2. There used
+  // to be a clock gate here (bonusAt: 32 s still on the clock), and it shipped
+  // a player who filed all eight and got nothing but the verdict screen, with
+  // no hint a second round existed. Filing everything IS the achievement; the
+  // clock already pressured it. Only reachable from the case phase, so the
+  // round cannot recurse.
+  if (complete && !fromBonus && state.phase === 'case') {
     startBonus();
     return;
   }
@@ -3369,19 +3248,6 @@ function finish(complete, fromBonus) {
   if (state.dryStamps > 0) {
     body += ` ${state.dryStamps} swing${state.dryStamps === 1 ? '' : 's'} came `
           + 'down on a dry stamp and left nothing but an impression.';
-  }
-  if (state.waived) {
-    body += ' The privilege log is a formality now: you Bates-stamped the '
-          + 'attorney-client memo and produced it unredacted, so it is theirs, '
-          + 'it is admissible, and it is going in their opening.';
-  } else if (state.privilegeSaved) {
-    body += ' The privileged memo went out redacted to the margins, which is '
-          + 'the one thing here nobody can complain about.';
-  }
-  if (state.overRedacted > 0) {
-    body += ` You also blacked out ${state.overRedacted} document`
-          + `${state.overRedacted === 1 ? '' : 's'} that nobody had asked you `
-          + 'to redact.';
   }
   els.wakeBody.textContent = body;
   els.wake.hidden = false;

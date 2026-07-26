@@ -99,27 +99,18 @@
     position: absolute; left: 50%; top: 50%; width: 44px; height: 44px;
     border-radius: 50%; background: rgba(242,241,236,.62);
   }
-  #redact-btn {
-    position: fixed; right: 18px; bottom: 26px; width: 92px; height: 92px;
+  /* FIND is the touch half of the F key: there is no keyboard on a phone, and
+     the phone is where turning to face a fleeing document is hardest. It has
+     the primary thumb spot to itself now that redaction is gone. */
+  #find-btn {
+    position: fixed; right: 18px; bottom: 26px; width: 84px; height: 84px;
     border-radius: 50%; pointer-events: auto;
     background: rgba(20,22,26,.62); border: 2px solid var(--orange);
     color: var(--orange); font-size: 12px; font-weight: 700;
     letter-spacing: .10em; display: flex; align-items: center;
     justify-content: center; -webkit-tap-highlight-color: transparent;
   }
-  #redact-btn:active { background: var(--orange); color: #fff; }
-  /* FIND is the touch half of the F key: there is no keyboard on a phone, and
-     the phone is where turning to face a 0.6 m document is hardest. Above
-     REDACT, smaller -- it aims, it does not act, so it earns less thumb. */
-  #find-btn {
-    position: fixed; right: 30px; bottom: 132px; width: 68px; height: 68px;
-    border-radius: 50%; pointer-events: auto;
-    background: rgba(20,22,26,.62); border: 2px solid rgba(242,241,236,.55);
-    color: #f2f1ec; font-size: 11px; font-weight: 700;
-    letter-spacing: .10em; display: flex; align-items: center;
-    justify-content: center; -webkit-tap-highlight-color: transparent;
-  }
-  #find-btn:active { background: rgba(242,241,236,.85); color: #14161a; }
+  #find-btn:active { background: var(--orange); color: #fff; }
   /* Under the HUD, not at the bottom of the screen: the bottom edge is where
      the ink gauge and the thumbs are. */
   #touch-hint {
@@ -142,7 +133,7 @@
      go, so both move up and in. */
   @media (pointer: coarse) {
     #inkbox { bottom: 132px; width: 150px; }
-    #swear { bottom: 190px; font-size: 20px; }
+    #swear { bottom: 150px; font-size: 20px; }
     #hud .score { font-size: 22px; }
     #wakeclock .t { font-size: 22px; }
   }
@@ -174,21 +165,29 @@
   }
   @keyframes objPulse { 50% { opacity: .5; } }
 
-  /* The redact teaching line. Amber like everything that can cost you, under
-     the crosshair where the eyes already are, and only ever shown while an
-     un-redacted privileged memo is close enough to matter. */
+  /* The attack alarm. Shown while an objection is inside 7 m, whatever the
+     marker toggle says: being hunted is not optional information. Hot red,
+     pulsing, under the crosshair where the eyes already are. */
   #prompt {
     position: fixed; left: 50%; top: 64%; transform: translateX(-50%);
     pointer-events: none; text-align: center; white-space: nowrap;
-    font-size: 14px; font-weight: 700; letter-spacing: .10em;
-    text-transform: uppercase; color: #ffb020;
+    font-size: 15px; font-weight: 700; letter-spacing: .10em;
+    text-transform: uppercase; color: #ff4a30;
     text-shadow: 0 2px 6px rgba(0,0,0,.95);
     opacity: 0; transition: opacity .25s ease-out;
   }
-  #prompt.on { opacity: 1; }
+  #prompt.on { opacity: 1; animation: alarmPulse .55s steps(2) infinite; }
+  @keyframes alarmPulse { 50% { opacity: .45; } }
 
-  /* the un-redacted privilege paper's marker: amber until it is made safe */
-  #markers .mark.priv { color: #ffb020; }
+  /* And the frame itself reddens: a vignette you cannot fail to notice in
+     peripheral vision, which is where an objection usually is. */
+  #danger {
+    position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    box-shadow: inset 0 0 90px 24px rgba(217, 42, 21, .5);
+    opacity: 0; transition: opacity .3s ease-out;
+  }
+  #danger.on { opacity: 1; animation: alarmPulse .55s steps(2) infinite; }
+
   /* a doorway with a document behind it: the route, not the target */
   #markers .mark.door { color: #f2f1ec; opacity: .9; }
 
@@ -283,6 +282,14 @@
     font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
     opacity: .6; margin-bottom: 20px;
   }
+  /* The brief. Three sentences before the controls, because "what am I even
+     doing" should never be a thing discovered mid-round -- asked for twice. */
+  #overlay .brief {
+    text-align: left; margin: 0 auto 16px; max-width: 400px;
+    font-size: 13px; line-height: 1.55; opacity: .85;
+  }
+  #overlay .brief b { color: var(--orange); }
+  #overlay .brief .atk { color: #ff4a30; font-weight: 700; }
   #overlay table { margin: 0 auto 18px; border-collapse: collapse; }
   #overlay td { padding: 3px 10px; font-size: 13px; }
   #overlay td.k { text-align: right; opacity: .6; }
@@ -367,6 +374,7 @@
 </div>
 <div id="markers"></div>
 <div id="prompt"></div>
+<div id="danger"></div>
 <div id="warn"></div>
 <div id="swear"></div>
 
@@ -374,9 +382,9 @@
      that reported a coarse pointer. -->
 <div id="touch-ui" hidden>
   <div id="stick" hidden><div id="stick-nub"></div></div>
-  <div id="redact-btn">REDACT</div>
   <div id="find-btn">FIND</div>
-  <div id="touch-hint">Left thumb walks · right thumb looks · tap to stamp</div>
+  <div id="touch-hint">Left thumb walks · right thumb looks · tap to stamp
+    · FIND turns you to the nearest document</div>
   <div id="rotate-hint" hidden>↻ Turn your phone sideways — you need the width
     to see what is coming</div>
 </div>
@@ -421,11 +429,18 @@
   <div class="card">
     <h1>Tom Rexington, Esq.<br><b>Bates &amp; Destroy</b></h1>
     <div class="tag">Playable prototype</div>
+    <div class="brief">
+      You fell asleep assembling a trial binder.
+      <b>Stamp all eight documents</b> before you wake — follow the orange
+      markers, and grab ink bottles when the stamp runs dry.<br>
+      <span class="atk">If the screen flashes red, you are being attacked:</span>
+      an objection is coming to knock exhibits out of your binder.
+      <b>Turn and stamp it first.</b>
+    </div>
     <table id="keys-desktop">
       <tr><td class="k">Walk / turn</td><td class="v"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></td></tr>
       <tr><td class="k">Face nearest</td><td class="v"><kbd>F</kbd></td></tr>
       <tr><td class="k">Stamp</td><td class="v">Left click</td></tr>
-      <tr><td class="k">Redact</td><td class="v">Right click &middot; <kbd>Space</kbd></td></tr>
       <tr><td class="k">Sprint</td><td class="v"><kbd>Shift</kbd></td></tr>
       <tr><td class="k">Strafe</td><td class="v"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> + mouse</td></tr>
       <tr><td class="k">Markers</td><td class="v"><kbd>H</kbd></td></tr>
@@ -436,7 +451,6 @@
       <tr><td class="k">Move</td><td class="v">Left thumb, anywhere</td></tr>
       <tr><td class="k">Look</td><td class="v">Right thumb, drag</td></tr>
       <tr><td class="k">Stamp</td><td class="v">Tap, right side</td></tr>
-      <tr><td class="k">Redact</td><td class="v">The orange button</td></tr>
       <tr><td class="k">Face nearest</td><td class="v">The FIND button</td></tr>
       <tr><td class="k">Sprint</td><td class="v">Push the stick further</td></tr>
     </table>
@@ -447,8 +461,8 @@
       <p id="blocked-body"></p>
       <a href="./screenshots/bates_demo.webm">Watch the 45-second demo</a>
     </div>
-    <div class="note" id="note">Chase the paperwork down and stamp it. Do not
-      stamp the privileged one — redact that.</div>
+    <div class="note" id="note">Chase the paperwork down and stamp it. File all
+      eight and opposing counsel will want a word — that is Round 2.</div>
   </div>
 </div>
 
@@ -500,8 +514,8 @@
       document.getElementById('keys-touch').hidden = false;
       document.getElementById('go').textContent = 'Play the game';
       document.getElementById('note').textContent =
-        'Chase the paperwork down and tap to stamp it. Do not stamp the '
-        + 'privileged one — redact that.';
+        'Chase the paperwork down and tap to stamp it. File all eight and '
+        + 'opposing counsel will want a word — that is Round 2.';
     }
     const s = document.createElement('script');
     s.type = 'module';

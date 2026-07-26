@@ -64,7 +64,7 @@ into.
 
 **Eight documents, not four**, because the ring is twice the floor area the U
 was and four in that much corridor is a search rather than a chase. The clock
-went to **two minutes** with them: the bonus round needs every document filed,
+went to **two minutes** with them: Round 2 needs every document filed,
 and eight in ninety seconds put it out of reach. Nothing hard-codes either
 number — `updateClosing` and `verdictFor` both read `state.enemies.length`.
 
@@ -107,8 +107,9 @@ landing page.
 "needs a gesture", it does not exist — so touch is a second input model rather
 than an adaptation of the first: left thumb anywhere on the left of the screen
 is a virtual stick, right thumb drags to look, a tap on the right stamps, and
-redaction gets an on-screen button because there is no second mouse button to
-put it on. Sprint is the far end of the stick. Which model is live is decided
+the FIND button turns you to face the nearest document, because hunting a
+fleeing sheet by dragging a thumb across glass is the hardest version of the
+game's hardest skill. Sprint is the far end of the stick. Which model is live is decided
 once, from `(pointer: fine)`, and everything downstream reads `state.touch`.
 
 Two things the phone build changes on purpose. The world FOV opens up as the
@@ -197,7 +198,6 @@ fifteen seconds, and anyone in a hurry is one click from the game.
 | **Turn** | `←` `→` | Right thumb, drag |
 | Face nearest exhibit | `F` | The FIND button |
 | Stamp | Left click | Tap, right side |
-| Redact | Right click or `Space` | The orange button |
 | Sprint | `Shift` | Push the stick to its edge |
 | Exhibit markers on/off | `H` | — |
 | Strafe | `W` `A` `S` `D` + mouse | — |
@@ -270,11 +270,11 @@ score is no longer monotonic, so the round is a total you defend rather than a
 counter you fill, and holding ink back becomes a real decision — your last swing
 either files a new exhibit or overrules the objection walking at you.
 
-In the bonus round the same objection costs **4 seconds off the ruling clock**
+In Round 2 the same objection costs **4 seconds off the ruling clock**
 instead of an exhibit. The binder is closed and the case is already won by the
 time you get in there, so an objection that could still strike it would be the
 game taking back a prize it had just awarded — one test run ended on "Adverse
-inference" after the verdict had been decided. The bonus has its own currency,
+inference" after the verdict had been decided. Round 2 has its own currency,
 which is time, so that is what it charges.
 
 Overrule one by stamping it, same verb, and it costs the same ink. The window is
@@ -295,7 +295,15 @@ round carries on. Without the hold, filing the fourth exhibit ended the round on
 the same frame, which cancelled the whole point of objections: they could
 pressure the middle of a round but never touch a finished binder.
 
-### The bonus round
+### Round 2
+
+**Redaction used to live here as a mechanic and was cut.** Stamping the
+privileged memo unredacted waived privilege and soured the ending; a second
+button existed to redact it first. A playtest verdict of "too confusing for
+the game play — maybe we just stamp" is correct: it was a two-verb game where
+one verb existed for a single document. Everything is one stamp now, the
+privilege paper is just the fast weaving one, and the endings no longer branch
+on it.
 
 Closing the binder used to buy nothing — beat the clock by a minute and you got
 the same screen as someone who scraped it. Close it with **32 seconds still on
@@ -351,8 +359,6 @@ facilities would like a word about the numbered carpet; go the whole ninety
 seconds without swinging at all and no appearance is entered. None of them
 outrank Lawyer of the Year — that one is earned, the others are self-inflicted.
 
-Redacting the privileged memo, or Bates-stamping it unredacted and waiving
-privilege, adds a line to whichever ending you get.
 
 ## How it works
 
@@ -496,7 +502,7 @@ reachable and warns if a layout edit walls one in.
   is no reason to retreat from anything except to buy time.
 - One layout, eight documents, no waves and no difficulty curve beyond the
   objections arriving. A fast player can still close the binder before the first
-  one spawns at 22 s — that now earns the bonus round rather than skipping
+  one spawns at 22 s — that now earns Round 2 rather than skipping
   content, but it does mean the objections themselves can go unmet.
 - Counsel throws one binder at a time on a cadence, and paces while he does it.
   That is his whole repertoire — no feints, no volleys, no reading of which way

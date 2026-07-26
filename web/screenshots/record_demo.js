@@ -250,22 +250,17 @@ const DEMO = () => {
       this.held = (this.held || 0) + 1;
       if (this.held > 140) { this.lockOn = null; this.held = 0; }
 
-      // Redaction does not file anything -- it only blacks the pages out. The
-      // privileged memo therefore takes two actions in order: redact it, then
-      // stamp the redacted version to get it into the binder. Stamping first is
-      // the mistake the game is built around.
-      const redact = kind === 'privilege' && !ref.redacted;
       // A swing with less than inkPerSwing in the barrel still swings -- it just
-      // files nothing. Gate on the cost of the action being taken, so the bot
-      // never spends its turn on a dry stamp it could have spent on a pod.
-      const cost = redact ? s.CFG.inkPerRedact : s.CFG.inkPerSwing;
+      // files nothing. Gate on the cost, so the bot never spends its turn on a
+      // dry stamp it could have spent on a pod. (Redaction used to make the
+      // privileged memo a two-action target here; the mechanic was cut as too
+      // confusing for the game, so everything is one stamp now.)
       if (kind !== 'pod' && aligned && dist < (kind === 'boss' ? 2.55 : 2.3)
-          && this.cool <= 0 && s.ink >= cost) {
-        this.click(redact ? 2 : 0);
+          && this.cool <= 0 && s.ink >= s.CFG.inkPerSwing) {
+        this.click(0);
         // swingRefire is 0.54 s -- 10.8 frames -- so 11 is as fast as the stamp
-        // can physically be worked, and a shorter fight is a fight the motion
-        // has less time to corner you in.
-        this.cool = redact ? 12 : 11;
+        // can physically be worked.
+        this.cool = 11;
       }
       return kind;
     },
@@ -344,7 +339,7 @@ async function record(browser, framesPath) {
   const out = await page.evaluate(() => ({
     filed: window.__bates.filed, phase: window.__bates.phase,
     done: window.__bates.done, clock: Math.round(window.__bates.clock),
-    redactions: window.__bates.redactions, survived: window.__bates.survived,
+    survived: window.__bates.survived,
     tier: window.__bates.bonusTier, deflects: window.__bates.deflects,
     binderHits: window.__bates.binderHits,
     bonusWon: window.__bates.bonusWon, dryStamps: window.__bates.dryStamps,
