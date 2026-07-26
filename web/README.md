@@ -82,6 +82,27 @@ match. And the binder collision is smaller on touch (`binderRadiusTouch`),
 because a thumb on a stick cannot commit to a direction as sharply as a finger
 on a key, which does mean the bonus tiers ask slightly less of a phone.
 
+### The look is deliberate
+
+The game renders into a drawing buffer 55% of the window and lets the browser
+point-sample it back up, with every texture on nearest magnification. **Press P
+to toggle it.**
+
+This is a style decision, not a performance one. What makes Wolfenstein and
+GoldenEye still look good is that they *commit* — chunky pixels, hard texel
+edges, every asset agreeing to the same rules. Rendered smooth, this viewmodel
+sat in the uncanny middle: detailed enough to invite comparison with a real
+arm, not painted enough to win it. It is 12,780 triangles, which is an order of
+magnitude more than GoldenEye ever gave Bond; detail was never the problem.
+
+The other half of the fix is in the texture rather than the renderer. The skin
+map used to measure a luminance spread of 16 out of 255 — effectively a flat
+colour, with every bit of shape on the arm coming from three.js lighting alone.
+`_form_shade()` in `tools/textures.py` now paints the form in the way a texture
+artist would, and the light is deliberately placed off to one side of the limb
+rather than on the side facing you: centred on the visible face it produced a
+28-level band and no gradient at all.
+
 **WebGL is still required**, and over anything but `localhost` you still need
 **HTTPS**, since pointer lock is refused outside a secure context on desktop.
 A small gate in `index.html` checks WebGL *before* `main.js` is fetched, so a

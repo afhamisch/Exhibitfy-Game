@@ -25,6 +25,11 @@
   }
   #app { position: fixed; inset: 0; }
   canvas { display: block; }
+  /* The retro look. main.js shrinks the drawing buffer and leaves the element
+     full size; this is what makes the browser scale it up as hard square
+     texels instead of smoothing it back into the look we just left. Both
+     halves are required -- either one alone does nothing. */
+  canvas.crisp { image-rendering: pixelated; image-rendering: crisp-edges; }
 
   /* crosshair */
   #reticle {

@@ -316,6 +316,42 @@ call as `controls.lock()` — no video, or a restart — the event lands *after*
 `startWake()` hid the HUD and puts it straight back. `finishWake()` is the only
 thing that reveals it.
 
+## Skin is form-shaded in the texture, and the light is deliberately off-axis
+
+`_form_shade()` in `tools/textures.py` runs last in `skin_basecolor`, after the
+hair, so it darkens hair and freckles along with the skin. Before it existed the
+skin map measured **spread 16, sd 3.9** — a flat colour. Every bit of variation
+on the rendered arm was coming from three.js lighting. It is now 101 / 33.6.
+
+`LIGHT_U = 0.18`, **not** the dorsal 0.36 where the hair is. The arm is posed
+knuckles-to-camera on purpose (`dorsal · eye = +0.988`), so a light centred on
+the visible side puts the terminator behind the tube and leaves the whole face
+you look at in flat light. Measured that way the rendered forearm went 144 → 137
+spread, i.e. nothing. Off to one edge, the visible sweep runs 218 → 148 and the
+limb reads round. The hair stays dorsal and is meant to — hair grows where it
+grows regardless of where the lamp is.
+
+Do not "correct" `LIGHT_U` to match the hair, and do not flatten `core`
+(`#3E1F12`) back toward the old palette: the four original entries only spanned
+luminance 149–206, which is why there was nowhere for a shadow to go.
+
+## The retro pass is a deliberate style, not a performance hack
+
+`RETRO = { on: true, scale: 0.55 }` in `web/main.js` renders into a drawing
+buffer 55% of the element and lets the browser point-sample it up. Two halves,
+and **either alone does nothing**: `applyRes()` passes `false` to `setSize` so
+three.js does not write the CSS size back, and `canvas.crisp` in `index.html`
+carries `image-rendering: pixelated`.
+
+`retroFilter()` sets `magFilter` to nearest and **leaves `minFilter` alone**.
+Nearest minification is authentically 1992 and authentically nauseating — a
+shimmering mess on every wall down a 12 m corridor. It has to be re-run for
+anything fetched after boot, which means the arena and the boss.
+
+`scale` was 0.40 first. It made `EXHIBITFY` on the die unreadable, and that
+label is the joke. 0.55 keeps it legible with the texels still visibly square.
+**P** toggles the whole thing at runtime, which is how the call was made.
+
 ## Clips
 
 | Clip | Frames | fps | Notes |

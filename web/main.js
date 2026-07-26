@@ -370,6 +370,21 @@ function resolveMove(from, dx, dz) {
 
 // ---------------------------------------------------------------- setup
 const app = document.getElementById('app');
+// ------------------------------------------------------------------ retro
+//
+// What makes Wolfenstein and GoldenEye still look good is not that they had
+// better art -- it is that they COMMIT. Chunky pixels, hard texel edges, a
+// small palette, and every asset agreeing to the same rules. Rendered smooth
+// and half-realistic, this viewmodel sits in the uncanny middle: detailed
+// enough to invite the comparison with a real arm, not painted enough to win
+// it. Rendered at 40% and point-sampled up, the same geometry reads as a
+// deliberate style rather than as a near miss.
+//
+// It costs nothing -- it renders a sixth of the pixels -- and it is a shrunken
+// drawing buffer scaled by the browser, not a post-process chain: no render
+// targets, no EffectComposer, nothing to vendor.
+const RETRO = { on: true, scale: 0.55 };
+
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
@@ -410,7 +425,7 @@ function fitView() {
   viewCamera.fov = VIEW_FOV + widen;
   camera.updateProjectionMatrix();
   viewCamera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  applyRes();
   if (state.arms) {
     // shrink and drop the tool on a narrow screen so it frames rather than fills
     const k = aspect < 1 ? Math.max(0.62, aspect * 0.95) : 1;
@@ -419,6 +434,48 @@ function fitView() {
   }
   els.rotateHint.hidden = !(state.touch && aspect < 0.95);
 }
+/**
+ * Size the drawing buffer. In retro mode it is deliberately smaller than the
+ * element, and `false` stops three.js writing the CSS size back -- the canvas
+ * keeps filling the screen and the browser scales the small buffer up. The
+ * `image-rendering: pixelated` rule in index.html is what makes that scale a
+ * hard point-sample instead of a blur, so the two have to move together.
+ */
+function applyRes() {
+  const k = RETRO.on ? RETRO.scale : 1;
+  renderer.setPixelRatio(RETRO.on ? 1 : Math.min(devicePixelRatio, 2));
+  renderer.setSize(Math.round(innerWidth * k), Math.round(innerHeight * k), false);
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  renderer.domElement.classList.toggle('crisp', RETRO.on);
+}
+
+/** Point-sample every texture, so texels stay square instead of smearing. */
+function retroFilter(root) {
+  root.traverse((o) => {
+    for (const m of (o.material ? [].concat(o.material) : [])) {
+      for (const key of ['map', 'emissiveMap', 'metalnessMap', 'roughnessMap',
+                         'normalMap', 'aoMap']) {
+        const t = m[key];
+        if (!t) continue;
+        // Nearest on magnification is the look. Minification keeps its
+        // mipmaps: nearest there is authentically 1992 and authentically
+        // nauseating, a shimmering mess on every wall down a 12 m corridor.
+        t.magFilter = RETRO.on ? THREE.NearestFilter : THREE.LinearFilter;
+        t.needsUpdate = true;
+      }
+    }
+  });
+}
+
+function setRetro(on) {
+  RETRO.on = !!on;
+  applyRes();
+  retroFilter(scene);
+  retroFilter(viewScene);
+  warn(RETRO.on ? 'Retro on' : 'Retro off');
+}
+
 addEventListener('resize', fitView);
 addEventListener('orientationchange', () => setTimeout(fitView, 120));
 // NB: `state` is declared further down, so nothing here may touch it at module
@@ -668,6 +725,11 @@ async function boot() {
   // instantly. Failure here is not fatal -- loadMusic warns and leaves
   // MUSIC.buf null, and every music call no-ops on that.
   await loadMusic();
+
+  // Point-sample everything now that every GLB is in. Textures arrive with the
+  // models, so this cannot be done before the loads resolve.
+  retroFilter(scene);
+  retroFilter(viewScene);
 
   // Fit the frame now that there is a viewmodel to fit: bound to resize alone,
   // none of it applied on the orientation the page happened to load in.
@@ -1055,6 +1117,8 @@ state.DECALS = DECALS;
 state.OBJECTIONS = OBJECTIONS;
 state.insideWalk = insideWalk;          // for tuning from the console
 state.fitView = fitView;
+state.setRetro = setRetro;
+state.RETRO = RETRO;
 state.sfx = sfx;                        // same object the loops call through
 state.spawnObjection = spawnObjection;      // for tuning from the console
 // `startBonus` is a hoisted function declaration so this is safe here; BOSS_GLB
@@ -1420,6 +1484,9 @@ document.getElementById('again').addEventListener('click', () => {
 addEventListener('keydown', (e) => {
   state.keys[e.code] = true;
   // Mute. This is going to get shown in a room with other people in it.
+  // P flips the look. Kept because "does this read better smooth or chunky"
+  // is a judgement call somebody has to make with their own eyes, side by side.
+  if (e.code === 'KeyP') setRetro(!RETRO.on);
   if (e.code === 'KeyM' && master) {
     state.muted = !state.muted;
     master.gain.value = state.muted ? 0 : 0.32;
@@ -1843,7 +1910,10 @@ async function startBonus() {
   try {
     // Fetched once per page, not once per bonus round: a player who restarts
     // and qualifies again has already paid for this.
-    if (!state.bossGltf) state.bossGltf = await load(BOSS_GLB);
+    if (!state.bossGltf) {
+      state.bossGltf = await load(BOSS_GLB);
+      retroFilter(state.bossGltf.scene);   // fetched on qualification, after boot
+    }
     g = state.bossGltf.scene.clone(true);
     clips = state.bossGltf.animations;
     await openArena();
@@ -1894,7 +1964,10 @@ async function startBonus() {
  * and its furniture in the blockers.
  */
 async function openArena() {
-  if (!state.arenaGltf) state.arenaGltf = await load(ARENA_GLB);
+  if (!state.arenaGltf) {
+    state.arenaGltf = await load(ARENA_GLB);
+    retroFilter(state.arenaGltf.scene);    // the room is fetched on qualification too
+  }
   const g = state.arenaGltf.scene.clone(true);
   g.position.set(ARENA.x, 0, ARENA.z);
   scene.add(g);
