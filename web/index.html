@@ -4,12 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tom Rexington, Esq.: Bates &amp; Destroy — prototype</title>
+<!-- Inline so there is no second request and no 404 in the console: a clean
+     console is what makes "zero page errors" a usable check. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2314161a'/><rect x='5' y='12' width='22' height='8' rx='1' fill='%23d93e15'/></svg>">
 <style>
   :root {
     --orange: #d93e15;
     --ink: #14161a;
   }
   * { box-sizing: border-box; }
+  /* The `hidden` attribute is only a UA rule of `display: none`, so any styled
+     selector here outranks it: `#overlay .go { display: inline-block }` beat it
+     outright, and CLICK TO PLAY sat there during loading and on devices that
+     cannot play at all. Attribute wins from now on. */
+  [hidden] { display: none !important; }
   html, body {
     margin: 0; height: 100%; overflow: hidden;
     background: var(--ink); color: #f2f1ec;
@@ -17,6 +25,11 @@
   }
   #app { position: fixed; inset: 0; }
   canvas { display: block; }
+  /* The retro look. main.js shrinks the drawing buffer and leaves the element
+     full size; this is what makes the browser scale it up as hard square
+     texels instead of smoothing it back into the look we just left. Both
+     halves are required -- either one alone does nothing. */
+  canvas.crisp { image-rendering: pixelated; image-rendering: crisp-edges; }
 
   /* crosshair */
   #reticle {
@@ -29,6 +42,10 @@
   }
   #reticle::before { left: 50%; top: 0; width: 2px; height: 100%; margin-left: -1px; }
   #reticle::after  { top: 50%; left: 0; height: 2px; width: 100%; margin-top: -1px; }
+  /* hit confirm: a quick orange pop, driven from resolveHit */
+  #reticle { transition: transform .18s ease-out, opacity .18s ease-out; }
+  #reticle.hit { transform: scale(1.55); opacity: 1; transition: none; }
+  #reticle.hit::before, #reticle.hit::after { background: var(--orange); }
 
   #hud {
     position: fixed; left: 18px; top: 16px; pointer-events: none;
@@ -38,6 +55,206 @@
   #hud .score b { color: var(--orange); }
   #hud .sub { opacity: .75; font-size: 12px; letter-spacing: .12em;
               text-transform: uppercase; }
+  /* The binder has lost exhibits: the count itself goes sour. The class lands
+     on #score, which is the <b>, so this has to be an id selector -- as a
+     class it loses to `#hud .score b` above and silently never applies. */
+  #hud #score.struck { color: #ffb020; }
+
+  /* What Tom says when a binder finds him. Bottom right, out of the
+     viewmodel's way and away from the ink gauge, with a tail so it reads as
+     speech rather than as another HUD label. */
+  /* Bottom-CENTRE, tail pointing straight down: in first person the player
+     is the body under the camera, so "coming from you" means coming from the
+     bottom middle of the frame. It used to sit in the bottom-right corner
+     with the tail aimed off-screen, which read as a bubble from nobody --
+     reported as exactly that. The slight tilt is what makes it a yelp rather
+     than a caption. */
+  #swear {
+    position: fixed; left: 50%; bottom: 150px; pointer-events: none;
+    background: #f2f1ec; color: #14161a; border-radius: 14px;
+    padding: 10px 16px; font-size: 24px; font-weight: 700;
+    letter-spacing: .06em; font-family: ui-monospace, monospace;
+    box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    opacity: 0; transform: translateX(-50%) scale(.7) translateY(8px) rotate(-3deg);
+    transition: opacity .12s ease-out, transform .12s ease-out;
+  }
+  #swear.on { opacity: 1; transform: translateX(-50%) scale(1) translateY(0) rotate(-3deg); }
+  #swear::after {
+    content: ""; position: absolute; left: 50%; margin-left: -10px; bottom: -9px;
+    border: 10px solid transparent; border-top-color: #f2f1ec;
+    border-bottom: 0;
+  }
+
+  /* ---- thumb controls, phones only ------------------------------------ */
+  #touch-ui { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  /* The stick draws itself wherever the thumb lands rather than sitting in a
+     fixed corner: on a phone held one-handed, "wherever I put my thumb" is the
+     only position that is right for every hand and every case. */
+  #stick {
+    position: fixed; width: 124px; height: 124px; margin: -62px 0 0 -62px;
+    border: 2px solid rgba(242,241,236,.34); border-radius: 50%;
+    background: rgba(0,0,0,.22);
+  }
+  #stick-nub {
+    position: absolute; left: 50%; top: 50%; width: 44px; height: 44px;
+    border-radius: 50%; background: rgba(242,241,236,.62);
+  }
+  /* Under the HUD, not at the bottom of the screen: the bottom edge is where
+     the ink gauge and the thumbs are. */
+  #touch-hint {
+    position: fixed; left: 0; right: 0; top: 74px; text-align: center;
+    font-size: 10px; letter-spacing: .10em; text-transform: uppercase;
+    opacity: .40; animation: hintFade 1s ease-out 6s forwards;
+  }
+  @keyframes hintFade { to { opacity: 0; } }
+  /* Portrait is playable and landscape is much better: the corridor is wide,
+     the binders come from the sides, and a 9:19.5 slot hides both. Said once,
+     not enforced. */
+  #rotate-hint {
+    position: fixed; left: 12px; right: 12px; top: 30%;
+    text-align: center; font-size: 13px; line-height: 1.5;
+    color: var(--orange); text-shadow: 0 2px 8px rgba(0,0,0,.95);
+    animation: hintFade 1.2s ease-out 5s forwards;
+  }
+
+  /* On a phone the ink gauge and the swear bubble sit exactly where the thumbs
+     go, so both move up and in. */
+  @media (pointer: coarse) {
+    #inkbox { bottom: 132px; width: 150px; }
+    #swear { bottom: 150px; font-size: 20px; }
+    #hud .score { font-size: 22px; }
+    #wakeclock .t { font-size: 22px; }
+  }
+
+  /* Chevrons over the live exhibits. A sheet of paper 10 m down a grey
+     corridor is a smudge; this is the smallest thing that fixes that without
+     drawing anything in the 3D scene. Pointer-events off -- they sit over the
+     canvas that owns the mouse. */
+  #markers { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
+  /* Exhibit markers are a whisper, not a label: bare text, small, faded, and
+     H turns them off entirely. The first pass was a chip with a border and it
+     sat over the game like a debug overlay -- the player said so. */
+  #markers .mark {
+    position: absolute; transform: translate(-50%, -50%);
+    font-size: 13px; font-weight: 700; letter-spacing: .04em;
+    color: var(--orange); white-space: nowrap; line-height: 1;
+    text-shadow: 0 1px 3px rgba(0,0,0,.95), 0 0 8px rgba(0,0,0,.6);
+    transition: opacity .2s linear;
+  }
+  /* An objection's marker is a warning, not a waypoint, and it stays a chip:
+     amber, pulsing, never faded, immune to the H toggle. Same amber as the
+     struck score and the dry gauge -- everything that costs you shares one
+     colour. */
+  #markers .mark.obj {
+    font-size: 15px; color: #ffb020;
+    background: rgba(10,11,13,.62); border: 1px solid rgba(255,176,32,.65);
+    border-radius: 3px; padding: 3px 7px;
+    animation: objPulse .6s steps(2) infinite;
+  }
+  @keyframes objPulse { 50% { opacity: .5; } }
+
+  /* The attack alarm. Shown while an objection is inside 7 m, whatever the
+     marker toggle says: being hunted is not optional information. Hot red,
+     pulsing, under the crosshair where the eyes already are. */
+  #prompt {
+    position: fixed; left: 50%; top: 64%; transform: translateX(-50%);
+    pointer-events: none; text-align: center; white-space: nowrap;
+    font-size: 15px; font-weight: 700; letter-spacing: .10em;
+    text-transform: uppercase; color: #ff4a30;
+    text-shadow: 0 2px 6px rgba(0,0,0,.95);
+    opacity: 0; transition: opacity .25s ease-out;
+  }
+  #prompt.on { opacity: 1; animation: alarmPulse .55s steps(2) infinite; }
+  @keyframes alarmPulse { 50% { opacity: .45; } }
+
+  /* And the frame itself reddens: a vignette you cannot fail to notice in
+     peripheral vision, which is where an objection usually is. */
+  #danger {
+    position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    box-shadow: inset 0 0 90px 24px rgba(217, 42, 21, .5);
+    opacity: 0; transition: opacity .3s ease-out;
+  }
+  #danger.on { opacity: 1; animation: alarmPulse .55s steps(2) infinite; }
+
+  /* a doorway with a document behind it: the route, not the target */
+  #markers .mark.door { color: #f2f1ec; opacity: .9; }
+
+  /* objection callout — centred under the crosshair, brief */
+  #warn {
+    position: fixed; left: 50%; top: 58%; transform: translateX(-50%);
+    pointer-events: none; text-align: center; white-space: nowrap;
+    font-size: 17px; font-weight: 700; letter-spacing: .10em;
+    text-transform: uppercase; color: var(--orange);
+    text-shadow: 0 2px 6px rgba(0,0,0,.95);
+    opacity: 0; transition: opacity .18s ease-out;
+  }
+  #warn.on { opacity: 1; }
+
+  /* phase card — the motion is filed */
+  #banner {
+    position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%);
+    pointer-events: none; text-align: center; white-space: nowrap;
+    opacity: 0; transition: opacity .5s ease-out;
+  }
+  #banner.on { opacity: 1; }
+  #banner .t {
+    font-size: 34px; font-weight: 700; letter-spacing: .02em;
+    color: var(--orange); text-shadow: 0 3px 10px rgba(0,0,0,.95);
+  }
+  #banner .s {
+    margin-top: 8px; font-size: 13px; letter-spacing: .22em;
+    text-transform: uppercase; opacity: .85;
+    text-shadow: 0 2px 6px rgba(0,0,0,.95);
+  }
+
+  /* ink gauge — bottom left, out of the viewmodel's way */
+  #inkbox {
+    position: fixed; left: 18px; bottom: 18px; width: 190px;
+    pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  }
+  #inkbox .track {
+    height: 10px; border: 2px solid rgba(255,255,255,.55);
+    background: rgba(0,0,0,.35); overflow: hidden;
+  }
+  #inkfill {
+    height: 100%; width: 100%; background: var(--orange);
+    transition: width .12s linear;
+  }
+  #inklabel { margin-top: 5px; font-size: 11px; letter-spacing: .12em;
+              text-transform: uppercase; opacity: .8; }
+  /* two swings left */
+  #inkbox.low #inkfill { background: #ffb020; }
+  #inkbox.low #inklabel { color: #ffb020; opacity: 1; }
+  /* nothing left: the stamp is dry and files nothing */
+  #inkbox.dry #inkfill { background: #6b6f77; }
+  #inkbox.dry #inklabel { color: var(--orange); opacity: 1;
+                          animation: dryPulse .7s steps(2) infinite; }
+  @keyframes dryPulse { 50% { opacity: .35; } }
+
+  #intro {
+    position: fixed; inset: 0; z-index: 7; background: #000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #intro video { width: 100%; height: 100%; object-fit: contain; }
+  #intro-skip {
+    position: fixed; right: 20px; bottom: 20px; padding: 10px 18px;
+    border: 1px solid rgba(242,241,236,.35); border-radius: 3px;
+    font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    opacity: .75; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  #intro-skip:hover { opacity: 1; background: rgba(255,255,255,.08); }
+
+  /* Eyelids. Two bars closing from top and bottom rather than one black
+     overlay fading up: a fade is a camera dissolve, and this has to read as a
+     face. The inner edge is a short gradient so the lid has a soft lash line
+     instead of a ruled one, and both bars carry a slight inward curve from the
+     radial tint on #lids, which is what keeps it from looking letterboxed. */
+  #lids { position: fixed; inset: 0; pointer-events: none; z-index: 6; }
+  #lids i {
+    position: absolute; left: -4%; right: -4%; height: 0; display: block;
+  }
+  #lids i.t { top: 0; background: linear-gradient(#000 78%, rgba(0,0,0,0)); }
+  #lids i.b { bottom: 0; background: linear-gradient(rgba(0,0,0,0), #000 22%); }
 
   #overlay {
     position: fixed; inset: 0; display: flex; align-items: center;
@@ -53,6 +270,14 @@
     font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
     opacity: .6; margin-bottom: 20px;
   }
+  /* The brief. Three sentences before the controls, because "what am I even
+     doing" should never be a thing discovered mid-round -- asked for twice. */
+  #overlay .brief {
+    text-align: left; margin: 0 auto 16px; max-width: 400px;
+    font-size: 13px; line-height: 1.55; opacity: .85;
+  }
+  #overlay .brief b { color: var(--orange); }
+  #overlay .brief .atk { color: #ff4a30; font-weight: 700; }
   #overlay table { margin: 0 auto 18px; border-collapse: collapse; }
   #overlay td { padding: 3px 10px; font-size: 13px; }
   #overlay td.k { text-align: right; opacity: .6; }
@@ -69,30 +294,192 @@
   }
   #overlay .note { margin-top: 16px; font-size: 11px; opacity: .45; }
   #loading { font-size: 13px; opacity: .7; }
+
+  /* the device cannot run it — say so instead of going black */
+  #blocked h2 {
+    margin: 0 0 10px; font-size: 18px; color: var(--orange);
+  }
+  #blocked p { margin: 0 0 14px; font-size: 13px; opacity: .75; line-height: 1.6; }
+  #blocked a {
+    display: inline-block; padding: 10px 22px; border: 1px solid #383c44;
+    border-radius: 3px; color: #f2f1ec; text-decoration: none;
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+  }
+  #blocked a:hover { background: #1c1f24; }
+
+  /* A blocked phone is the one case where the card is read on a small screen,
+     so it has to fit one. */
+  @media (max-width: 520px) {
+    #overlay .card { padding: 22px 18px; }
+    #overlay h1 { font-size: 21px; }
+    #overlay table { display: none; }
+  }
+
+  /* how long you stay asleep */
+  #wakeclock {
+    position: fixed; right: 20px; top: 16px; text-align: right;
+    pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  }
+  #wakeclock .t {
+    font-size: 30px; font-weight: 700; letter-spacing: .02em;
+    font-variant-numeric: tabular-nums; transition: color .4s ease;
+  }
+  #wakeclock .t.low { color: var(--orange); }
+  #wakeclock .l {
+    opacity: .6; font-size: 11px; letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+
+  /* wake screen — fades up from the dream rather than cutting */
+  #wake {
+    position: fixed; inset: 0; z-index: 6; display: flex;
+    align-items: center; justify-content: center; text-align: center;
+    background: #0a0b0d; opacity: 0; transition: opacity 1.1s ease 0s;
+    pointer-events: none;
+  }
+  #wake.on { opacity: 1; pointer-events: auto; }
+  /* The verdict is a PLAQUE: walnut ground, double brass rule, engraved
+     caps, the scales up top. Winning a case should look like the thing you
+     would hang behind your desk. */
+  #wake .card {
+    max-width: 460px; padding: 34px 38px 30px; position: relative;
+    background: linear-gradient(160deg, #2a1e14, #1c140d 60%, #241a10);
+    border: 3px double rgba(201, 162, 39, .75); border-radius: 4px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6), inset 0 0 60px rgba(0,0,0,.45);
+  }
+  #wake .card::before {
+    content: "\2696"; display: block; font-size: 34px; margin-bottom: 6px;
+    color: #c9a227; text-shadow: 0 1px 2px rgba(0,0,0,.8);
+  }
+  #wake h1 {
+    margin: 0 0 14px; font-size: 30px; letter-spacing: .04em;
+    color: #e8d9a0; text-transform: none;
+  }
+  /* Fell short, and the office says so the only way it knows how: a rubber
+     stamp straight across the plaque. */
+  #wake.lost .card { border-color: rgba(150, 150, 150, .4); }
+  #wake.lost .card::before { color: #8b8b8b; }
+  #wake.lost .card::after {
+    content: "DENIED"; position: absolute; left: 50%; top: 42%;
+    transform: translate(-50%, -50%) rotate(-14deg);
+    font-size: 64px; font-weight: 900; letter-spacing: .12em;
+    color: rgba(217, 42, 21, .8); border: 6px solid rgba(217, 42, 21, .8);
+    border-radius: 6px; padding: 2px 18px; pointer-events: none;
+    text-shadow: none; mix-blend-mode: screen;
+  }
+  #wake.won .card::after {
+    content: "\1F3C6"; position: absolute; right: 22px; top: 24px;
+    font-size: 28px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.7));
+  }
+  #wake p { margin: 0; opacity: .62; font-size: 13px; line-height: 1.7; }
+  #wake .tag {
+    font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--orange); margin-bottom: 18px;
+  }
+  #wake .again {
+    display: inline-block; margin-top: 26px; padding: 10px 22px;
+    border: 1px solid #383c44; border-radius: 3px; cursor: pointer;
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+  }
+  #wake .again:hover { background: #1c1f24; }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="reticle" hidden></div>
 <div id="hud" hidden>
-  <div class="score">STAMPED <b id="score">0</b></div>
+  <div class="score"><span id="score-label">FILED</span> <b id="score">0 / 8</b></div>
   <div class="sub" id="remaining">4 documents at large</div>
 </div>
+<div id="markers"></div>
+<div id="prompt"></div>
+<div id="danger"></div>
+<div id="warn"></div>
+<div id="swear"></div>
+
+<!-- Thumb controls. Hidden until play starts, and only ever shown on a device
+     that reported a coarse pointer. -->
+<div id="touch-ui" hidden>
+  <div id="stick" hidden><div id="stick-nub"></div></div>
+  <div id="touch-hint">Left thumb walks · right thumb looks ·
+    tap anywhere to stamp</div>
+  <div id="rotate-hint" hidden>↻ Turn your phone sideways — you need the width
+    to see what is coming</div>
+</div>
+<div id="banner">
+  <div class="t" id="banner-title">Motion for summary judgment</div>
+  <div class="s" id="banner-sub">Stamp every page</div>
+</div>
+<div id="inkbox" hidden>
+  <div class="track"><div id="inkfill"></div></div>
+  <div id="inklabel">Stamp ink</div>
+</div>
+<div id="wakeclock" hidden>
+  <div class="t" id="clock">1:30</div>
+  <div class="l" id="clock-label">until you wake</div>
+</div>
+
+<!-- The dream lets go, and the binder you assembled is what you take to court. -->
+<div id="wake" hidden>
+  <div class="card">
+    <div class="tag" id="wake-tag">Verdict for the defense</div>
+    <h1 id="wake-head">You win the case.</h1>
+    <p id="wake-body">Every page stamped, numbered and in order.</p>
+    <div class="again" id="again">File another binder</div>
+  </div>
+</div>
+
+<!-- The intro. Plays over a game that is already running and already holds
+     the mouse: pointer lock needs a fresh user gesture, so it is taken on the
+     Play click and held behind the video rather than asked for at the end,
+     when the gesture would be half a minute stale and refused. -->
+<div id="intro" hidden>
+  <video id="intro-video" playsinline muted preload="auto"></video>
+  <div id="intro-skip">Skip &#9654;</div>
+</div>
+
+<!-- The eyelids for the wake-up. Driven per frame from main.js rather than by
+     a CSS animation, because they have to stay in step with the camera lifting
+     off the desk and a keyframe animation would drift from it. -->
+<div id="lids" hidden><i class="t"></i><i class="b"></i></div>
 
 <div id="overlay">
   <div class="card">
     <h1>Tom Rexington, Esq.<br><b>Bates &amp; Destroy</b></h1>
     <div class="tag">Playable prototype</div>
-    <table>
-      <tr><td class="k">Move</td><td class="v"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td></tr>
-      <tr><td class="k">Look</td><td class="v">Mouse</td></tr>
+    <div class="brief">
+      You fell asleep assembling a trial binder.
+      <b>Stamp all eight documents</b> before you wake — follow the orange
+      markers, and grab ink bottles when the stamp runs dry.<br>
+      <span class="atk">If the screen flashes red, you are being attacked:</span>
+      an objection is coming to knock exhibits out of your binder.
+      <b>Turn and stamp it first.</b>
+    </div>
+    <table id="keys-desktop">
+      <tr><td class="k">Walk / turn</td><td class="v"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></td></tr>
+      <tr><td class="k">Face nearest</td><td class="v"><kbd>F</kbd></td></tr>
       <tr><td class="k">Stamp</td><td class="v">Left click</td></tr>
       <tr><td class="k">Sprint</td><td class="v"><kbd>Shift</kbd></td></tr>
+      <tr><td class="k">Strafe</td><td class="v"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> + mouse</td></tr>
+      <tr><td class="k">Markers</td><td class="v"><kbd>H</kbd></td></tr>
+      <tr><td class="k">Mute</td><td class="v"><kbd>M</kbd></td></tr>
       <tr><td class="k">Release</td><td class="v"><kbd>Esc</kbd></td></tr>
     </table>
+    <table id="keys-touch" hidden>
+      <tr><td class="k">Move</td><td class="v">Left thumb, anywhere</td></tr>
+      <tr><td class="k">Look</td><td class="v">Right thumb, drag</td></tr>
+      <tr><td class="k">Stamp</td><td class="v">Tap anywhere</td></tr>
+      <tr><td class="k">Sprint</td><td class="v">Push the stick further</td></tr>
+    </table>
     <div id="loading">Loading assets…</div>
-    <div class="go" id="go" hidden>Click to play</div>
-    <div class="note">Chase down the paperwork and stamp it.</div>
+    <div class="go" id="go" hidden>Play the game</div>
+    <div id="blocked" hidden>
+      <h2 id="blocked-head"></h2>
+      <p id="blocked-body"></p>
+      <a href="./screenshots/bates_demo.webm">Watch the 45-second demo</a>
+    </div>
+    <div class="note" id="note">Chase the paperwork down and stamp it. File all
+      eight and opposing counsel will want a word — that is Round 2.</div>
   </div>
 </div>
 
@@ -106,6 +493,66 @@
   }
 }
 </script>
-<script type="module" src="./main.js"></script>
+<!--
+  Capability gate, ahead of main.js on purpose.
+
+  This is a mouse-and-keyboard game in the strong sense: the stamp is aimed
+  with pointer lock, which a touchscreen does not have and cannot emulate.
+  Without this check a phone got a black screen, no explanation, and about
+  12 MB of GLB charged to its data plan on the way there -- so the test runs
+  before the module is fetched, not inside it.
+
+  WebGL is checked in the same place because it fails the same way: main.js
+  constructs a WebGLRenderer at the top level, and if that throws, every line
+  after it -- including anything that could have reported the problem -- never
+  runs.
+-->
+<script>
+(function () {
+  // Touch is a supported input model now, not a reason to turn somebody away,
+  // so the pointer and pointer-lock checks are gone from the gate: a phone
+  // gets the virtual stick instead. WebGL is still fatal, because there is
+  // nothing to fall back to.
+  let gl = false;
+  try {
+    const c = document.createElement('canvas');
+    gl = !!(window.WebGLRenderingContext
+            && (c.getContext('webgl2') || c.getContext('webgl')));
+  } catch (e) {
+    gl = false;
+  }
+
+  if (gl) {
+    // Show the scheme this device will actually use.
+    const q = matchMedia('(pointer: fine)');
+    const fine = q.media === 'not all' ? true : q.matches;
+    if (!fine || navigator.maxTouchPoints > 1) {
+      document.getElementById('keys-desktop').hidden = true;
+      document.getElementById('keys-touch').hidden = false;
+      document.getElementById('go').textContent = 'Play the game';
+      document.getElementById('note').textContent =
+        'Chase the paperwork down and tap to stamp it. File all eight and '
+        + 'opposing counsel will want a word — that is Round 2.';
+    }
+    const s = document.createElement('script');
+    s.type = 'module';
+    s.src = './main.js';
+    document.body.appendChild(s);
+    return;
+  }
+
+  const head = document.getElementById('blocked-head');
+  const body = document.getElementById('blocked-body');
+  head.textContent = 'WebGL is switched off.';
+  body.textContent = 'The office, the paperwork and the stamp are all 3D, '
+    + 'and this browser will not give the page a 3D context. It is usually '
+    + 'hardware acceleration turned off in the browser settings, or a very '
+    + 'old browser.';
+  document.getElementById('loading').hidden = true;
+  document.getElementById('note').hidden = true;
+  document.getElementById('blocked').hidden = false;
+  document.getElementById('overlay').style.cursor = 'default';
+})();
+</script>
 </body>
 </html>

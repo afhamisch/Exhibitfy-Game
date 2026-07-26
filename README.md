@@ -384,8 +384,8 @@ python3 build_enemies.py --only privilege   # one variant
 
 | Variant | Tris | Reads as | Run personality |
 |---|---:|---|---|
-| **Pleading Paper** | 1,392 | White pleading paper, court caption, numbered margin | Energetic, slightly frantic — high cadence, big stride, page flutter |
-| **Privilege Paper** | 1,392 | Diagonal red `PRIVILEGED`, red border, smug half-lidded face | Evasive — side-stepping sway on a half-speed dodge cycle, short stride |
+| **Pleading Paper** | 1,392 | White pleading paper, court caption, numbered margin | The baseline — 1.0 cadence, big stride, page flutter |
+| **Privilege Paper** | 1,392 | Diagonal red `PRIVILEGED`, red border, smug half-lidded face | Evasive — quick cadence, short stride, a side-stepping shimmy twice per stride |
 | **Thick Discovery Binder** | 2,700 | Dark board cover, `DISCOVERY / VOL. II`, ring binder, punch holes | Heavy — 0.66× cadence, deep bob with a hard landing, minimal arm swing |
 | **Chaotic PDF Stack** | 1,856 | Five loose sheets flapping as one unit, panic face | Fastest cadence, biggest flutter, sheets lag the body on their own phases |
 
@@ -393,13 +393,29 @@ The variants are separated on **three** axes at once — page colour/marking,
 silhouette, and movement — so they stay distinguishable at gameplay distance
 even when small on screen.
 
+The privilege paper's long evasive weave is deliberately *not* in its clip. A
+weave slower than one stride cannot close inside a one-stride loop, so it lives
+in the runtime AI instead (`web/main.js`), where it also makes the thing
+genuinely harder to hit.
+
+Alongside the four per-variant files the build writes **`enemies.glb`**, all
+four in one file with the shared page, face and Bates maps embedded once rather
+than four times — 7,340 tris, eight clips, 1.86 MB against 2.94 MB for the four
+separately. Nodes there are prefixed `<variant>_` and clips are named
+`<variant>_Run` / `<variant>_Stamped`, since three.js binds animation tracks by
+node name and four subtrees all calling their root `Rig` would cross-bind.
+
 ## Animations
 
 Both clips are baked every frame at 30 fps.
 
-**`Run`** — 20 frames, looping. Thigh swing with a knee that folds through the
-pass, counter-swinging arms with trailing elbows, a bob that hits twice per
-stride, forward lean, and page flutter running against the body.
+**`Run`** — one full stride, looping. Cadence sets how many 30 fps frames the
+stride takes rather than warping the phase inside a fixed count, so the cycle
+closes exactly on the clip boundary and the last key repeats frame 0: 21 keys
+for the pleading paper, 19 for privilege, 31 for the lumbering binder, 17 for
+the panicking stack. Thigh swing with a knee that folds through the pass,
+counter-swinging arms with trailing elbows, a bob that hits twice per stride,
+forward lean, and page flutter running against the body.
 
 **`Stamped`** — 26 frames, one-shot. Anticipation, then the page is driven flat
 (squash on frame 4), the Bates impression punches in with a 1.28× overshoot,

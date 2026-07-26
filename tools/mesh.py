@@ -220,7 +220,18 @@ def profile_round_rect(n, w, h, r):
             break
         else:
             pts.append(corners[0])
-    return pts
+    # Reversed to match profile_ellipse and profile_super, which run the other
+    # way round. This walk starts at (hw, hh) and moves to (-hw, hh) -- the
+    # opposite direction to (cos t, sin t) -- and every consumer of a profile
+    # is a loft that decides its facing from the profile's direction.
+    #
+    # Unreversed, box_chamfered came out inside-out: signed volume -0.64 where
+    # cylinder, capsule and a plain add_loft all measured correctly positive.
+    # A back-to-front box renders perfectly in tools/render.py, which does not
+    # cull, and in the browser -- which does -- you see straight through its
+    # near wall to the inside of its far one, lit by a normal pointing away
+    # from you. That is what "the banker's boxes are missing walls" was.
+    return pts[::-1]
 
 
 def ring_from_profile(profile, origin, x_axis, y_axis, sx=1.0, sy=1.0):

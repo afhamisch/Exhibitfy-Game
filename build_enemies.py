@@ -63,6 +63,8 @@ MAT = {
     "glove": "Glove_White",
     "shoe": "Shoe_Black",
     "ring": "Binder_Rings",
+    "objection": "Paper_Objection",
+    "motion": "Paper_Motion",
 }
 
 # ---------------------------------------------------------------- variants
@@ -109,9 +111,115 @@ VARIANTS = {
                 "scatter": 1.0},
         "face": "panic",
     },
+
+    # ------------------------------------------------------------ objections
+    # These three are not exhibits to be filed -- they hunt the player and
+    # strike exhibits back out of the binder, so the runtime treats them as a
+    # separate class entirely. Everything here exists to make them readable as
+    # a threat in the fraction of a second before one reaches you:
+    #
+    #   * one shared OBJECTION page, red-washed and bordered, tinted per rule
+    #   * arms thrown much wider than any exhibit's, so the silhouette differs
+    #     even edge-on and even in a corridor where colour is unreliable
+    #   * the unused "dizzy" face, which is the only one that does not read as
+    #     something running away from you
+    #
+    # Speed and mass follow the rule. Hearsay is the routine one and shambles;
+    # character evidence is quicker and more insinuating; 403 is rare, fast and
+    # heavy, because it is the one that strikes two exhibits at once.
+    "hearsay": {
+        "label": "Hearsay Objection",
+        "paper": "objection",
+        "tint": hex_srgb("#E4B4B0"),          # washed red
+        "sheets": 1,
+        "scale": 1.02,
+        "run": {"cadence": 0.82, "stride": 40.0, "bob": 0.060, "lean": -9.0,
+                "sway": 0.026, "flutter": 9.0, "jitter": 1.4, "arm": 58.0},
+        "face": "dizzy",
+    },
+    "character": {
+        "label": "Character Evidence Objection",
+        "paper": "objection",
+        "tint": hex_srgb("#D9B2D4"),          # violet
+        "sheets": 1,
+        "scale": 0.99,
+        "run": {"cadence": 1.06, "stride": 44.0, "bob": 0.044, "lean": -6.0,
+                "sway": 0.048, "flutter": 12.0, "jitter": 0.8, "arm": 64.0,
+                "dodge": 1.0},
+        "face": "dizzy",
+    },
+    "rule403": {
+        "label": "Rule 403 Objection",
+        "paper": "objection",
+        "tint": hex_srgb("#E8C79A"),          # amber
+        "sheets": 3,
+        "stock": ("objection",),              # three objections, not one plus paper
+        "scale": 1.13,
+        "run": {"cadence": 1.18, "stride": 52.0, "bob": 0.066, "lean": -13.0,
+                "sway": 0.022, "flutter": 6.0, "jitter": 0.6, "arm": 70.0,
+                "thud": 1.0},
+        "face": "dizzy",
+    },
 }
 
-RUN_FRAMES = 20
+VARIANTS["motion"] = {
+    # The boss, and the only thing in the game that outranks the binder: a
+    # motion for summary judgment ends a case without ever reaching trial.
+    #
+    # It is big and slow and it does not flee, because it does not have to. The
+    # smug face is the point -- it is the one document here that believes it has
+    # already won. Seven pages of its own stock, so the thing you are fighting
+    # is visibly a document with pages, which is the whole fight: the prototype
+    # gives it a page count instead of a one-stamp death.
+    "label": "Motion for Summary Judgment",
+    "paper": "motion",
+    "stock": ("motion",),
+    "sheets": 7,
+    "scale": 2.05,
+    "run": {"cadence": 0.58, "stride": 30.0, "bob": 0.078, "lean": 8.0,
+            "sway": 0.016, "flutter": 4.0, "jitter": 0.2, "arm": 24.0,
+            "thud": 1.0},
+    "face": "smug",
+}
+
+# ------------------------------------------------------------- the lawyer
+#
+# Opposing counsel is the one thing in this file that is not a document, so he
+# does not go through build_enemy at all -- there is no page to flutter and no
+# sheet to lie down. He is a person, at a person's scale: everything else here
+# is a sheet of paper about 0.6 m tall wearing shoes, and this is 1.78 m.
+#
+# He does not chase you and he cannot be stamped. He throws binders, and the
+# fight is whether you can get out of the way, so the only things he needs to
+# do are stand, throw, and react when one of them misses.
+COUNSEL = {
+    "label": "Opposing Counsel",
+    "height": 1.78,
+    "throw_release": 12,     # the frame the binder leaves his hand
+    "throw_frames": 30,
+    "gloat_frames": 24,
+}
+
+# Solid colours, so he costs no texture at all: the seven documents already
+# spend 3 MB on page maps and he is a silhouette in a corridor.
+CMAT = {
+    "suit": "Counsel_Suit",
+    "shirt": "Counsel_Shirt",
+    "tie": "Counsel_Tie",
+    "skin": "Counsel_Skin",
+    "hair": "Counsel_Hair",
+}
+
+# The four that are exhibits, the three that are objections, and the boss.
+# Nothing else in this file should hard-code any of these lists.
+EXHIBITS = ("pleading", "privilege", "binder", "stack")
+OBJECTIONS = ("hearsay", "character", "rule403")
+# Deliberately NOT in the combined enemies.glb. Most players never earn the
+# bonus round, and the boss is 3 MB of page maps they should not have to fetch
+# to find that out -- the prototype loads enemy_motion.glb on qualification.
+BOSS = ("motion",)
+
+RUN_FRAMES = 20         # frames per stride at cadence 1.0; cadence scales it
 STAMP_FRAMES = 26
 FPS = 30.0
 
@@ -268,6 +376,26 @@ def build_enemy(variant, cfg, images):
     scene.material(Material(MAT["alt"], (1, 1, 1, 1), 0.0, 0.88, "paper_alt"))
     scene.material(Material(MAT["binder"], (1, 1, 1, 1), 0.05, 0.72,
                             "binder_cover"))
+    # Objections share one texture and are told apart by tint, so the material
+    # carries the variant's colour -- and therefore the VARIANT'S NAME. absorb()
+    # merges materials by name into the combined file, so three variants all
+    # calling this "Paper_Objection" collapse to whichever was absorbed last:
+    # every objection came out amber, rule403's colour, in enemies.glb. The
+    # per-variant GLBs looked correct the whole time, which is exactly how this
+    # would have reached the browser unnoticed.
+    obj_mat = "%s_%s" % (MAT["objection"], variant)
+    uses_objection = (cfg["paper"] == "objection"
+                      or "objection" in cfg.get("stock", ()))
+    if uses_objection:
+        scene.material(Material(obj_mat, cfg.get("tint", (1, 1, 1, 1)),
+                                0.0, 0.84, "paper_objection"))
+
+    def mat_for(key):
+        return obj_mat if key == "objection" else MAT[key]
+
+    if cfg["paper"] == "motion" or "motion" in cfg.get("stock", ()):
+        scene.material(Material(MAT["motion"], (1, 1, 1, 1), 0.0, 0.80,
+                                "paper_motion"))
     scene.material(Material(MAT["face"], (1, 1, 1, 1), 0.0, 0.90, "faces"))
     scene.material(Material(MAT["mark"], (1, 1, 1, 1), 0.0, 0.86, "stamp_mark"))
     scene.material(Material(MAT["limb"], hex_srgb("#23252B"), 0.0, 0.62))
@@ -275,7 +403,7 @@ def build_enemy(variant, cfg, images):
     scene.material(Material(MAT["shoe"], hex_srgb("#15161A"), 0.05, 0.48))
     scene.material(Material(MAT["ring"], hex_srgb("#B9BEC6"), 1.0, 0.28))
 
-    paper_mat = MAT[cfg["paper"]]
+    paper_mat = mat_for(cfg["paper"])
     root = Node("Enemy_" + variant)
     scene.add_root(root)
     rig = Node("Rig")
@@ -326,9 +454,15 @@ def build_enemy(variant, cfg, images):
                 up_hint=(0, 0, 1), group=0)
         body.add_mesh(rings)
     elif n_sheets > 1:
-        # a loose cluster that flaps as one unit
+        # A loose cluster that flaps as one unit. The stock alternates, which is
+        # the point for the chaotic stack -- a pile of unrelated filings -- but
+        # it must not be hard-coded: the objections are red, and giving them
+        # white pleading sheets both read wrong and pulled two more 1024 maps
+        # into a file that needs neither (enemy_rule403.glb was 1355 KB against
+        # hearsay's 663 KB for the same geometry).
+        stock = cfg.get("stock", ("alt", "paper"))
         for i in range(1, n_sheets):
-            mtl = MAT["alt"] if i % 2 else MAT["paper"]
+            mtl = mat_for(stock[(i - 1) % len(stock)])
             sm = M.Mesh("Sheet_%d" % (i + 1), mtl)
             build_sheet(sm, w * (0.94 - 0.03 * i), h * (0.93 - 0.035 * i), th,
                         front, back, nx=4, ny=5,
@@ -399,20 +533,283 @@ def build_enemy(variant, cfg, images):
 # ------------------------------------------------------------- animation
 
 
+def build_counsel(images):
+    """Opposing counsel: suit, tie, and an armful of binders to throw at you.
+
+    Built at human scale with the origin on the floor between the feet, facing
+    -Z, which is the same contract every other enemy honours -- the prototype
+    should not have to special-case where his feet are.
+
+    The node names follow the document rig (Rig / Torso / Arm_* / Leg_*) for
+    the same reason: the runtime already knows how to drive that shape, and a
+    second convention would be a second thing to get wrong.
+    """
+    scene = Scene("Enemy_counsel")
+    for name, canvas in images.items():
+        scene.image(name, canvas)
+    scene.material(Material(MAT["face"], (1, 1, 1, 1), 0.0, 0.90, "faces"))
+    scene.material(Material(CMAT["suit"], hex_srgb("#2C3038"), 0.0, 0.66))
+    scene.material(Material(CMAT["shirt"], hex_srgb("#F2F1EC"), 0.0, 0.60))
+    scene.material(Material(CMAT["tie"], hex_srgb("#D93E15"), 0.0, 0.52))
+    scene.material(Material(CMAT["skin"], hex_srgb("#C9A483"), 0.0, 0.74))
+    scene.material(Material(CMAT["hair"], hex_srgb("#2A2320"), 0.0, 0.58))
+    scene.material(Material(MAT["shoe"], hex_srgb("#15161A"), 0.05, 0.48))
+    scene.material(Material(MAT["binder"], (1, 1, 1, 1), 0.05, 0.72,
+                            "paper_binder"))
+
+    HIP_Y, SHOULDER_Y = 0.94, 1.44
+    THIGH, SHIN = 0.44, 0.44
+    UPPER, FORE = 0.30, 0.28
+    root = Node("Enemy_counsel")
+    rig = Node("Rig")
+    root.add(rig)
+    torso = Node("Torso", vec.translate((0.0, HIP_Y, 0.0)))
+    rig.add(torso)
+    body = Node("Body")
+    torso.add(body)
+
+    # ---- suit: a chest that tapers to the waist, with lapels and a tie
+    suit = M.Mesh("Suit", CMAT["suit"])
+    M.box_chamfered(suit, (0.44, 0.54, 0.25), 0.030,
+                    (0.0, 0.26, 0.0), group=0)
+    body.add_mesh(suit)
+
+    shirt = M.Mesh("Shirt", CMAT["shirt"])
+    M.box_chamfered(shirt, (0.16, 0.26, 0.06), 0.012,
+                    (0.0, 0.40, -0.108), group=0)
+    body.add_mesh(shirt)
+
+    tie = M.Mesh("Tie", CMAT["tie"])
+    M.box_chamfered(tie, (0.052, 0.30, 0.030), 0.008,
+                    (0.0, 0.30, -0.126), group=0)
+    body.add_mesh(tie)
+
+    # ---- head, hair, and the face he keeps through all of it
+    neck = M.Mesh("Neck", CMAT["skin"])
+    M.cylinder(neck, (0.0, 0.52, 0.0), (0.0, 0.60, 0.0), 0.048, 0.052, 10,
+               group=0)
+    body.add_mesh(neck)
+
+    head_n = Node("Head", vec.translate((0.0, 0.66, 0.0)))
+    body.add(head_n)
+    head = M.Mesh("Head", CMAT["skin"])
+    rings = []
+    for i in range(9):
+        t = i / 8.0
+        y = -0.11 + 0.22 * t
+        r = math.sin(math.pi * (0.10 + 0.80 * t)) * 0.108
+        prof = M.profile_ellipse(12, r, r * 0.88)
+        rings.append(M.ring_from_profile(prof, (0.0, y, 0.0),
+                                         (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)))
+    head.add_loft(rings, uv_rect=(0, 0, 1, 1), group=0)
+    head.add_grid_cap(rings[0], group=0, flip=True)
+    head.add_grid_cap(rings[-1], group=0)
+    head_n.add_mesh(head)
+
+    # A cap that follows the skull, not a cone. Taking the radius down by
+    # cos(t * 1.15) left the top ring at 45 mm and the dome then ran to a
+    # point 24 mm above it, which is a dunce cap on a lawyer.
+    hair = M.Mesh("Hair", CMAT["hair"])
+    hrings = []
+    for i in range(5):
+        t = i / 4.0
+        y = 0.004 + 0.086 * t
+        r = math.cos(t * 0.62) * 0.114
+        prof = M.profile_ellipse(12, r, r * 0.92)
+        hrings.append(M.ring_from_profile(prof, (0.0, y, 0.0),
+                                          (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)))
+    hair.add_loft(hrings, uv_rect=(0, 0, 1, 1), group=0)
+    hair.add_grid_cap(hrings[0], group=0, flip=True)
+    M.dome_tip(hair, hrings[-1], (0.0, 0.118, 0.0), steps=2, group=0,
+               bulge=0.55)
+    head_n.add_mesh(hair)
+
+    # The smug face out of the shared atlas -- the same expression the motion
+    # wore, on the man who filed it.
+    fm = M.Mesh("Face_Smug", MAT["face"])
+    M.plate(fm, (0.0, 0.005, -0.099), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
+            0.150, 0.130, group=0, uv_rect=PT.FACE_CELLS["smug"])
+    head_n.add_mesh(fm)
+
+    # ---- limbs, at his scale rather than a document's
+    limbs = {}
+    for side, sx in (("L", -1.0), ("R", 1.0)):
+        arm = build_limb("Arm_" + side, CMAT["suit"], UPPER, 0.058, 0.046)
+        arm.matrix = vec.translate((sx * 0.245, SHOULDER_Y - HIP_Y, 0.0))
+        fore = build_limb("Forearm_" + side, CMAT["skin"], FORE, 0.044, 0.036,
+                          tip="glove", tip_mat=CMAT["skin"], tip_r=0.050)
+        fore.matrix = vec.translate((0.0, -UPPER, 0.0))
+        arm.add(fore)
+        torso.add(arm)
+        limbs["arm_" + side] = arm
+        limbs["fore_" + side] = fore
+
+        leg = build_limb("Leg_" + side, CMAT["suit"], THIGH, 0.075, 0.060)
+        leg.matrix = vec.translate((sx * 0.105, HIP_Y, 0.0))
+        shin = build_limb("Shin_" + side, CMAT["suit"], SHIN, 0.058, 0.045,
+                          tip="shoe", tip_mat=MAT["shoe"], tip_r=0.055)
+        shin.matrix = vec.translate((0.0, -THIGH, 0.0))
+        leg.add(shin)
+        rig.add(leg)
+        limbs["leg_" + side] = leg
+        limbs["shin_" + side] = shin
+
+    # ---- the binder in his throwing hand, hidden the moment it leaves
+    held = Node("Held_Binder",
+                vec.mat_mul(vec.translate((0.0, -FORE - 0.10, -0.02)),
+                            vec.rot_x(90.0 * D2R)))
+    hb = M.Mesh("Held_Binder", MAT["binder"])
+    M.box_chamfered(hb, (0.235, 0.075, 0.300), 0.010, (0.0, 0.0, 0.0),
+                    group=0, uv_rect=(0.02, 0.02, 0.98, 0.98))
+    held.add_mesh(hb)
+    limbs["fore_R"].add(held)
+    limbs["held"] = held
+
+    for node in list(limbs.values()) + [head_n]:
+        node.bind_local = list(node.matrix)
+    scene.rig = {"root": root, "rig": rig, "torso": torso, "body": body,
+                 "head": head_n, "limbs": limbs}
+    scene.add_root(root)
+    return scene
+
+
+def counsel_clips(scene):
+    """Idle, Throw and Gloat, all baked at 30 fps like everything else.
+
+    `Throw` is the only one with a contract outside this file: the binder
+    leaves his hand on frame COUNSEL["throw_release"], and the prototype
+    spawns the projectile on exactly that frame so the object appears where
+    the hand is rather than near it.
+    """
+    r = scene.rig
+    L = r["limbs"]
+    out = []
+
+    # ---- Idle: weight shifting, because a man standing perfectly still in a
+    # corridor reads as a prop rather than as somebody waiting for you
+    idle = Animation("Idle", FPS)
+    n = 48
+    poses = []
+    for f in range(n + 1):
+        p = TAU * (f / n)
+        pose = {}
+        pose[r["rig"]] = vec.translate((0.012 * math.sin(p),
+                                        0.010 * math.sin(2 * p), 0.0))
+        pose[r["torso"]] = vec.mat_mul(
+            vec.translate((0.0, 0.94, 0.0)),
+            vec.rot_y(3.0 * math.sin(p) * D2R))
+        pose[r["head"]] = vec.mat_mul(
+            vec.translate((0.0, 0.66, 0.0)),
+            vec.rot_y(-5.0 * math.sin(p + 0.6) * D2R))
+        for side, sgn in (("L", 1.0), ("R", -1.0)):
+            pose[L["arm_" + side]] = vec.mat_mul(
+                L["arm_" + side].bind_local,
+                vec.rot_x(_swing(4.0, p + (0.0 if sgn > 0 else math.pi))))
+        pose[L["held"]] = L["held"].bind_local
+        poses.append(pose)
+    for f, pose in enumerate(poses):
+        for node, m in pose.items():
+            idle.key_matrix(node, f / FPS, m)
+    idle.poses = poses
+    out.append(idle)
+
+    # ---- Throw: wind up behind the head, whip forward, follow through
+    thr = Animation("Throw", FPS)
+    n = COUNSEL["throw_frames"]
+    rel = COUNSEL["throw_release"]
+    poses = []
+    for f in range(n):
+        # -1 through 0 winding up, 0 at release, then follow through
+        if f <= rel:
+            k = f / rel
+            wind = vec.smoothstep(k)
+            arm = -150.0 * wind          # up and back over the shoulder
+            twist = -26.0 * wind
+        else:
+            k = (f - rel) / max(1, n - 1 - rel)
+            arm = -150.0 + 190.0 * vec.smoothstep(min(1.0, k * 1.6))
+            twist = -26.0 + 44.0 * vec.smoothstep(min(1.0, k * 1.4))
+        pose = {}
+        lunge = 0.0 if f <= rel else 0.10 * math.sin(math.pi * min(1.0, k))
+        pose[r["rig"]] = vec.translate((0.0, 0.0, -lunge))
+        pose[r["torso"]] = vec.mat_mul(
+            vec.translate((0.0, 0.94, 0.0)), vec.rot_y(twist * D2R))
+        pose[r["head"]] = r["head"].bind_local
+        pose[L["arm_R"]] = vec.mat_mul(L["arm_R"].bind_local,
+                                       vec.rot_x(arm * D2R))
+        pose[L["fore_R"]] = vec.mat_mul(
+            L["fore_R"].bind_local,
+            vec.rot_x((-40.0 if f <= rel else -8.0) * D2R))
+        pose[L["arm_L"]] = vec.mat_mul(L["arm_L"].bind_local,
+                                       vec.rot_x(-18.0 * D2R))
+        # the binder is in hand until the release frame and gone after it
+        pose[L["held"]] = (L["held"].bind_local if f < rel
+                           else vec.mat_mul(L["held"].bind_local,
+                                            vec.scale(1e-4)))
+        poses.append(pose)
+    for f, pose in enumerate(poses):
+        for node, m in pose.items():
+            thr.key_matrix(node, f / FPS, m)
+    thr.poses = poses
+    out.append(thr)
+
+    # ---- Gloat: what he does when one of them lands on you
+    gl = Animation("Gloat", FPS)
+    n = COUNSEL["gloat_frames"]
+    poses = []
+    for f in range(n):
+        k = f / (n - 1)
+        bounce = math.sin(math.pi * k)
+        pose = {}
+        pose[r["rig"]] = vec.translate((0.0, 0.045 * bounce, 0.0))
+        pose[r["torso"]] = vec.mat_mul(
+            vec.translate((0.0, 0.94, 0.0)),
+            vec.rot_x(-9.0 * bounce * D2R))
+        pose[r["head"]] = vec.mat_mul(
+            r["head"].bind_local, vec.rot_x(-14.0 * bounce * D2R))
+        for side in ("L", "R"):
+            pose[L["arm_" + side]] = vec.mat_mul(
+                L["arm_" + side].bind_local,
+                vec.rot_x(-52.0 * bounce * D2R))
+        pose[L["held"]] = vec.mat_mul(L["held"].bind_local, vec.scale(1e-4))
+        poses.append(pose)
+    for f, pose in enumerate(poses):
+        for node, m in pose.items():
+            gl.key_matrix(node, f / FPS, m)
+    gl.poses = poses
+    out.append(gl)
+    return out
+
+
 def _swing(deg, phase):
     return deg * math.sin(phase) * D2R
 
 
 def run_cycle(scene):
-    """Looping run. Frame 0 and frame RUN_FRAMES are the same pose."""
+    """Looping run. The last key repeats frame 0 exactly, so the seam is free.
+
+    A looping clip has two requirements the old bake did not meet.
+
+    The stride has to close on the clip boundary. Cadence used to warp the
+    phase inside a fixed 20 frames -- the cycle spanned TAU * cadence, so it
+    only closed when cadence happened to be a whole number. It did for the
+    pleading paper; it did not for anyone else, and the binder (0.66) snapped
+    its shin roughly 66 degrees every time the clip wrapped. Cadence now sets
+    how many 30 fps frames one stride takes instead, so the phase always
+    closes and the bake stays on the 30 fps grid.
+
+    And the last key has to repeat frame 0, or the wrap has no interval to
+    happen over: the final frame of motion would land in zero time and hitch.
+    """
     r = scene.rig
     cfg = r["cfg"]["run"]
     anim = Animation("Run", FPS)
     poses = []
-    n = RUN_FRAMES
-    for f in range(n):
+    # frames per stride at 30 fps -- fast variants take fewer, heavy ones more
+    n = max(4, int(round(RUN_FRAMES / cfg["cadence"])))
+    for f in range(n + 1):
         t = f / FPS
-        p = TAU * (f / n) * cfg["cadence"]
+        p = TAU * (f / n)
         pose = {}
 
         # --- hips: bob twice per stride, lean into the run, sway sideways
@@ -422,7 +819,11 @@ def run_cycle(scene):
             bob = cfg["bob"] * (0.5 - 0.5 * math.cos(2.0 * p)) ** 1.7
         sway = cfg["sway"] * math.sin(p)
         if cfg.get("dodge"):
-            sway += cfg["sway"] * 1.5 * math.sin(p * 0.5)
+            # A weave slower than one stride cannot live in a one-stride loop
+            # -- half a cycle does not close. The long evasive weave belongs to
+            # the AI heading (web/main.js does it); what stays here is the
+            # per-stride shimmy that sells the side-step.
+            sway += cfg["sway"] * 1.5 * math.sin(2.0 * p + 0.7)
         jitter = 0.004 * cfg["jitter"] * math.sin(p * 5.0 + 1.1)
         lean = cfg["lean"] + 3.0 * math.sin(2.0 * p) * cfg["jitter"] * 0.5
         pose[r["rig"]] = vec.mat_mul(
@@ -439,16 +840,19 @@ def run_cycle(scene):
         pose[r["body"]] = list(vec.IDENTITY)
 
         for si, (node, ang) in enumerate(r["extras"]):
-            # loose sheets lag the body -- reads as chaos, costs two curves
+            # Loose sheets lag the body -- reads as chaos, costs two curves.
+            # The frequencies are whole numbers of strides so they close on the
+            # loop; the chaos comes from the per-sheet phase k, not from
+            # fractional rates, which only ever bought a pop at the seam.
             b = node.bind_local
             k = 1.0 + 0.9 * si
             pose[node] = vec.mat_mul(
                 vec.mat_mul(vec.translate((
-                    b[3] + 0.012 * math.sin(p * 1.7 + k),
-                    b[7] + 0.014 * math.sin(p * 2.3 + k * 1.7),
+                    b[3] + 0.012 * math.sin(p * 2.0 + k),
+                    b[7] + 0.014 * math.sin(p * 3.0 + k * 1.7),
                     b[11])),
-                    vec.rot_z((ang + 8.0 * math.sin(p * 1.3 + k)) * D2R)),
-                vec.rot_x(11.0 * math.sin(p * 2.1 + k) * D2R))
+                    vec.rot_z((ang + 8.0 * math.sin(p + k)) * D2R)),
+                vec.rot_x(11.0 * math.sin(p * 2.0 + k) * D2R))
 
         # --- legs: thigh swings, knee folds on the way through
         for side, ph in (("L", 0.0), ("R", math.pi)):
@@ -593,12 +997,16 @@ def stamped(scene):
 # ---------------------------------------------------------------- previews
 
 
-def preview(scene, anims, outdir, name, quick=False):
+def preview(scene, anims, outdir, name, quick=False, scale=1.0):
     from tools.render import Camera, render
 
     os.makedirs(outdir, exist_ok=True)
     w, h = (240, 300) if quick else (330, 410)
-    cam = Camera((0.78, 0.60, 1.35), (0.0, 0.33, 0.0), fov_deg=34)
+    # Pull the camera back in proportion to the variant, so every preview frames
+    # its subject the same way. This was a fixed rig set for a 1.0-scale sheet,
+    # which cropped the boss at 2.05 down to its shins.
+    cam = Camera((0.78 * scale, 0.60 * scale, 1.35 * scale),
+                 (0.0, 0.33 * scale, 0.0), fov_deg=34)
     ground = ground_node(scene)
     scene.roots.append(ground)
     made = []
@@ -656,6 +1064,40 @@ def ground_node(scene):
 # -------------------------------------------------------------------- main
 
 
+def absorb(combined, scene, variant):
+    """Fold one variant into the shared-texture file.
+
+    Four self-contained GLBs cannot share bytes: `paper_pleading` ships three
+    times and `faces` and `stamp_mark` four times each, 1.12 MB of identical
+    pixels. `Scene.images` and `.materials` are keyed by name, so merging the
+    dicts dedupes them for free.
+
+    Node names have to be made unique first. glTF targets animation channels by
+    node index, but three.js binds its tracks by **name** -- four subtrees all
+    calling their root `Rig` would leave a clip free to drive the wrong enemy.
+    This is the same bug the viewmodel hit with ten duplicate node names, and
+    it only shows up at runtime, so prefix on the way in. Renaming here is safe
+    because the per-variant GLB has already been written, and the animation
+    tracks hold node references rather than names.
+    """
+    def rename(node):
+        node.name = "%s_%s" % (variant, node.name)
+        for c in node.children:
+            rename(c)
+
+    for root in scene.roots:
+        # the root is already Enemy_<variant>, so only its descendants collide
+        for child in root.children:
+            rename(child)
+        combined.add_root(root)
+    for anim in scene.animations:
+        anim.name = "%s_%s" % (variant, anim.name)
+        combined.animation(anim)
+    combined.materials.update(scene.materials)
+    combined.images.update(scene.images)
+    return combined
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bates", default="000137")
@@ -675,7 +1117,11 @@ def main(argv=None):
     for name, canvas in images.items():
         canvas.save(os.path.join(tex_dir, name + ".png"))
 
-    names = [args.only] if args.only else list(VARIANTS)
+    combined = Scene("Enemies")
+    # `counsel` is not a document variant -- he is built separately below, so
+    # asking for him alone means building no documents at all.
+    names = ([args.only] if args.only else list(VARIANTS))
+    names = [n for n in names if n in VARIANTS]
     for name in names:
         cfg = VARIANTS[name]
         scene = build_enemy(name, cfg, images)
@@ -687,11 +1133,38 @@ def main(argv=None):
         st = scene.stats()
         print("  %-9s %-24s %5d tris  %s (%.0f KB)  [%s %df, %s %df]"
               % (name, cfg["label"], st["triangles"], os.path.basename(glb),
-                 os.path.getsize(glb) / 1024.0, run.name, RUN_FRAMES,
-                 hit.name, STAMP_FRAMES))
+                 os.path.getsize(glb) / 1024.0, run.name, len(run.poses),
+                 hit.name, len(hit.poses)))
         if not args.no_preview:
             preview(scene, [run, hit], os.path.join(args.out, "previews"),
-                    name, args.quick)
+                    name, args.quick, cfg["scale"])
+        if name not in BOSS:
+            absorb(combined, scene, name)
+
+    # Opposing counsel, built his own way and shipped his own file. He is not
+    # in the combined GLB for the same reason the motion is not: he belongs to
+    # a bonus round most players never reach, and nobody should fetch a lawyer
+    # to find that out.
+    if not args.only or args.only == "counsel":
+        cs = build_counsel(images)
+        clips = [cs.animation(a) for a in counsel_clips(cs)]
+        cs.prune()
+        glb = os.path.join(args.out, "enemy_counsel.glb")
+        export_glb(cs, glb)
+        st = cs.stats()
+        print("  %-9s %-24s %5d tris  %s (%.0f KB)  [%s]"
+              % ("counsel", COUNSEL["label"], st["triangles"],
+                 os.path.basename(glb), os.path.getsize(glb) / 1024.0,
+                 ", ".join("%s %df" % (c.name, len(c.poses)) for c in clips)))
+
+    if len(names) > 1:
+        combined.prune()
+        glb = os.path.join(args.out, "enemies.glb")
+        export_glb(combined, glb)
+        print("  %-9s %-24s %5d tris  %s (%.0f KB)  [%d clips]"
+              % ("combined", "All seven, shared textures",
+                 combined.stats()["triangles"], os.path.basename(glb),
+                 os.path.getsize(glb) / 1024.0, len(combined.animations)))
 
     print("done in %.1fs" % (time.time() - t0))
     return 0

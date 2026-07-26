@@ -78,8 +78,18 @@ appears, that is a finding.
 | privilege | 1,392 |
 | binder | 2,700 |
 | stack | 1,856 |
+| **combined** `enemies.glb` | **7,340** (the four summed) |
 
-- `Run`: **20 frames @ 30 fps**, looping
+`enemies.glb` carries all four variants and all **eight** clips, named
+`<variant>_Run` / `<variant>_Stamped`, with every node prefixed `<variant>_`.
+Check that node names are **unique across the whole file** — duplicates are a
+hard finding there, because three.js binds tracks by name and would cross-bind
+one variant's clip onto another. It should report **6 images**; more means the
+shared page, face or Bates maps stopped deduping.
+
+- `Run`: **@ 30 fps, looping, one stride** — pleading **21** keys (0.667 s),
+  privilege **19** (0.600 s), binder **31** (1.000 s), stack **17** (0.533 s).
+  A variant reporting 20 keys has regressed to the old cadence-warped bake.
 - `Stamped`: **26 frames @ 30 fps**, one-shot
 
 ### Environment — `build/environment/<piece>.glb`
@@ -106,6 +116,7 @@ python -m tools.validate_glb build/exhibitfy_fpv_arms_single_mesh.glb
 for v in pleading privilege binder stack; do
   python -m tools.validate_glb build/enemies/enemy_$v.glb
 done
+python -m tools.validate_glb build/enemies/enemies.glb
 for p in hallway_straight hallway_corner doorway desk_chair \
          file_cabinet banker_boxes reception_counter; do
   python -m tools.validate_glb build/environment/$p.glb

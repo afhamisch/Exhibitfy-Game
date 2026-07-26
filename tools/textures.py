@@ -26,12 +26,21 @@ BRAND = {
     "ink": hex_srgb("#B8280C"),           # stamp ink
 }
 
+# The four original entries span luminance 149-206 -- 22% of the range, and
+# most of them are laid down at 10-35% alpha on top of that. Measured against a
+# hand-painted 90s viewmodel sprite, our bare forearm came out at a spread of 82
+# and a standard deviation of 20.7, against 189/48.2 for the painted hand: the
+# limb read as a flat pale tube because nothing in the pipeline was painting a
+# shadow. `core` and `hi` extend the range at both ends so form_shade() has
+# somewhere to go; they are not used as flat fills anywhere.
 SKIN = {
     "base": hex_srgb("#E7B396"),
     "shadow": hex_srgb("#C98A6C"),
     "warm": hex_srgb("#DE9A7C"),
     "pale": hex_srgb("#F2C7AC"),
     "hair": hex_srgb("#6A4A34"),
+    "core": hex_srgb("#3E1F12"),      # the underside, in shadow
+    "hi": hex_srgb("#FFE3CD"),        # the top of the limb, catching the light
 }
 
 SHIRT = {
@@ -120,7 +129,63 @@ def skin_basecolor(size=512, seed=7):
         col = mix(SKIN["hair"], SKIN["shadow"], rnd.random() * 0.5)
         c.curve(pts, rnd.uniform(0.7, 1.15), col, rnd.uniform(0.16, 0.34))
 
+    # --- form shading, last, so it darkens the hair and freckles with the skin
+    #
+    # This is the part a texture artist does by hand and the part this pipeline
+    # was missing entirely. A limb reads as round because of where the light
+    # is, not because of how many triangles describe it -- Wolfenstein's arms
+    # are 2D bitmaps and still read rounder than ours did, because somebody
+    # painted the underside dark.
+    #
+    # u runs around the tube, so a cosine in u IS the form. Two extra terms on
+    # top of it, both worth their cost: a terminator pulled forward so it lands
+    # on the face you can see, and a rim on the shadow side, which is what
+    # separates a limb from the wall behind it in a dark corridor.
+    c.shade_each(lambda x, y, cur: _form_shade(x, y, cur, size))
     return c
+
+
+# Where the key light sits on the sweep. NOT on the dorsal side at u = 0.36,
+# which is the side pointed at the camera: a light centred on the face you look
+# at gives that face a flat 28-level band and hides the whole gradient round the
+# back. Off to one edge instead, so the visible half runs bright at one
+# silhouette to dark at the other -- which is the arrangement the painted 90s
+# sprites use, and it is a lighting decision, not an anatomical one. The hair
+# pass stays on the dorsal at 0.36 and is meant to; hair grows where it grows
+# regardless of where the lamp is.
+LIGHT_U = 0.18
+
+
+def _form_shade(x, y, cur, size):
+    u = x / size
+    v = 1.0 - y / size
+    ang = (u - LIGHT_U) * math.tau
+    if ang > math.pi:
+        ang -= math.tau                       # keep the rim term symmetric
+    lam = math.cos(ang)                       # +1 facing the light, -1 away
+
+    # The terminator has to sit INSIDE the visible sweep, not behind the tube.
+    # A plain Lambert cosine puts it at lam = 0, which is the silhouette edge --
+    # and this arm is deliberately posed knuckles-to-camera (dorsal . eye =
+    # +0.988, see build_fpv_arms), so a light that turns over at the silhouette
+    # leaves the whole visible half in flat full light. Measured: the rendered
+    # forearm moved 144 -> 137 spread, i.e. not at all. Starting the falloff at
+    # lam = 0.65 pulls the gradient round onto the face you actually look at.
+    LIT = 0.65
+    d = max(0.0, min(1.0, (LIT - lam) / (LIT + 1.0))) ** 1.25
+    col = mix(cur, SKIN["hi"], max(0.0, (lam - LIT) / (1.0 - LIT)) * 0.30)
+    col = mix(col, SKIN["core"], d * 0.92)
+
+    # Rim on the shadow side, just before the silhouette turns away.
+    rim = math.exp(-((abs(ang) - 2.32) ** 2) / (2 * 0.30 ** 2))
+    col = mix(col, SKIN["hi"], rim * 0.30)
+
+    # The wrist end is tucked between forearm and fist and never sees the
+    # ceiling, so it loses light regardless of which way round the limb it is.
+    if v < FOREARM_V[1]:
+        occ = max(0.0, (v - FOREARM_V[1] * 0.62) / (FOREARM_V[1] * 0.38))
+        col = mix(col, SKIN["core"], occ * 0.18)
+    return col
 
 
 def skin_mr(size=128):

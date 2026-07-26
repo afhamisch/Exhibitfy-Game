@@ -8,10 +8,22 @@ dependency-free Python. No DCC app, no third-party packages.
 |---|---|---|
 | **Viewmodel** — FPV arms + Exhibitfy Bates stamp, `Stamp_Swing` | `build_fpv_arms.py` | `build/` |
 | **Enemies** — four anthropomorphic legal documents, `Run` + `Stamped` | `build_enemies.py` | `build/enemies/` |
-| **Environment** — seven-piece modular law office kit | `build_environment.py` | `build/environment/` |
+| **Environment** — eleven-piece modular law office kit | `build_environment.py` | `build/environment/` |
 
 Shared code lives in `tools/`. `build/` is committed so the assets are usable
 as-is.
+
+Two exceptions to "everything is generated": `web/audio/calm_loop.*` is an
+authored music track and `web/video/intro.mp4` is an authored intro film. They
+are the only binary assets in the repo that no script can reproduce, so they
+cannot be regenerated if lost — the game's sound effects, by contrast, are
+synthesized in the browser at play time and ship as no files at all.
+
+The MP4 is doubly irreplaceable: the ffmpeg available here has libvpx and
+**no H.264 decoder or mp4 demuxer**, so it cannot even be transcoded, only
+copied. `web/screenshots/intro.webm` is a VP8 fallback for browsers without
+H.264 and is a *gameplay cut*, not the same film — it is sliced from the
+recorded reel by `record_demo.js`, not derived from the MP4.
 
 ## Non-negotiables
 
@@ -21,8 +33,14 @@ Never add a third-party import. Never `pip install` anything. The confirmed
 import set across the whole repo is:
 
 ```
-argparse   math   os   random   sys   time   + the local tools package
+argparse   json   math   os   random   struct   sys   time   zlib
++ the local tools package
 ```
+
+(`json`, `struct` and `zlib` live in the exporters and validators — GLB is a
+JSON-plus-binary container and PNG needs a deflate — and `tools/
+blender_stamp_swing.py` imports `bpy`, which only exists inside Blender and is
+never run by the build.)
 
 Anything outside that needs to be raised, not added. Dependency-free
 reproduction is the point of the pipeline, not an accident of it.
@@ -70,24 +88,350 @@ python build_environment.py --no-preview
 
 ## Budgets — read these back after every rebuild
 
-**Viewmodel:** 12,866 triangles / 5,728 quads / 8,592 vertices / 17 textures,
-bounds 0.616 × 0.751 × 0.382 m. 16 objects in the rigged GLB; the single-mesh
-copy is the same geometry as one object with 13 material slots and no
-animation. 8–15k is the usual mobile viewmodel allowance.
+**Viewmodel:** 12,780 triangles / 5,494 quads / 8,965 vertices / 17 textures,
+38 nodes / 35 meshes / 14 materials. It was 12,492 / 5,350 / 8,737 before the
+wrist was closed with domes. The single-mesh copy is the same geometry
+as one object with 14 material slots and no animation. 8–15k is the usual
+mobile viewmodel allowance.
 
-**Enemies:** pleading 1,392 · privilege 1,392 · binder 2,700 · stack 1,856.
+**Two arms, one tool.** The right hand runs the stamp; the left carries a sheaf
+of exhibits and wears the watch. `SIDES` drives both the build and the swing
+bake, so the limb count lives in one tuple. The carrying arm is posed in **view
+space, not stamp space** — otherwise the sheaf swings with every strike.
 
-**Environment:** hallway_straight 1,166 · hallway_corner 1,742 · doorway 2,016 ·
-desk_chair 3,110 · file_cabinet 3,080 · banker_boxes 1,546 ·
-reception_counter 1,600. **Kit total 14,260**; a corridor run with props in
-view is ~11k.
+The sheaf hangs off `Hand_L` at `HAND["grip_point"]` — the one point the finger
+solver wraps — not off the wrist and not off the arm. Off the arm it stayed put
+while the hand counter-rotated through the brace, so the paper slid inside its
+own grip. About 1.5 mm of digit sits inside the paper and does not tune away: a
+fist's bore is a hole, and a slab 279 mm deep has to be threaded through it. At
+that depth it reads as paper denting under a grip.
+
+**The wrist is a T-joint and both ends are domed.** The hand sits about 116°
+off the forearm axis — the fist is wrapped round a bar that crosses the arm —
+so the arm arrives at the *side* of the hand's base and neither part covers the
+other's opening. A flat cap left 13 of its 19 boundary vertices standing clear
+of the hand, the worst by 31 mm: that was the hard-edged fin sticking out of
+both wrists, and no pose tuning moves it, because it is the end of the tube and
+not the pose. Running a tapered tube on into the fist instead came out the far
+side as a row of prongs — rings translated 116° off their own normal make a
+sheared prism, not a tube.
+
+What works is two domes that overlap. `wrist_dome` on each side, and the palm
+necked to `wrist_neck` at its rim so it fits *inside* the arm it enters: the
+palm is 55 mm wide against a forearm 39 mm thick, and because of the 116° the
+palm's width lies across the arm's thickness, so the rim has to lose girth or
+nothing can cover it. No ball joint fixes that either — anything wide enough to
+cover a 55 mm rim is wider than the arm. Do not flatten either dome back to a
+cap.
+
+**Score the hand you can see.** Grip facing — the back of the hand dotted with
+the direction to the eye — is necessary and not sufficient: the hand can read
+knuckles-out and still be hidden behind its own forearm. What sets the usable
+roll is `elbow_dir_r`, not proximity, and not `stamp_pos` — moving the stamp
+outward costs visible fist faster than it buys clearance. Depth-buffer the hand
+against the forearm before believing any pose number: paint it and count the
+pixels that survive the whole scene.
+
+**A first-person arm has to recede.** `elbow_dir_r` carried Z = 0.00, putting
+the elbow at exactly the wrist's depth, so the forearm lay flat across the view
+— a side-on picture of an arm rather than your own arm running away from you,
+which is what made the hand read as seen from the front. Z = 0.58 costs 21% of
+the visible fist (5,141 px → 4,042) and the loss saturates past 0.6, so there
+is nothing to buy beyond it.
+
+Two numbers govern the roll, not one: knuckles towards the eye **and** fingers
+not pointing at it, because fingertips aimed at your face is the front of a
+hand. Re-swept at the receding elbow, roll 65 gives dorsal +0.988 and fingers
+−0.024 for 3,607 px, against roll 35's +0.859 / +0.494 at 4,042. Past 65 the
+forearm eats the hand exactly as the old note warned — that warning was right,
+the number under it (roll 55) was measured at the old flat elbow.
+
+**Enemies:** four exhibits — pleading 1,392 · privilege 1,392 · binder 2,700 ·
+stack 1,856 — and three objections: hearsay 1,392 · character 1,392 ·
+rule403 1,624. `EXHIBITS` and `OBJECTIONS` name the two groups; nothing in
+`build_enemies.py` should hard-code either list.
+
+Each ships as its own GLB, plus a combined `enemies.glb` (11,748 tris, all
+fourteen clips, seven shared images) for runtimes that would otherwise fetch the
+same page, face and Bates maps seven times. In the combined file every node is
+prefixed `<variant>_` and clips are `<variant>_Run` / `<variant>_Stamped`,
+because three.js binds animation tracks **by node name** and seven subtrees all
+calling their root `Rig` would cross-bind.
+
+**Round 2 (the bonus round) is a dodge, not a fight.** Its player-facing
+name is **Round 2** and its gate is `filed == total`, full stop — there was a
+`bonusAt` clock gate (32 s spare required) and it silently denied the round to
+a player who filed all eight, so it was removed. **Redaction was also cut as a
+mechanic** ("too confusing for the game play — maybe we just stamp"): one
+verb, everything stamps, no waiver branch in the endings.
+
+ Opposing counsel (`enemy_counsel.glb`,
+2,298 tris, built by `build_counsel()` rather than `build_enemy()`) is the only
+thing in the game that is not a document: a person at a person's scale, 1.78 m
+against a sheet of paper 0.6 m tall wearing shoes. He throws binders down the
+corridor and the stamp is no use — swinging at him deliberately does nothing,
+because the round exists to take the one tool away. Clips are `Idle` 49f,
+`Throw` 30f, `Gloat` 24f, and **the binder leaves his hand on frame 12 of
+`Throw`**; `web/main.js` spawns the projectile on exactly that frame, so the
+release is a contract between the two files. The thrown binder is not a new
+asset — it is the walking binder's `Body` subtree out of `enemies.glb`, legs
+left behind.
+
+**Thirty seconds, scored on what you survive.** He throws until the clock runs
+out — 15 to 18 binders, measured, not assumed — and the tiers are read off that:
+`tierLawyer` 13 for Lawyer of the Year, `tierSuper` 8 for Super Lawyer,
+`tierDisbarred` 3 or fewer for disbarment. Set a tier above what he actually
+throws and it is arithmetically unreachable; the first pass asked for 16 out of
+14. Re-measure before touching those numbers.
+
+**Disbarment outranks the won case on purpose.** Every other bonus outcome
+leaves the verdict standing; standing still while a man throws thirty seconds
+of discovery at you does not. The binder being immaculate is the joke, not a
+defence.
+
+**Deflection is a swing-long window, not an impact test.** The die lands
+0.367 s after the click and a binder covers 2.7 m in that time, so a check on
+the impact frame deflects nothing — measured, zero from three correctly aimed
+attempts. `tryDeflect()` runs every frame the swing is up. **Never two in a
+row:** a deflection disarms it until some binder resolves by dodge or hit,
+which is what stops the round becoming a metronome.
+
+**It plays on a phone, and that is a second input model rather than an
+adaptation.** iOS Safari has no Pointer Lock API at all, so touch cannot be a
+tweak of the mouse path: `state.touch` is decided once from `(pointer: fine)`,
+`running()` stands in for `controls.isLocked`, and the loop, the HUD and the
+collisions all read that flag. Left thumb is a virtual stick drawn wherever it
+lands, right thumb drags to look, a tap anywhere swings — measured by event
+timestamps, not handler time, so frame hitches cannot eat a tap — and sprint
+is the far end of the stick. A continuous touch auto-look was built, played on
+a real iPhone, and removed at the same player's verdict; do not re-add it
+without a new playtest saying so. World FOV widens as
+the frame gets taller — three.js `fov` is vertical, so portrait keeps the
+vertical angle and throws away horizontal — and the arms shrink to match.
+
+**Feet and flight are different questions.** `insideWalk` answers "can a person
+stand here" and must refuse furniture; `insideBounds` answers "is this still in
+the room" and must not. Projectiles use the second. Using the first cost 12 of
+15 binders in a round: counsel paces the top edge of the conference table, threw
+diagonally across it, and each one was deleted 0.05 s after leaving his hand —
+and a deleted binder is scored to the player as a dodge, so standing still in
+the room came out as Lawyer of the Year.
+
+**Aim is locked at the start of the wind-up, never at the release.** The
+walkable strip is 1.72 m wide, so a full sidestep from the centreline is
+0.86 m; against a 0.48 m hit radius that is 0.38 m of margin. Aiming where the
+player stands when the binder actually leaves his hand is not dodgeable in that
+space — it is a cutscene with a die roll. Locking it a wind-up early is what
+makes the animation a tell and gives 0.40 s at 3.1 m/s to be somewhere else.
+Do not "fix" the aim to be more accurate.
+
+**The old boss still ships.** `enemy_motion.glb` — the walking Motion for
+Summary Judgment, 2,088 tris at scale 2.05 — is still built and still valid;
+the prototype simply no longer loads it.
+
+**The boss is `BOSS` and is deliberately NOT in the combined file.** `motion` —
+the Motion for Summary Judgment, 2,088 tris at scale 2.05 — ships only as
+`enemy_motion.glb`, because it belongs to a bonus round most players never reach
+and 664 KB is too much to charge everyone to find that out. The prototype
+fetches it on qualification. Its clips are plain `Run` / `Stamped`, not prefixed,
+since it loads alone.
+
+**`absorb()` merges materials by NAME.** Two variants that define the same
+material name with different contents silently collapse to whichever was
+absorbed last, and only in the combined file — the per-variant GLBs stay
+correct, so it looks fine everywhere except where the game actually loads from.
+The three objections share one `paper_objection` image and are told apart by
+tint, so their material is `Paper_Objection_<variant>`. Give it one name and
+every objection comes out amber, which is what happened first.
+
+**Environment:** hallway_straight 1,186 · hallway_corner 1,762 · doorway 2,016 ·
+hallway_door 2,338 · side_office 1,574 · desk_chair 3,110 · file_cabinet 3,080 ·
+banker_boxes 1,546 · reception_counter 1,600 · ink_pod 298 ·
+conference_room 4,754. **Kit total 23,264**; a corridor run with props in view
+is ~11.4k, and the conference room is only ever loaded by the bonus round.
+
+**The corridor is a closed ring, and that is a rule not a shape.** It was a U
+with two dead ends, each capped by the `doorway` module — whose leaf is
+modelled standing 62° open, so the art said *walk through* and the collision
+said *wall*. That got reported by a player within one session. Closing the loop
+deletes the dead ends instead of closing the doors: you can always keep
+walking, and you can never be cornered.
+
+`doorway` is a wall laid **across** a corridor to end it. `hallway_door` is a
+corridor section with an opening in its **side**, which is what a room is
+actually entered through. Do not use the first for the second — that swap is
+the original bug.
+
+A corner joins a leg running out along local +X to one running out along local
+−Z; `rot` picks which world pair that lands on, and only two of its four values
+were ever exercised before the ring:
+
+```
+rot   0 -> +X and -Z        rot  90 -> -X and -Z
+rot 180 -> -X and +Z        rot -90 -> +X and +Z
+```
+
+`side_office` has **no −X wall** on purpose: its depth is one module, so the
+`hallway_door` it opens off already covers that whole face, and a second slab
+there would be two coplanar walls fighting over the same pixels. Its origin is
+the middle of the doorway on the outer face of the corridor wall — hall centre
+plus 1.35 — so placement is one number.
+
+Room walk rects must **overlap** the corridor, not abut it. Rects that merely
+touch leave `resolveMove` no cell to step into, and the opening becomes a wall
+you can see through.
+
+`conference_room` is the arena, 10 x 8.5 m of clear floor, and it exists
+because a corridor is 1.72 m wide — the dodge was being balanced against the
+hallway rather than designed. Use `slab_box`, not `slab`, for anything small in
+it: `slab` chamfers, a chamfer is a 24-sided loft, and chair legs built that way
+put the room at 11,954 triangles on its own. Same room, six-sided legs: 4,754.
+
+Its furniture is on the SIDE wall. Across the far end it takes away the only
+place counsel can stand — he spawned inside the table, failed his own
+line-of-sight test and threw nothing for an entire round.
+
+The two hallway figures were recorded here as 1,166 and 1,742 and had been wrong
+for a while — the committed GLBs already held 1,186 and 1,762, so the total was
+14,300 before the ink pod, not 14,260. Read the counts back off a rebuild rather
+than off this table when they matter.
+
+**Eight documents, two minutes, six ink pods.** `ROSTER` is two of each variant
+interleaved, not four — the ring is twice the floor area the U was, and four
+documents in that much corridor is a search rather than a chase. The clock went
+90 → 120 with it, because Round 2 needs every document filed and eight
+in ninety seconds put it out of reach. `updateClosing` and `verdictFor` both
+read `state.enemies.length`, so neither needed touching; nothing should
+hard-code either number.
+
+The attackers were always there. Objections chase you, shake the view, and
+strike filed exhibits back out of the binder — but they are gated on `after`
+(1 / 2 / 3 filed), so a player who never files one never meets one, and reports
+that nothing attacks. That is a discoverability bug, not a missing feature.
+
+**A struck exhibit physically returns to the floor.** This is arithmetic, not
+flavour: the bonus round is gated on `filed == total`, and when the strike only
+decremented the counter, one sustained objection made the binder permanently
+unclosable — measured, a full bot run ended with all eight stamped, two struck
+and forty seconds of fighting objections over a binder that could never close.
+`sustain()` now un-files the exhibits and drops them at `struckReturnPoint()`,
+walkable and near the player, to be chased down again. Do not "simplify" the
+strike back to a counter.
+
+`ink_pod` is the kit's first piece that exists for a **rule** rather than for
+dressing: it is the stamp's ammunition, so the prototype instances it, hides it
+on pickup and respawns it. Everything odd about it is legibility at range. The
+longest sightline the layout can produce is ~12 m, and measured at 1100×690 the
+bottle alone covers:
+
+```
+0.30 m tall ->  9 x 13 px      0.40 m -> 14 x 18 px      0.51 m -> 19 x 23 px
+```
+
+A 9 px speck is not something a player can be asked to detour towards, so the
+bottle is built at **0.40 m** — chosen for the screen, not for the shelf — and it
+carries a **tapered emissive beacon**, crossed quads rather than a column,
+because a round beam thin enough to look like a beam is ~2 px wide at that range.
+The taper substitutes for the fade the exporter cannot do: `tools/gltf.py` has no
+`alphaMode`, so a full-width opaque bar at that emissive reads as a pole growing
+out of the lid. The prototype then floats the pod at 0.62 m, which is worth more
+than any of it — a floor-level pickup sits low in frame against carpet of nearly
+its own value.
+
+Do not "simplify" the beacon back to a cylinder, and do not put the pod back on
+the floor. Both were tried and measured.
+
+## The intro takes the pointer lock BEFORE the video, not after
+
+`beginPlay()` calls `controls.lock()` and *then* `playIntro()`. That order is
+the whole feature and it looks backwards, so it gets rewritten by anyone who
+has not hit the failure: pointer lock is granted to a **fresh** user gesture
+and to nothing else, so requesting it when the film ends is requesting it with
+a fifteen-second-old gesture, and the browser refuses. The video is drawn over
+a game that is already live and already holds the mouse; `running()` returns
+false while `state.intro` is up, so the world is held still rather than paused,
+and the handover is one click with no second prompt. Measured: clock 90.0
+throughout the reel, 89.9 a second after it.
+
+Everything else about the intro is a fallback and none of it is decorative.
+`introSource()` chooses H.264 then VP8 then nothing; `INTRO_MAX = 16.0` is a
+backstop set deliberately a second clear of the 15.04 s film so `ended` wins
+the race; a 4 s `readyState` timeout covers a reel that never arrives; sound is
+attempted unmuted and retried muted before being given up on. Music is held
+back by `startBed()` so it does not play under the film — which is why
+`startBed()` calls `initAudio()` itself: on the no-video path it runs
+synchronously inside `beginPlay`, ahead of the lock event that normally does
+that, and a context still suspended there would start the bed into silence.
+
+**Then you wake up at the desk.** `startWake()` runs after the reel on every
+path, 2.4 s of camera lifting off a `desk_chair` instanced one more time and
+dissolved on the way out — the other end of the ending screen, which has always
+said *you wake up*. It is not a cutscene: `running()` holds the world still
+exactly as it does under the intro, so the clock reads 90.0 throughout and the
+handover costs nothing.
+
+Three things about it are load-bearing. The desk is **never added to
+`BLOCKERS`** — it is scenery for two seconds and a collision box left behind
+would wall off the corridor you spawn in. Its materials are **cloned**, because
+GLTFLoader shares one material across every clone of a subtree and fading the
+instance would otherwise fade every desk in the building. And the **ink pods are
+hidden for the duration**: one is parked at z 0.9, the camera slides 0.70 → 1.20
+straight through it, and its beacon is crossed emissive quads, so passing
+through fills half the frame with a flat orange wedge.
+
+`controls.lock` must not reveal the HUD while `state.intro` or `state.waking` is
+set. Lock is asynchronous, so on the paths where the wake starts inside the same
+call as `controls.lock()` — no video, or a restart — the event lands *after*
+`startWake()` hid the HUD and puts it straight back. `finishWake()` is the only
+thing that reveals it.
+
+## Skin is form-shaded in the texture, and the light is deliberately off-axis
+
+`_form_shade()` in `tools/textures.py` runs last in `skin_basecolor`, after the
+hair, so it darkens hair and freckles along with the skin. Before it existed the
+skin map measured **spread 16, sd 3.9** — a flat colour. Every bit of variation
+on the rendered arm was coming from three.js lighting. It is now 101 / 33.6.
+
+`LIGHT_U = 0.18`, **not** the dorsal 0.36 where the hair is. The arm is posed
+knuckles-to-camera on purpose (`dorsal · eye = +0.988`), so a light centred on
+the visible side puts the terminator behind the tube and leaves the whole face
+you look at in flat light. Measured that way the rendered forearm went 144 → 137
+spread, i.e. nothing. Off to one edge, the visible sweep runs 218 → 148 and the
+limb reads round. The hair stays dorsal and is meant to — hair grows where it
+grows regardless of where the lamp is.
+
+Do not "correct" `LIGHT_U` to match the hair, and do not flatten `core`
+(`#3E1F12`) back toward the old palette: the four original entries only spanned
+luminance 149–206, which is why there was nowhere for a shadow to go.
+
+## The retro pass exists and is OFF
+
+`RETRO = { on: false, scale: 0.55 }` in `web/main.js`. It was built, looked at
+side by side, and **not kept** — it muddies the die's `EXHIBITFY` plate, which
+is the joke, and the form shading in the skin map turned out to be doing the
+work it was supposed to do. **The game ships rendering at full resolution with
+linear filtering, exactly as before.** Do not switch it back on by default.
+
+Left in rather than deleted because it is four functions and a CSS class, and
+because it is a taste call that may go the other way on a different screen.
+**P** toggles it at runtime, which is how the call was made.
+
+If you do touch it: it renders into a buffer `scale` of the element and lets
+the browser point-sample it up, and **either half alone does nothing** —
+`applyRes()` passes `false` to `setSize` so three.js does not write the CSS
+size back, and `canvas.crisp` in `index.html` carries
+`image-rendering: pixelated`. `retroFilter()` sets `magFilter` to nearest and
+**leaves `minFilter` alone**, because nearest minification is authentically
+1992 and authentically nauseating down a 12 m corridor; it has to be re-run for
+anything fetched after boot, which means the arena and the boss. `scale` 0.40
+was tried first and was worse.
 
 ## Clips
 
 | Clip | Frames | fps | Notes |
 |---|---:|---:|---|
-| `Stamp_Swing` | **23** | 30 | 0.767 s. 15 animated nodes, 31 channels, 23 keys each. Impact frames 11–13, trigger on 11. Frames 0 and 22 bit-identical. |
-| `Run` | **20** | 30 | Looping; frame 0 == last frame. |
+| `Stamp_Swing` | **23** | 30 | 0.733 s. 15 animated nodes, 45 channels, 23 keys each. Impact frames 11–13, trigger on 11. Frames 0 and 22 bit-identical. |
+| `Run` | **per variant** | 30 | Looping, one full stride: pleading 21 · privilege 19 · binder 31 · stack 17 · hearsay 25 · character 20 · rule403 18 · motion 35 keys. Last key repeats frame 0 bit-identically. |
 | `Stamped` | **26** | 30 | One-shot. Squash on frame 4, Bates impression at 1.28× overshoot. |
 
 The office kit is static.
@@ -98,10 +442,25 @@ The office kit is static.
 
 ```
 pleading 38    privilege 27    binder 20    stack 44
+hearsay  58    character  64   rule403 70    motion 24
 ```
 
 **Never normalize these toward each other.** They encode personality — the
-binder is heavy and barely swings, the stack is panicking and flails.
+binder is heavy and barely swings, the stack is panicking and flails. The
+objections are all thrown wider than any exhibit on purpose: they are the only
+things in the game that come *at* the player, and the silhouette has to say so
+before the colour is readable.
+
+**The run cycle must close on the clip boundary.** `Run` spans exactly one
+stride: `p = TAU * f / n`, where **cadence sets `n`** (frames per stride at
+30 fps), never the phase. Every frequency multiplying `p` must be a **whole
+number** of strides, and the clip emits `n + 1` keys so the last repeats frame
+0 — otherwise the wrap has no interval to happen over.
+
+Warping the phase by cadence inside a fixed frame count is what used to leave
+the binder snapping its shin ~66° every time the clip looped. Anything slower
+than one stride — a long evasive weave — cannot be baked here at all; it
+belongs to the runtime AI.
 
 **Elbow flexion is derived from shoulder phase, never independently keyed:**
 
@@ -155,6 +514,7 @@ three-quarter view before flagging any lean.
 | `tools-lib` | The shared `tools/` package |
 | `glb-validate` | Export integrity and budgets (read-only) |
 | `visual-qa` | Rendered previews (read-only) |
+| `web-game` | `web/main.js` — the playable browser prototype |
 
 ## Layout
 
@@ -178,4 +538,10 @@ tools/
   blender_stamp_swing.py   Blender-side timeline/action setup
 build/                outputs (committed)
   enemies/  environment/
+web/                  playable browser prototype (Three.js, vendored)
+  main.js             player, enemies, layout, swing timing, HUD, audio, intro
+  audio/calm_loop.*   music bed, shipped as Ogg/Opus + M4A/AAC
+  video/intro.mp4     authored intro film, 15.04 s — H.264, not reproducible
+  screenshots/        recorded reels + the VP8 intro fallback
+  vendor/three/       vendored r160 — never edited, no CDN
 ```

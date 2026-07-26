@@ -21,6 +21,7 @@ Every tunable number lives in the RIG / STAMP / HAND dicts near the top.
 import argparse
 import math
 import os
+import random
 import sys
 import time
 
@@ -42,6 +43,14 @@ HAND = {
     "palm_t1": 0.029,
     "palm_rings": 11,
     "palm_sides": 18,
+    # How far the palm's domed base reaches back up inside the forearm. It only
+    # has to clear the forearm's own dome, which comes the other way.
+    "wrist_dome": 0.013,
+    # 0.64 puts the rim's furthest point 17.6 mm from the pivot, inside the
+    # forearm's 19.5 mm half-thickness with 1.9 mm to spare; the neck is gone
+    # again by a quarter of the way along the palm, which is still inside.
+    "wrist_neck": 0.64,
+    "wrist_neck_t": 0.24,
     "finger_sides": 10,
     # a gripped bar sits here in hand-local space (used by the grip solver)
     "grip_point": (0.0, -0.0335, 0.072),
@@ -104,25 +113,147 @@ RIG = {
     "grip_r_point": (0.040, 0.2245, 0.0),     # right hand on the T-bar
     "grip_r_axis": (1.0, 0.0, 0.0),
     "grip_r_dorsal": (0.06, 1.0, 0.22),
+    # Spin about the bar. The grip solve cannot see this -- rolling the hand
+    # keeps every fingertip exactly as far from the bar axis -- so it needs its
+    # own measure, NOT an eyeballed render. Setting it by eye is how this
+    # shipped at 300, showing the player a palm.
+    #
+    # The measure: the camera sits at the origin, so take the hand's world +Y
+    # (the back of the hand) and dot it with the direction from the wrist back
+    # to the camera. Positive means knuckles to the player, which is what
+    # gripping a bar to swing it down looks like. It is a necessary measure and
+    # not a sufficient one -- see below, where the best-scoring roll is also the
+    # worst-looking one.
+    #
+    # grip_frame lands grip_point on the bar, and grip_point is ~80 mm from the
+    # wrist, so rolling SWINGS THE WRIST AROUND THE BAR rather than spinning the
+    # hand in place. Roll therefore drags the whole forearm with it, and past
+    # ~30 the hand stopped reading. The old note blamed proximity -- the wrist
+    # arriving near the eye -- and prescribed moving grip_r_point or stamp_pos
+    # outward. Both halves of that are wrong, and were measured before being
+    # believed:
+    #
+    #   Proximity is not the binding constraint. What hides the hand is the
+    #   FOREARM OCCLUDING IT. Rolling swings the wrist up and over, so the
+    #   forearm ends up draped between the eye and the fist, and no amount of
+    #   distance changes that -- it is an angle, not a range.
+    #
+    #   Moving the stamp outward makes it worse, not better. Depth-buffering the
+    #   fist against its own forearm, at roll 45, as stamp_pos slides out:
+    #       shipped   1379 px visible     -30 mm   1130 px     -60 mm   951 px
+    #   The wrist does land further from the eye, exactly as predicted; the tool
+    #   simply shrinks faster than the pose improves.
+    #
+    # What does lift the ceiling is elbow_dir_r -- the one thing the old note
+    # explicitly ruled out ("re-aiming elbow_dir_r does not recover it"). Swung
+    # outboard it takes the forearm off the sight line. At roll 30 that is the
+    # difference between 728 px of visible fist and 1443, on identical geometry.
+    #
+    # So: roll 35, stamp where it was, elbow re-aimed. Measured against the
+    # shipped one-handed pose at roll 0:
+    #
+    #                       roll 0    roll 35 + new elbow
+    #   facing              +0.413    +0.828   knuckles to the player
+    #   visible fist      1290 px   1498 px    16% more hand on screen
+    #   nearest vertex    272.8 mm  298.9 mm   26 mm more clearance, not less
+    #   thumb vs fingers    -1.0 mm  +27.5 mm  thumb near side, fingers far
+    #
+    # Facing alone is a trap and this is where it was nearly shipped: roll 55
+    # scores +0.988, better than the +0.981 recorded as this hand's maximum, and
+    # is visibly worse -- the forearm covers the knuckles and only fingertips
+    # survive. Score the hand you can SEE, not the one you have posed.
+    #
+    # Re-swept at the receding elbow, because that warning was measured at the
+    # old flat one and a different elbow is a different trade. There are two
+    # numbers to satisfy, not one: the back of the hand towards the eye, AND
+    # the fingers not pointing at it -- a fist whose fingertips aim at your
+    # face is the front of a hand, which is not what you see of your own.
+    #
+    #   roll   fist px   dorsal   fingers
+    #      5      4428   +0.528   +0.841   fingertips straight at the player
+    #     35      4042   +0.859   +0.494   what shipped before
+    #     50      3872   +0.957   +0.252
+    #     65      3607   +0.988   -0.024   knuckles square, fingers side-on
+    #     80      2860   +0.936   -0.315   fingers away, a third of the fist lost
+    #     95      1030   +0.789   -0.591
+    #
+    # 65 peaks the facing, takes the fingertips off the camera, and keeps 89%
+    # of the fist. Past it the forearm eats the hand exactly as the old note
+    # said -- the warning was right, the number under it was for another pose.
+    "grip_r_roll": 65.0,
+    # The left hand does not touch the stamp -- it carries the exhibits. These
+    # are VIEW-space, not stamp-space: the arm hangs off the root, so the sheaf
+    # rides the hand and braces, but never inherits the swing.
+    "docs_point": (-0.205, -0.300, -0.430),
+    "docs_axis": (0.86, 0.20, -0.47),
+    "docs_dorsal": (0.10, 1.0, 0.30),
+    "docs_roll": 40.0,
+    "docs_sheets": 7,
+    "docs_size": (0.216, 0.030, 0.279),   # letter width, sheaf thickness, depth
+    # clearance the digits keep off the sheaf, and how far past that they close
+    "docs_grip_pad": 0.0034,
+    "docs_tighten": 0.0,
+    # Where the sheaf sits relative to the wrapped grip axis, in hand space:
+    # +X off the forearm, +Z forward. The solver wraps a cylinder and a slab
+    # 279 mm deep is not one, so the near edge is nudged out to sit ON the axis
+    # rather than 9 mm behind it, and the whole stack is shifted clear of the
+    # forearm -- letter paper is 216 mm wide and the arm passes down one side.
+    #
+    # Residual contact is about 1.5 mm and does not tune away: a fist's bore is
+    # a hole, and a slab 279 mm deep has to be threaded through it, so the
+    # digits cross the paper plane wherever the stack sits. At that depth it
+    # reads as the paper denting under the grip, which is what paper does.
+    "docs_offset": (0.015, 0.0, 0.009),
+    "grip_l_roll": 300.0,
     "grip_l_point": (-0.0955, 0.0281, 0.0347),  # left hand on the foregrip
     "grip_l_axis": (0.888, 0.363, -0.283),
     "grip_l_dorsal": (-0.14, 1.0, 0.32),
     # forearms: direction from wrist back to the elbow, and length
     "forearm_len": 0.278,
-    "elbow_dir_r": (0.44, -0.80, 0.41),
+    # Swung outboard and flattened, so the forearm no longer runs up the line of
+    # sight between the eye and the fist. This is the half of the grip solve
+    # that roll cannot do: facing says which way the hand is turned, this says
+    # whether the player can see it. It is what actually lifted the roll
+    # ceiling -- see grip_r_roll for the numbers.
+    # The Z is the whole point. At 0.00 the elbow sat at exactly the wrist's
+    # depth, so the forearm lay flat across the view: a side-on picture of an
+    # arm rather than your own arm running away from you, which is what made
+    # the hand read as seen from the front in a first-person view.
+    #
+    # Recession costs visible fist, because pulling the elbow towards the
+    # camera puts forearm between eye and hand, and it is worth measuring
+    # rather than guessing -- painting the hand and counting its surviving
+    # pixels through the whole scene:
+    #
+    #   Z  0.00 -> 5141 px      Z  0.45 -> 4160 px      Z  0.71 -> 4040 px
+    #   Z  0.31 -> 4690 px      Z  0.58 -> 4042 px
+    #
+    # The loss saturates around 0.6, so past that you are paying nothing for
+    # more recession and gaining nothing either. 0.58 it is.
+    "elbow_dir_r": (0.70, -0.45, 0.60),
     "elbow_dir_l": (-0.42, -0.82, 0.39),
     "forearm_bow_r": (0.026, -0.016, 0.024),
     "forearm_bow_l": (-0.026, -0.020, 0.022),
     # forearm cross-section
     "r_elbow": (0.0525, 0.0475),
     "r_mid": (0.0435, 0.0385),
-    "r_wrist": (0.0325, 0.0252),
+    # The wrist has to be no fatter than the hand it enters, or the joint shows
+    # however it is capped: this was 32.5 x 25.2 against a palm measuring
+    # 27.5 x 17.0 at its base, so the arm was 5 mm wider and 8 mm thicker than
+    # the thing meant to hide it. Now it lands just proud of the palm's rim --
+    # enough to bury it, not enough to read as a cuff -- and a wrist that is
+    # flatter than the forearm's belly is what a wrist actually is.
+    "r_wrist": (0.0290, 0.0195),
+    # How far past the wrist the forearm's dome reaches, along its own axis.
+    # It has to cover the palm's necked base, which comes the other way.
+    "wrist_dome": 0.015,
     "sleeve_pad": 0.0098,
     "sleeve_t0": -0.95,       # extends behind the elbow, off-camera
     "sleeve_t1": 0.46,        # rolled up to mid-forearm
     "cuff_t0": 0.29,          # where the roll starts
     "cuff_bulge": 0.0105,
     "watch_t": 0.862,
+    "watch_roll": 120.0,  # spin about the forearm; see build_watch
 }
 
 # ---------------------------------------------------------------- impact
@@ -181,6 +312,7 @@ MAT = {
     "watch_dial": "Watch_Dial",
     "wheels": "Bates_Number_Wheels",
     "steel_cast": "Steel_Cast",
+    "paper": "Exhibit_Paper",
 }
 
 
@@ -222,10 +354,25 @@ def mirror_node(node, mirror_matrix=False):
     return node
 
 
-def grip_frame(axis, dorsal, point, grip_local):
+def grip_frame(axis, dorsal, point, grip_local, roll=0.0):
     """Rigid transform placing a hand so `grip_local` lands on `point`
-    with hand-local +X along `axis` and +Y towards `dorsal`."""
+    with hand-local +X along `axis` and +Y towards `dorsal`.
+
+    `roll` spins the hand about the bar in degrees, which is the one degree of
+    freedom the grip is blind to: every fingertip stays exactly as far from the
+    bar axis however far you roll it, so a measured-clean grip can still be
+    showing the player its palm. Positive rolls the back of the hand towards
+    the camera.
+    """
     x = vec.norm(axis)
+    if roll:
+        # Rodrigues: spin the dorsal reference about the bar itself
+        a = roll * D2R
+        c, s = math.cos(a), math.sin(a)
+        d = vec.norm(dorsal)
+        dorsal = vec.add(
+            vec.add(vec.mul(d, c), vec.mul(vec.cross(x, d), s)),
+            vec.mul(x, vec.dot(x, d) * (1.0 - c)))
     y = vec.norm(vec.sub(dorsal, vec.mul(x, vec.dot(dorsal, x))))
     z = vec.cross(x, y)
     origin = vec.sub(point, (
@@ -325,15 +472,20 @@ def build_finger(name, root, radius, phal, splay, bends, side_uv, suffix=""):
     """
     n = HAND["finger_sides"]
     seg_names = ("", "_Mid", "_Tip")
-    radii = [radius, radius * 0.90, radius * 0.80, radius * 0.72]
+    # Real fingers lose about 40% from the proximal knuckle to the tip. The old
+    # 1.0 -> 0.72 was too gentle, which is half of why these read as tubes.
+    radii = [radius, radius * 0.86, radius * 0.72, radius * 0.58]
     v0, v1 = side_uv
 
     nodes = []
     for i, (ln, bend) in enumerate(zip(phal, bends)):
         m = M.Mesh("Finger_" + name + seg_names[i] + suffix, MAT["skin"])
-        # slightly wider than deep, and the knuckle end a touch fatter
-        M.capsule(m, ln, radii[i] * (1.06 if i else 1.10), radii[i + 1], n,
-                  group=0, uv_rect=(0.0, v0, 1.0, v1),
+        # The joint end used to be fattened (1.06/1.10) and the end domes left
+        # near-round, which put a visible ball at every joint and made the
+        # digits read as sausage links. Knuckles are barely wider than the
+        # shaft, and a flatter dome keeps the silhouette continuous.
+        M.capsule(m, ln, radii[i] * (1.0 if i else 1.03), radii[i + 1], n,
+                  group=0, uv_rect=(0.0, v0, 1.0, v1), squash=0.52,
                   base=True, tip=(i == len(phal) - 1))
         if i == 0:
             mtx = vec.mat_mul(
@@ -351,7 +503,21 @@ def build_finger(name, root, radius, phal, splay, bends, side_uv, suffix=""):
     return nodes[0]
 
 
-def build_palm(side_uv):
+KNUCKLE_X = [f[1][0] for f in FINGERS]
+
+SIDES = ("R", "L")      # right runs the stamp, left carries the exhibits
+
+
+def build_palm(side_uv, wrist_dir=None):
+    """The palm, from its wrist rim to the knuckles.
+
+    `wrist_dir` is the direction back up the forearm, in this hand's own space.
+    Given it, the palm does not stop at its wrist rim with a flat lid; it runs
+    a little way up inside the arm and closes there. The lid was the flat facet
+    chiselled across the top of the wrist -- the forearm arrives at the side of
+    the hand, so it never covered the hand's own cap any more than the hand
+    covered its.
+    """
     m = M.Mesh("Palm", MAT["skin"])
     n = HAND["palm_sides"]
     rings = HAND["palm_rings"]
@@ -363,11 +529,22 @@ def build_palm(side_uv):
         w = HAND["palm_w0"] + (HAND["palm_w1"] - HAND["palm_w0"]) * \
             vec.smoothstep(min(1.0, t * 1.15))
         th = HAND["palm_t0"] + (HAND["palm_t1"] - HAND["palm_t0"]) * t
+        # Neck the rim down so it fits inside the arm it enters. The hand is
+        # mounted about 116 deg off the forearm, so the palm's WIDTH lies
+        # across the forearm's THICKNESS: a rim reaching 27.5 mm from the
+        # pivot cannot hide in a tube 19.5 mm thick, whatever caps it, and no
+        # ball joint fixes that either -- anything wide enough to cover a
+        # 55 mm rim is wider than the arm. Necking the first fifth of the palm
+        # costs nothing visible, because that part is inside the arm.
+        neck = HAND["wrist_neck"] + (1.0 - HAND["wrist_neck"]) * \
+            vec.smoothstep(min(1.0, t / HAND["wrist_neck_t"]))
+        w *= neck
+        th *= neck
         # the palm arches: knuckle end drops slightly to the palmar side
         y = -0.005 * t * t
         z = L * t
         # knuckle ridge: the back of the hand swells just before the fingers
-        ridge = math.exp(-((t - 0.88) ** 2) / 0.012) * 0.0055
+        ridge = math.exp(-((t - 0.88) ** 2) / 0.012) * 0.0072
         prof = M.profile_super(n, w * 0.5, th * 0.5, 2.25)
         ring = []
         for (px, py) in prof:
@@ -377,13 +554,33 @@ def build_palm(side_uv):
             hypo = math.exp(-((t - 0.45) ** 2) / 0.055) * \
                 max(0.0, px / (w * 0.5)) * max(0.0, -py / (th * 0.5)) * 0.006
             grow = 1.0 + (thenar + hypo) / max(1e-5, th * 0.5)
-            dorsal = ridge * max(0.0, py / (th * 0.5))
+            # Four knuckles, not one swell. The ridge used to run flat across
+            # the whole hand, so the fingers emerged from an unbroken mass and
+            # the back of the hand read as a mitten. Lobing it on the finger
+            # roots puts a valley between each pair, which is the articulation
+            # the silhouette was missing.
+            lobe = 0.0
+            for _fx in KNUCKLE_X:
+                lobe += math.exp(-((px - _fx) ** 2) / 0.000075)
+            dorsal = (ridge * max(0.0, py / (th * 0.5))
+                      * (0.42 + 0.78 * min(1.0, lobe)))
             ring.append((px - thenar * 0.9, y + py * grow + dorsal, z))
         # close the seam
         ring[-1] = ring[0]
         out.append(ring)
+
     m.add_loft(out, uv_rect=(0.0, v0, 1.0, v1), group=0)
-    m.add_grid_cap(out[0], group=1, flip=True)
+
+    # ---- the wrist end, closed into the arm
+    if wrist_dir is None:
+        m.add_grid_cap(out[0], group=1, flip=True)
+    else:
+        # Domed, and aimed back up the forearm so it closes inside it. The ring
+        # is reversed because this end faces the other way: dome_tip follows
+        # the ring's own winding, and the base ring is wound for the loft.
+        apex = vec.mul(vec.norm(wrist_dir), HAND["wrist_dome"])
+        M.dome_tip(m, out[0][::-1], apex, steps=2, group=1,
+                   uv_rect=(0.0, v0, 1.0, v0 + (v1 - v0) * 0.04), bulge=0.85)
     knuckle = (0.0, -0.005 * 1.0, L + HAND["palm_t1"] * 0.42)
     M.dome_tip(m, out[-1], knuckle, steps=2, group=0,
                uv_rect=(0.0, v1 - (v1 - v0) * 0.05, 1.0, v1), bulge=0.55)
@@ -401,15 +598,18 @@ def build_thumb(side_uv, curl=(34.0, 30.0), splay=-52.0, twist=-26.0,
     n = HAND["finger_sides"]
     radius = 0.0148
     phal = (0.038, 0.030)
-    radii = (radius, radius * 0.90, radius * 0.80)
+    # A thumb is not a fifth finger: it stays broad through the pad and barely
+    # narrows, which is what separates its silhouette from the digits.
+    radii = (radius, radius * 0.94, radius * 0.84)
     v0, v1 = side_uv
     root = (-HAND["palm_w0"] * 0.50, -0.008, 0.026)
 
     nodes = []
     for i, (ln, ang) in enumerate(zip(phal, curl)):
         m = M.Mesh("Thumb" + ("_Tip" if i else "") + suffix, MAT["skin"])
-        M.capsule(m, ln, radii[i] * 1.05, radii[i + 1], n, group=0,
-                  uv_rect=(0.0, v0, 1.0, v1), base=True, tip=(i == 1))
+        M.capsule(m, ln, radii[i], radii[i + 1], n, group=0,
+                  uv_rect=(0.0, v0, 1.0, v1), squash=0.58,
+                  base=True, tip=(i == 1))
         if i == 0:
             mtx = vec.mat_mul(
                 vec.mat_mul(vec.translate(root),
@@ -429,7 +629,7 @@ def build_thumb(side_uv, curl=(34.0, 30.0), splay=-52.0, twist=-26.0,
 
 
 def build_hand(name, bar_radius, grip_point=None, tighten=None, thumb=None,
-               suffix=""):
+               suffix="", wrist_dir=None):
     """A LEFT hand in canonical local space: +Z fingers, +Y dorsal, +X... no.
 
     Canonical space is +Z along the fingers, +Y out of the back of the hand,
@@ -444,7 +644,7 @@ def build_hand(name, bar_radius, grip_point=None, tighten=None, thumb=None,
     grip = grip_point or HAND["grip_point"]
     tighten = tighten or {}
     node = Node(name)
-    node.add_mesh(build_palm(hv))
+    node.add_mesh(build_palm(hv, wrist_dir))
     centre = (grip[2], grip[1])          # handle axis, in the hand's (z, y)
 
     for fname, root, radius, phal, splay in FINGERS:
@@ -530,9 +730,42 @@ def build_arm(name, wrist_world, hand_basis, elbow_dir, bow, watch=False):
         prof = M.profile_super(HAND["palm_sides"], rx, ry, e)
         rings.append(M.ring_from_profile(prof, pts[i], x, y))
     fv = TX.FOREARM_V
+    # ---- into the hand, rather than a lid in mid-air
+    #
+    # The wrist is a T-joint, not a butt joint. The hand is mounted about 116
+    # deg off the forearm axis -- the arm arrives at the SIDE of the hand's
+    # base, because the fist is wrapped round a bar that crosses the forearm --
+    # so the hand never covers the end of the arm. A flat cap there is left
+    # hanging in the open: 13 of its 19 boundary vertices stood clear of the
+    # hand, the worst by 31 mm. That is the hard-edged fin that has been
+    # sticking out of both wrists, and no amount of tuning the pose moves it,
+    # because it is the end of the tube and not the pose.
+    #
+    # So the tube keeps going, shrinking, aimed at a point inside the fist, and
+    # closes in there where the hand's own mass hides it. The last open ring is
+    # still proud of the palm's rim, which is what buries the palm's own cap in
+    # turn -- the two caps used to stick out of each other.
+    # A dome, not a tube with a lid on it. Two things were tried and measured
+    # first, and both are worse:
+    #
+    #   a flat cap    left 13 of its 19 boundary vertices standing clear of the
+    #                 hand, the worst by 31 mm -- the hard-edged fin that was
+    #                 sticking out of both wrists;
+    #   a tapered tube run on into the fist came out of the far side as a row
+    #                 of prongs, because a tube whose rings travel 116 deg off
+    #                 their own normal is a sheared prism and reads as one.
+    #
+    # A dome has no flat facet from any angle and no silhouette of its own to
+    # go wrong. Paired with the palm's own domed base, which is necked to fit
+    # inside this one, the two convex surfaces simply overlap and the crossing
+    # reads as the crease a wrist has anyway.
     skin.add_loft(rings, uv_rect=(0.0, fv[0], 1.0, fv[1]), group=0)
     skin.add_grid_cap(rings[0], group=1, flip=True)
-    skin.add_grid_cap(rings[-1], group=2)
+    tan_end = vec.norm(vec.sub(pts[-1], pts[-2]))
+    M.dome_tip(skin, rings[-1], vec.mad(pts[-1], tan_end, RIG["wrist_dome"]),
+               steps=2, group=2,
+               uv_rect=(0.0, fv[1] - (fv[1] - fv[0]) * 0.04, 1.0, fv[1]),
+               bulge=0.85)
 
     # ---- shirt sleeve, rolled to mid-forearm with a thick cuff
     # Behind the elbow the sleeve follows the straight tangent rather than
@@ -594,6 +827,19 @@ def build_watch(path_at, frame_fn, ts):
     # match the forearm's own twisted frame at the nearest sample
     i = min(range(len(ts)), key=lambda k: abs(ts[k] - t))
     x, y = frame_fn(i)
+    # The forearm's twist is derived from the hand, so rolling the grip rolls
+    # the watch with it and can bury the case under the wrist. This offset
+    # spins it back around the arm so the dial stays where it can be read.
+    if RIG.get("watch_roll"):
+        a = RIG["watch_roll"] * D2R
+        c, s = math.cos(a), math.sin(a)
+
+        def spin(v):
+            return vec.add(
+                vec.add(vec.mul(v, c), vec.mul(vec.cross(fwd, v), s)),
+                vec.mul(fwd, vec.dot(fwd, v) * (1.0 - c)))
+
+        x, y = spin(x), spin(y)
     rx, ry = forearm_profile(t)
 
     node = Node("Watch_L")
@@ -830,26 +1076,66 @@ def build_stamp(bates="000137"):
                    hr * 0.95, hr * 0.70, 18, group=0)
     node.add_mesh(caps)
 
-    # ---- side foregrip ---------------------------------------------------
-    gr = M.Mesh("Stamp_Foregrip", MAT["grip"])
-    g0, g1 = S["grip_root"], S["grip_tip"]
-    gp = [vec.lerp(g0, g1, i / 11.0) for i in range(12)]
-    M.tube_along_path(gr, gp, lambda t: M.profile_ellipse(
-        16, S["grip_r"] * (0.94 + 0.09 * math.sin(t * math.pi)),
-        S["grip_r"] * 0.93), up_hint=(0.0, 1.0, 0.0), group=0,
-        cap_start=True, cap_end=True)
-    node.add_mesh(gr)
+    # The side foregrip is gone. A Bates numbering stamp is a one-handed desk
+    # tool -- you hold it and drive it down -- so the two-handed grip was an
+    # invention of the viewmodel rather than anything the object called for.
+    # The left hand now carries the exhibits instead.
 
-    gcap = M.Mesh("Stamp_ForegripFittings", MAT["orange"])
-    d = vec.norm(vec.sub(g1, g0))
-    M.cylinder(gcap, vec.mad(g0, d, -0.004), vec.mad(g0, d, 0.016),
-               S["grip_r"] * 1.20, S["grip_r"] * 1.02, 18, group=0,
-               up_hint=(0.0, 1.0, 0.0))
-    M.cylinder(gcap, vec.mad(g1, d, -0.012), vec.mad(g1, d, 0.006),
-               S["grip_r"] * 1.02, S["grip_r"] * 1.18, 18, group=3,
-               up_hint=(0.0, 1.0, 0.0))
-    node.add_mesh(gcap)
+    return node
 
+
+def build_documents(name="Exhibits"):
+    """The sheaf of exhibits the left hand carries.
+
+    Built in the grip's own frame: +X along the gripped edge, +Y the sheaf
+    normal, +Z running away from the hand. The hand grips the near edge, so the
+    stack extends forward and the fingers close on a slab about as thick as the
+    bar the foregrip used to be.
+
+    The origin is the gripped edge, NOT the wrist: the caller hangs this off
+    HAND["grip_point"], which is the one point the finger solver actually wraps.
+    Build it around the wrist instead and the fingers close on air in front of
+    the paper while the slab runs back through the palm -- which is exactly what
+    it used to do, 6 to 8 cm of it.
+    """
+    w, th, d = RIG["docs_size"]
+    n = RIG["docs_sheets"]
+    node = Node(name)
+    mesh = M.Mesh("Exhibit_Stack", MAT["paper"])
+    rnd = random.Random(4021)
+    t = th / n * 0.72
+    for i in range(n):
+        # each sheet fanned a little, so the stack reads as paper not a block
+        f = i / max(1, n - 1) - 0.5
+        # span exactly `th`: the sheet is placed by its BASE, so the top one has
+        # to start a sheet-thickness short of the top or the stack ends up
+        # th + t deep and hanging off centre -- 3 mm of paper that the grip was
+        # never solved against, all of it on one side.
+        y = -th * 0.5 + (th - t) * (i / max(1, n - 1))
+        sx = rnd.uniform(-0.004, 0.004) + f * 0.010
+        sz = rnd.uniform(-0.006, 0.010)
+        yaw = rnd.uniform(-0.9, 0.9) + f * 2.4
+        c, sn = math.cos(yaw * D2R), math.sin(yaw * D2R)
+        # wound so the ring keeps its original orientation in XZ -- the caps
+        # below take their winding from it, so reversing it inverts the normals
+        corners = [(-w * 0.5, d), (w * 0.5, d), (w * 0.5, 0.0), (-w * 0.5, 0.0)]
+        pts = []
+        for (px, pz) in corners:
+            rx = px * c - pz * sn + sx
+            rz = px * sn + pz * c + sz
+            pts.append((rx, rz))
+        base = len(mesh.pos)
+        for yy in (y, y + t):
+            for (px, pz) in pts:
+                mesh.add_vertex((px, yy, pz),
+                                ((px / w) + 0.5, pz / d))
+        b0, b1 = base, base + 4
+        mesh.add_face((b1 + 0, b1 + 1, b1 + 2, b1 + 3), 0)      # top
+        mesh.add_face((b0 + 3, b0 + 2, b0 + 1, b0 + 0), 1)      # bottom
+        for k in range(4):
+            k2 = (k + 1) % 4
+            mesh.add_face((b0 + k, b0 + k2, b1 + k2, b1 + k), 2)
+    node.add_mesh(mesh)
     return node
 
 
@@ -881,6 +1167,7 @@ def build_scene(bates="000137", images=None):
                             "stamp_die_basecolor", "stamp_die_mr"))
     scene.material(Material(MAT["grip"], (1, 1, 1, 1), 0.0, 1.0,
                             "grip_basecolor", "grip_mr"))
+    scene.material(Material(MAT["paper"], hex_srgb("#F2F0EA"), 0.0, 0.86))
     scene.material(Material(MAT["watch_steel"], hex_srgb("#C9CDD4"), 1.0, 0.16))
     scene.material(Material(MAT["watch_dial"], hex_srgb("#0E1219"), 0.2, 0.18))
     scene.material(Material(MAT["wheels"], (1, 1, 1, 1), 0.85, 0.34,
@@ -903,7 +1190,7 @@ def build_scene(bates="000137", images=None):
     stamp_rigid = vec.mat_mul(
         vec.translate(RIG["stamp_pos"]), ready_rotation())
     rig = {"stamp": stamp, "grip_local": {}, "hand_local": {},
-           "arm": {}, "hand": {}, "fingers": {}}
+           "arm_bind": {}, "arm": {}, "hand": {}, "fingers": {}}
     scene.rig = rig
 
     def to_world(p):
@@ -912,8 +1199,12 @@ def build_scene(bates="000137", images=None):
     def dir_world(d):
         return vec.norm(vec.xform_dir(stamp_world, d))
 
+    # Right hand runs the stamp; left carries the exhibits and wears the watch.
+    # The carrying arm is posed in VIEW space, not stamp space, so the sheaf
+    # does not swing with the tool -- see build_swing. SIDES drives this loop
+    # and the swing bake together, so the limb count is one tuple.
     arms = []
-    for side in ("R", "L"):
+    for side in SIDES:
         if side == "R":
             axis = dir_world(RIG["grip_r_axis"])
             dorsal = dir_world(RIG["grip_r_dorsal"])
@@ -927,29 +1218,49 @@ def build_scene(bates="000137", images=None):
                        "Ring": -0.0016, "Pinky": -0.0010}
             thumb = {"curl": (40.0, 34.0), "splay": -56.0, "twist": -20.0,
                      "pitch": -22.0}
+            roll = RIG["grip_r_roll"]
         else:
-            axis = dir_world(RIG["grip_l_axis"])
-            dorsal = dir_world(RIG["grip_l_dorsal"])
-            point = to_world(RIG["grip_l_point"])
+            # VIEW space, not stamp space: this hand carries the exhibits and
+            # must not swing with the tool.
+            axis = vec.norm(RIG["docs_axis"])
+            dorsal = RIG["docs_dorsal"]
+            point = RIG["docs_point"]
             gp = (-HAND["grip_point"][0], HAND["grip_point"][1],
                   HAND["grip_point"][2])
             elbow_dir = RIG["elbow_dir_l"]
             bow = RIG["forearm_bow_l"]
-            # support hand on the foregrip: firm, a shade more relaxed
-            bar_r = STAMP["grip_r"] * RIG["stamp_scale"]
-            tighten = {"Index": -0.0008, "Middle": -0.0012,
-                       "Ring": -0.0010, "Pinky": -0.0006}
-            thumb = {"curl": (36.0, 30.0), "splay": -52.0, "twist": -26.0,
-                     "pitch": -18.0}
+            # Carrying hand: closes on the sheaf, relaxed rather than locked.
+            # The solver wraps a cylinder but the sheaf is a slab, so the radius
+            # is measured off its half-thickness plus a pad -- an arbitrary
+            # fraction of the thickness puts the digits inside the paper, since
+            # the binding contact is the near EDGE, not the flat.
+            bar_r = RIG["docs_size"][1] * 0.5 + RIG["docs_grip_pad"]
+            tighten = dict.fromkeys(("Index", "Middle", "Ring", "Pinky"),
+                                    RIG["docs_tighten"])
+            thumb = {"curl": (34.0, 28.0), "splay": -50.0, "twist": -26.0,
+                     "pitch": -16.0}
+            roll = RIG["docs_roll"]
 
-        hand_world = grip_frame(axis, dorsal, point, gp)
+        hand_world = grip_frame(axis, dorsal, point, gp, roll)
         wrist_world = (hand_world[3], hand_world[7], hand_world[11])
 
         arm_node, arm_world, path_at, frame_info = build_arm(
             "Arm_" + side, wrist_world, hand_world, elbow_dir, bow)
 
+        # Which way is "up the arm", in the hand's own space. The palm runs
+        # that way for a couple of centimetres so its wrist rim finishes inside
+        # the forearm instead of showing as a flat facet across the joint.
+        #
+        # Canonical hand space is a LEFT hand and the right side is mirrored
+        # across X afterwards, so the direction has to be un-mirrored on the
+        # way in or the right palm tucks away from its own arm.
+        back = vec.xform_dir(vec.rigid_inverse(hand_world),
+                             vec.xform_dir(arm_world, (0.0, 0.0, -1.0)))
+        if side == "R":
+            back = (-back[0], back[1], back[2])
+
         hand = build_hand("Hand_" + side, bar_r, gp, tighten, thumb,
-                          "_" + side)
+                          "_" + side, wrist_dir=back)
         hand.matrix = vec.mat_mul(vec.rigid_inverse(arm_world), hand_world)
         if side == "R":
             mirror_node(hand)
@@ -959,6 +1270,14 @@ def build_scene(bates="000137", images=None):
         if side == "L":
             twisted, ts, _pts = frame_info
             arm_node.add(build_watch(path_at, twisted, ts))
+            # Parented to the HAND, at the grip point. Off the arm it stayed put
+            # while the hand counter-rotated through the brace, so the paper
+            # slid inside its own grip; at the wrist it missed the fingers by
+            # 6-8 cm. gp is what the finger solver wrapped, so it is what the
+            # paper has to sit on.
+            docs = build_documents()
+            docs.matrix = vec.translate(vec.add(gp, RIG["docs_offset"]))
+            hand.add(docs)
 
         root.add(arm_node)
         arms.append(arm_node)
@@ -968,6 +1287,7 @@ def build_scene(bates="000137", images=None):
         rig["grip_local"][side] = vec.mat_mul(
             vec.rigid_inverse(stamp_rigid), hand_world)
         rig["hand_local"][side] = list(hand.matrix)
+        rig["arm_bind"][side] = list(arm_node.matrix)
         rig["arm"][side] = arm_node
         rig["hand"][side] = hand
         rig["fingers"][side] = [c for c in hand.children
@@ -1103,17 +1423,34 @@ def build_swing(scene, anim=None):
         squeeze = SWING["grip_squeeze"] * max(0.0, min(1.0, s)) ** 2 * D2R
 
         pose = {rig["stamp"]: full}
-        for side in ("R", "L"):
-            hand_world = vec.mat_mul(rigid, rig["grip_local"][side])
-            hand_local = vec.mat_mul(rig["hand_local"][side], vec.rot_x(-lag))
-            arm_world = vec.mat_mul(hand_world, vec.rigid_inverse(hand_local))
+        for side in SIDES:
+            if side == "R":
+                # welded to the tool: hand world is the stamp times a constant
+                # grip offset, and the forearm follows from there
+                hand_world = vec.mat_mul(rigid, rig["grip_local"][side])
+                hand_local = vec.mat_mul(rig["hand_local"][side],
+                                         vec.rot_x(-lag))
+                arm_world = vec.mat_mul(hand_world,
+                                        vec.rigid_inverse(hand_local))
+                sq = squeeze
+            else:
+                # The carrying arm is not attached to the stamp, so it must not
+                # inherit the swing. It braces instead: a small counter-lift as
+                # the tool comes down, which reads as taking the weight rather
+                # than as a limb pasted into frame.
+                brace = SWING.get("carry_brace", 3.2) * D2R * max(0.0, min(1.0, s))
+                arm_world = vec.mat_mul(rig["arm_bind"][side],
+                                        vec.rot_x(-brace))
+                hand_local = vec.mat_mul(rig["hand_local"][side],
+                                         vec.rot_x(brace * 0.5))
+                sq = squeeze * 0.35
             anim.key_matrix(rig["arm"][side], t, arm_world)
             anim.key_matrix(rig["hand"][side], t, hand_local)
             pose[rig["arm"][side]] = arm_world
             pose[rig["hand"][side]] = hand_local
             for node in rig["fingers"][side]:
                 m = vec.mat_mul(node.bind_local,
-                                vec.rot_x(squeeze * node.mirror_sign))
+                                vec.rot_x(sq * node.mirror_sign))
                 anim.key_matrix(node, t, m)
                 pose[node] = m
         poses.append(pose)
@@ -1175,8 +1512,11 @@ def make_previews(scene, outdir, quick=False):
                 fov_deg=34), False, ["Stamp_Exhibitfy"]),
         ("hand_right_detail", Camera((-0.10, 0.20, -0.16), (0.13, -0.07, -0.44),
                                      fov_deg=34), False, None),
-        ("hand_left_watch", Camera((-0.26, 0.10, -0.20), (-0.05, -0.19, -0.49),
-                                   fov_deg=34), False, None),
+        # Framed on the carrying hand itself. The old aim was set when the sheaf
+        # hung off the wrist and pointed at where it used to be, which is now
+        # empty space with a corner of the stamp in it.
+        ("hand_left_watch", Camera((-0.30, 0.06, -0.14), (-0.20, -0.24, -0.45),
+                                   fov_deg=42), False, None),
     ]
     made = []
     all_roots = list(scene.roots)

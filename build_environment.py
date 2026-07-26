@@ -2,7 +2,7 @@
 """Modular law office kit for "Tom Rexington, Esq.: Bates & Destroy".
 
 Clean but industrial: warm wood, cool gray, fluorescent troffers overhead, and
-just enough scattered paper and worn edge to look lived in. Seven pieces, each
+just enough scattered paper and worn edge to look lived in. Eight pieces, each
 exported on its own so they can be instanced and snapped on a grid.
 
     python3 build_environment.py [--no-preview] [--only desk_chair]
@@ -55,6 +55,8 @@ MAT = {
     "paper": "Paper_Loose",
     "glow": "Light_Fluorescent",
     "steel": "Steel_Trim",
+    "ink": "Ink_Exhibitfy",
+    "ink_glow": "Ink_Beacon",
 }
 
 
@@ -81,6 +83,19 @@ def materials(scene):
     scene.material(Material(MAT["glow"], P["glow"], 0.0, 0.40,
                             emissive=P["glow"], double_sided=True))
     scene.material(Material(MAT["steel"], hex_srgb("#AEB3BA"), 1.0, 0.30))
+    # The kit is deliberately drab -- grey carpet, beige walls, oak. The ink
+    # pod is the only thing in it the player is meant to spot and chase, so it
+    # gets the brand accent, a bit of gloss to pick up the troffers, and a low
+    # emissive so it does not go to mud at the far end of a corridor. Measured
+    # from 9 m down a hallway it was a ~10 px grey-orange speck without this,
+    # which is not something you can be asked to detour towards.
+    scene.material(Material(MAT["ink"], hex_srgb("#D93E15"), 0.0, 0.34,
+                            emissive=hex_srgb("#5E1A08")))
+    # The beacon is meant to be seen and not lit by: fully emissive, so it holds
+    # its colour at the end of a corridor where the troffers do not reach, and
+    # double-sided so a thin cone does not vanish when viewed from inside it.
+    scene.material(Material(MAT["ink_glow"], hex_srgb("#F2602B"), 0.0, 0.9,
+                            emissive=hex_srgb("#F2602B"), double_sided=True))
 
 
 # ------------------------------------------------------------------ helpers
@@ -212,6 +227,110 @@ def piece_hallway_straight(scene):
 
     papers = M.Mesh("Scatter", MAT["paper"])
     scatter_papers(papers, rnd, 3, (-0.9, 0.9), (-1.7, 1.7))
+    root.add_mesh(papers)
+    return root
+
+
+def piece_hallway_door(scene):
+    """A straight section whose +X wall carries a real opening.
+
+    Identical footprint to hallway_straight, so it drops into the grid in place
+    of one -- the only difference is that one side wall is split around a
+    doorway instead of running solid. The `doorway` module could not do this
+    job: it is a wall to cap a dead end with, laid ACROSS the corridor, and its
+    leaf stands 62 degrees open, which is what made two dead ends read as
+    passages you could walk through when they were not.
+
+    The opening is always on +X. Face it the other way by placing the piece at
+    rot 180; the corridor is symmetric, so nothing else changes.
+    """
+    root = Node("Hallway_Door")
+    rnd = random.Random(29)
+    floor = M.Mesh("Floor", MAT["carpet"])
+    floor_plate(floor, CORRIDOR, MODULE)
+    root.add_mesh(floor)
+
+    walls = M.Mesh("Walls", MAT["wall"])
+    bases = M.Mesh("Baseboards", MAT["base"])
+    half = (CORRIDOR + WALL_T) * 0.5
+    wall_panel(walls, bases, -half, 0.0, MODULE)
+
+    # +X wall, in three parts: two returns and a header over the opening.
+    side = (MODULE - DOOR_W) * 0.5
+    for sz in (-1.0, 1.0):
+        wall_panel(walls, bases, half, sz * (DOOR_W * 0.5 + side * 0.5), side)
+    box(walls, (WALL_T, WALL_H - DOOR_H, DOOR_W),
+        (half, DOOR_H + (WALL_H - DOOR_H) * 0.5, 0.0), 0.004, 0,
+        (0, 0, DOOR_W * 0.55, (WALL_H - DOOR_H) * 0.55))
+    root.add_mesh(walls)
+    root.add_mesh(bases)
+
+    # A lined frame, so the opening reads as a door and not as a hole where
+    # the wall failed to generate.
+    frame = M.Mesh("Frame", MAT["wood_dk"])
+    ft = 0.055
+    for sz in (-1.0, 1.0):
+        box(frame, (WALL_T + 0.03, DOOR_H + ft, ft),
+            (half, (DOOR_H + ft) * 0.5, sz * (DOOR_W * 0.5 + ft * 0.5)), 0.006)
+    box(frame, (WALL_T + 0.03, ft, DOOR_W + ft * 2),
+        (half, DOOR_H + ft * 0.5, 0.0), 0.006)
+    root.add_mesh(frame)
+
+    ceil = M.Mesh("Ceiling", MAT["ceiling"])
+    ceiling_plate(ceil, CORRIDOR, MODULE, WALL_H)
+    root.add_mesh(ceil)
+
+    troffer(scene, root, 0.0, -1.0)
+    troffer(scene, root, 0.0, 1.0)
+
+    papers = M.Mesh("Scatter", MAT["paper"])
+    scatter_papers(papers, rnd, 3, (-0.9, 0.9), (-1.7, 1.7))
+    root.add_mesh(papers)
+    return root
+
+
+SIDE_W, SIDE_D = 5.00, MODULE       # depth matches the module it opens off
+
+
+def piece_side_office(scene):
+    """A room off the corridor, entered through hallway_door.
+
+    Origin is the middle of the doorway at floor level, on the OUTER face of
+    the corridor wall, and the room runs out along +X from there. That is what
+    makes placement one number: put it at the hall centre plus (CORRIDOR +
+    WALL_T) / 2 + WALL_T / 2 and the two line up exactly.
+
+    It has no -X wall on purpose. Its depth is one module, so the hallway_door
+    it opens off already covers that whole face -- building a second wall there
+    would mean two coplanar slabs fighting over the same pixels.
+    """
+    root = Node("Side_Office")
+    rnd = random.Random(37)
+    inner = WALL_T * 0.5
+
+    floor = M.Mesh("Floor", MAT["carpet"])
+    floor_plate(floor, SIDE_W, SIDE_D, (SIDE_W * 0.5, 0.0, 0.0))
+    root.add_mesh(floor)
+
+    walls = M.Mesh("Walls", MAT["wall"])
+    bases = M.Mesh("Baseboards", MAT["base"])
+    wall_panel(walls, bases, SIDE_W + inner, 0.0, SIDE_D + WALL_T)
+    for sz in (-1.0, 1.0):
+        wall_panel(walls, bases, SIDE_W * 0.5,
+                   sz * (SIDE_D * 0.5 + inner), SIDE_W, along_z=False)
+    root.add_mesh(walls)
+    root.add_mesh(bases)
+
+    ceil = M.Mesh("Ceiling", MAT["ceiling"])
+    slab_box(ceil, SIDE_W, CEIL_T, SIDE_D,
+             (SIDE_W * 0.5, WALL_H + CEIL_T * 0.5, 0.0), 1.6)
+    root.add_mesh(ceil)
+
+    troffer(scene, root, SIDE_W * 0.35, -1.0)
+    troffer(scene, root, SIDE_W * 0.35, 1.0)
+
+    papers = M.Mesh("Scatter", MAT["paper"])
+    scatter_papers(papers, rnd, 5, (0.6, SIDE_W - 0.5), (-1.5, 1.5))
     root.add_mesh(papers)
     return root
 
@@ -518,14 +637,213 @@ def piece_reception_counter(scene):
     return root
 
 
+# The bonus round happens here rather than in a corridor.
+#
+# A corridor is 1.72 m of walkable width, so a full sidestep from its
+# centreline is 0.86 m, and the binder collision had to be shaved twice to keep
+# the dodge winnable at all -- the round was being balanced against the
+# hallway rather than designed. This room is 9 x 7 m of clear floor: enough to
+# commit to a direction, enough for counsel to work the room instead of
+# standing at one end of a tube.
+#
+# The table runs along a SIDE wall, not the far one. In the middle it would be
+# a pillar, and a pillar is where you stand still and win by hiding, which is
+# the opposite of what the round asks for -- and across the far end it takes
+# away the only place counsel can stand, which is worse: he spawned inside it,
+# failed his own line-of-sight test and threw nothing for a whole round.
+# Depth matters as much as width. At 7 m deep, counsel stood 3.7 m from the
+# door and a binder crossed that in 0.49 s -- less reaction time than the
+# corridor's 0.95 s, so the round would have been harder in the bigger room,
+# which is not the point. At 8.5 m he sets up 6.2 m away.
+CONF_W, CONF_D = 10.0, 8.5
+
+
+def piece_conference_room(scene):
+    root = Node("Conference_Room")
+    rnd = random.Random(41)
+
+    floor = M.Mesh("Floor", MAT["carpet"])
+    floor_plate(floor, CONF_W, CONF_D)
+    root.add_mesh(floor)
+
+    walls = M.Mesh("Walls", MAT["wall"])
+    bases = M.Mesh("Baseboards", MAT["base"])
+    hx = (CONF_W + WALL_T) * 0.5
+    hz = (CONF_D + WALL_T) * 0.5
+    wall_panel(walls, bases, hx, 0.0, CONF_D + WALL_T * 2)
+    wall_panel(walls, bases, -hx, 0.0, CONF_D + WALL_T * 2)
+    wall_panel(walls, bases, 0.0, hz, CONF_W + WALL_T * 2, along_z=False)
+    # the -Z wall carries the doorway you are shown in through
+    side = (CONF_W - DOOR_W) * 0.5
+    for sx in (-1.0, 1.0):
+        cx = sx * (DOOR_W * 0.5 + side * 0.5)
+        box(walls, (side, WALL_H, WALL_T), (cx, WALL_H * 0.5, -hz), 0.004, 0,
+            (0, 0, side * 0.55, WALL_H * 0.55))
+        box(bases, (side, BASE_H, WALL_T * 1.3), (cx, BASE_H * 0.5, -hz), 0.004)
+    box(walls, (DOOR_W, WALL_H - DOOR_H, WALL_T),
+        (0.0, DOOR_H + (WALL_H - DOOR_H) * 0.5, -hz), 0.004, 0,
+        (0, 0, DOOR_W * 0.55, (WALL_H - DOOR_H) * 0.55))
+    root.add_mesh(walls)
+    root.add_mesh(bases)
+
+    ceil = M.Mesh("Ceiling", MAT["ceiling"])
+    ceiling_plate(ceil, CONF_W, CONF_D, WALL_H)
+    root.add_mesh(ceil)
+    for x in (-3.0, 0.0, 3.0):
+        for z in (-2.3, 2.3):
+            troffer(scene, root, x, z)
+
+    # ---- the table, against the long wall, with chairs tucked under it
+    # slab_box, not slab, for everything small. slab() chamfers, and a chamfer
+    # is a 24-sided loft: about a hundred quads for a chair leg nobody will
+    # ever look at. Six faces is the right price for a leg. Only the table top
+    # keeps its chamfer, because that edge is at eye height and catches light.
+    table = M.Mesh("Table", MAT["wood"])
+    TL, TD, TH = 4.60, 1.15, 0.74      #長 along Z, deep along X
+    tx = -CONF_W * 0.5 + 1.05
+    slab(table, TD, TL, 0.055, (tx, TH, 0.0), 1.0)
+    for sz in (-1.0, 1.0):
+        slab_box(table, TD * 0.62, TH, 0.09,
+                 (tx, TH * 0.5, sz * (TL * 0.5 - 0.42)), 1.0)
+    root.add_mesh(table)
+
+    chairs = M.Mesh("Chairs", MAT["plastic"])
+    for i in range(6):
+        cz = -TL * 0.5 + 0.6 + i * (TL - 1.2) / 5.0
+        cx = tx + TD * 0.5 + 0.22
+        slab_box(chairs, 0.44, 0.045, 0.46, (cx, 0.45, cz), 1.0)
+        slab_box(chairs, 0.05, 0.42, 0.44, (cx + 0.19, 0.68, cz), 1.0)
+        for ox, oz in ((-0.16, -0.18), (-0.16, 0.18), (0.16, -0.18), (0.16, 0.18)):
+            slab_box(chairs, 0.035, 0.45, 0.035, (cx + ox, 0.225, cz + oz), 1.0)
+    root.add_mesh(chairs)
+
+    # ---- whiteboard on the far wall, because every conference room has one
+    board = M.Mesh("Whiteboard", MAT["laminate"])
+    slab_box(board, 2.60, 1.20, 0.05, (0.0, 1.55, hz - WALL_T * 0.5 - 0.03), 1.0)
+    root.add_mesh(board)
+    trim = M.Mesh("Board_Trim", MAT["metal"])
+    slab_box(trim, 2.70, 0.06, 0.07, (0.0, 0.92, hz - WALL_T * 0.5 - 0.04), 1.0)
+    root.add_mesh(trim)
+
+    # ---- boxes of discovery along the short wall: this is where it came from
+    stack = M.Mesh("Discovery", MAT["card"])
+    for i, (bx, by, bz) in enumerate(((CONF_W * 0.5 - 0.45, 0.0, -1.2),
+                                      (CONF_W * 0.5 - 0.45, 0.28, -1.2),
+                                      (CONF_W * 0.5 - 0.45, 0.56, -1.2),
+                                      (CONF_W * 0.5 - 0.92, 0.0, -1.5))):
+        slab(stack, 0.40, 0.31, 0.265, (bx, by + 0.1325, bz), 2.4, chamfer=0.006)
+    root.add_mesh(stack)
+
+    papers = M.Mesh("Scatter", MAT["paper"])
+    scatter_papers(papers, rnd, 7, (-3.6, 3.6), (-2.8, 2.8))
+    root.add_mesh(papers)
+    return root
+
+
+def piece_ink_pod(scene):
+    """Refill canister for the Bates stamp -- the one pickup in the kit.
+
+    A prop that has to read as "grab this" from across a corridor, at 0.20 m
+    tall, against grey carpet. That is what the brand orange is for; the black
+    foot and cap give it enough tonal separation not to melt into the accent,
+    and the steel nozzle says it dispenses rather than stores.
+
+    Deliberately the cheapest piece in the kit -- the prototype instances it
+    four times and respawns them, so it is built at 14 sides rather than the
+    kit's usual 16 and carries no unique texture.
+
+    Sized off what it has to survive on screen, not off a real ink bottle. The
+    longest sightline the layout can produce is about 12 m, and measured at
+    1100x690 the pod covers:
+
+        0.30 m tall ->  9 x 13 px      0.40 m ->  14 x 18      0.51 m -> 19 x 23
+
+    A 9 px speck is not something a player can be asked to detour towards, so
+    this is built at 0.40 m -- a bulk refill jug rather than a desk inkwell, and
+    the point past which it stops reading as something you would pour from. The
+    rest of the legibility comes from the prototype floating it off the carpet
+    rather than from making it any larger.
+    """
+    root = Node("Ink_Pod")
+    N = 14
+    S = 1.95              # ~0.40 m tall -- see the docstring
+
+    foot = M.Mesh("Pod_Foot", MAT["plastic"])
+    M.cylinder(foot, (0.0*S, 0.0*S, 0.0*S), (0.0*S, 0.022*S, 0.0*S), 0.076*S, 0.070*S, N,
+               group=0)
+    root.add_mesh(foot)
+
+    body = M.Mesh("Pod_Body", MAT["ink"])
+    # slight taper and a waist, so it is not a plain tube
+    M.cylinder(body, (0.0*S, 0.022*S, 0.0*S), (0.0*S, 0.072*S, 0.0*S), 0.070*S, 0.064*S, N,
+               group=0, cap_start=False)
+    M.cylinder(body, (0.0*S, 0.072*S, 0.0*S), (0.0*S, 0.112*S, 0.0*S), 0.064*S, 0.067*S, N,
+               group=3, cap_start=False, cap_end=False)
+    M.cylinder(body, (0.0*S, 0.112*S, 0.0*S), (0.0*S, 0.150*S, 0.0*S), 0.067*S, 0.058*S, N,
+               group=6, cap_start=False, cap_end=False)
+    root.add_mesh(body)
+
+    # label band: a hair proud of the body so it catches a different normal
+    band = M.Mesh("Pod_Label", MAT["paper"])
+    M.cylinder(band, (0.0*S, 0.060*S, 0.0*S), (0.0*S, 0.104*S, 0.0*S), 0.0685*S, 0.0700*S, N,
+               group=0, cap_start=False, cap_end=False)
+    root.add_mesh(band)
+
+    cap = M.Mesh("Pod_Cap", MAT["plastic"])
+    M.cylinder(cap, (0.0*S, 0.150*S, 0.0*S), (0.0*S, 0.186*S, 0.0*S), 0.046*S, 0.042*S, N,
+               group=0)
+    root.add_mesh(cap)
+
+    nozzle = M.Mesh("Pod_Nozzle", MAT["steel"])
+    M.cylinder(nozzle, (0.0*S, 0.186*S, 0.0*S), (0.0*S, 0.206*S, 0.0*S), 0.016*S, 0.013*S, N,
+               group=0)
+    root.add_mesh(nozzle)
+
+    # Beacon. The bottle alone loses the argument at range: even at 0.40 m and
+    # floated to eye level it is 14 x 17 px from 12 m, which is the longest
+    # sightline the layout can produce.
+    #
+    # Two emissive quads crossed at right angles, not a column -- a round beam
+    # thin enough to look like a beam is about 2 px wide at that distance, which
+    # is height with no width and reads as nothing at all. Crossed quads are
+    # 0.17 m across for four triangles and present the same silhouette from any
+    # approach.
+    #
+    # Tapered to a point rather than left as a bar. The exporter has no
+    # alphaMode, so the beacon cannot fade out the way a shaft of light should,
+    # and a full-width opaque bar at this emissive reads as an orange pole
+    # growing out of the lid. Narrowing it does the same job with geometry:
+    # bright and wide where it meets the bottle, gone by the top.
+    beam = M.Mesh("Pod_Beacon", MAT["ink_glow"])
+    bw, tw = 0.17, 0.018
+    y0, y1 = 0.20 * S, 0.20 * S + 1.15
+    for ax in ((1.0, 0.0), (0.0, 1.0)):          # crossed: along X, then along Z
+        base = len(beam.pos)
+        for (hw, y, u) in ((-bw * 0.5, y0, 0.0), (bw * 0.5, y0, 1.0),
+                           (tw * 0.5, y1, 1.0), (-tw * 0.5, y1, 0.0)):
+            beam.add_vertex((hw * ax[0], y, hw * ax[1]),
+                            (u, (y - y0) / (y1 - y0)))
+        beam.add_face((base, base + 1, base + 2, base + 3), 0)
+    # Its own node, not a mesh on the root: the beacon exists to be seen from
+    # the far end of a corridor, and at arm's length it fills the screen. The
+    # consumer needs to be able to switch it off, and the exporter merges every
+    # mesh on a node into one primitive, so separating it here is the only way.
+    root.add(Node("Pod_Beacon", meshes=[beam]))
+    return root
+
+
 PIECES = {
     "hallway_straight": (piece_hallway_straight, "Straight hallway section"),
     "hallway_corner": (piece_hallway_corner, "90 degree corner"),
     "doorway": (piece_doorway, "Office entrance with door"),
+    "hallway_door": (piece_hallway_door, "Straight section with a side opening"),
+    "side_office": (piece_side_office, "Room off the corridor"),
     "desk_chair": (piece_desk_chair, "Desk, chair, lamp and clutter"),
     "file_cabinet": (piece_file_cabinet, "Lateral file cabinet"),
     "banker_boxes": (piece_banker_boxes, "Stack of banker's boxes"),
     "reception_counter": (piece_reception_counter, "Reception counter"),
+    "ink_pod": (piece_ink_pod, "Stamp ink refill pickup"),
+    "conference_room": (piece_conference_room, "Bonus round arena"),
 }
 
 

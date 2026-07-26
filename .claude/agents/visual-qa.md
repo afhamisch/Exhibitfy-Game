@@ -60,7 +60,10 @@ stack 44°. If the four start looking like the same run at four speeds, that is
 a regression worth flagging loudly. **Never recommend normalizing those values
 toward each other** — the spread encodes personality.
 
-`Run` is **20 frames** looping; frame 0 and the last frame are the same pose.
+`Run` is one full stride, looping, at 30 fps — 21 / 19 / 31 / 17 keys for
+pleading / privilege / binder / stack, so the heavy binder's cycle genuinely
+takes 1.0 s against the stack's 0.53 s. The last key repeats frame 0. A visible
+hitch or foot-snap at the loop point means the cycle has stopped closing.
 `Stamped` is **26 frames** one-shot: squash on **frame 4**, Bates impression
 punching in with a 1.28× overshoot, then settling limp. One stiff rebound, then
 flat — heavy, not bouncy.
