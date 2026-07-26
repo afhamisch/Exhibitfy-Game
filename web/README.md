@@ -68,6 +68,12 @@ went to **two minutes** with them: the bonus round needs every document filed,
 and eight in ninety seconds put it out of reach. Nothing hard-codes either
 number — `updateClosing` and `verdictFor` both read `state.enemies.length`.
 
+**The paper renders at twice real size.** The art is authored honestly — a
+0.6 m sheet — and honesty read as a smudge: nine pixels at corridor distance.
+`CFG.enemyScale` doubles exhibits and objections at runtime (the GLBs are
+untouched), and every hit radius multiplies by the same factor, so the bigger
+target is also the easier target it appears to be.
+
 The things that attack you were always there. Objections chase you down, shake
 the view and strike filed exhibits back *out* of your binder — but they are
 gated on having filed something (1, 2 and 3 respectively), so a player who

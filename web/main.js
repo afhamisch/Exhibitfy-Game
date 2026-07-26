@@ -38,6 +38,13 @@ const CFG = {
   strikeAhead: 1.05,      // metres in front of the eye
   strikeRadius: 1.05,     // metres
   enemyRadius: 0.26,
+  // Render scale on the paper enemies, exhibits and objections alike. The art
+  // is authored at real size -- a 0.6 m sheet -- which is honest and reads as
+  // a smudge at corridor distance; at 2x a pleading is 18 px at 12 m instead
+  // of 9 and the game stops being an eye test. Runtime-only: the GLBs are
+  // untouched, and every hit radius below multiplies by this too, so the
+  // bigger target is also the easier target it looks like.
+  enemyScale: 2.0,
 
   enemySpeed: 2.45,       // the pleading paper; the rest scale off it
   enemyFlee: 7.0,         // starts running when the player is this close
@@ -499,6 +506,16 @@ scene.background = new THREE.Color(0x0d0f12);
 scene.fog = new THREE.Fog(0x0d0f12, 12, 34);
 
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.02, 120);
+// YXZ, and this line is load-bearing. PointerLockControls steers the camera
+// through its own YXZ euler and writes the QUATERNION -- it never touches
+// rotation.order, so the camera's own euler stays XYZ. Every place this file
+// writes camera.rotation.y directly (arrow turns, faceNearest, touch look)
+// was therefore mixing mouse pitch into its yaw write, and the error lands in
+// ROLL: a few keyboard turns while looking up or down tipped the horizon and
+// eventually flipped the player upside down, at which point left and right
+// visually swap. Reported as exactly that. With the order set to YXZ,
+// rotation.y IS world yaw, whatever the mouse did first.
+camera.rotation.order = 'YXZ';
 
 // The viewmodel is drawn by a second camera on top, so it never clips into
 // walls -- the standard trick for first-person weapons.
@@ -816,6 +833,7 @@ async function boot() {
     const g = proto.clone(true);
     const spawn = LAYOUT.spawns[i % LAYOUT.spawns.length];
     place(g, spawn[0], spawn[1], Math.random() * Math.PI * 2);
+    g.scale.multiplyScalar(CFG.enemyScale);   // before baseScale is captured
     scene.add(g);
     const mixer = new THREE.AnimationMixer(g);
     const runClip = THREE.AnimationClip.findByName(enemyG.animations, `${kind}_Run`);
@@ -1927,6 +1945,7 @@ function spawnObjection() {
   const g = state.objProto[kind].clone(true);
   g.position.set(at.x, 0, at.z);
   g.rotation.y = Math.random() * Math.PI * 2;
+  g.scale.multiplyScalar(CFG.enemyScale);
   scene.add(g);
   const mixer = new THREE.AnimationMixer(g);
   const run = mixer.clipAction(
@@ -2704,7 +2723,7 @@ function updateMarkers() {
 
     MARK.v = MARK.v || new THREE.Vector3();
     // Aim at the middle of the sheet, not the floor between its feet.
-    MARK.v.set(t.p.x, t.p.y + 0.45, t.p.z);
+    MARK.v.set(t.p.x, t.p.y + 0.45 * CFG.enemyScale, t.p.z);
     const dist = camera.position.distanceTo(MARK.v);
     MARK.v.project(camera);
     // `project` mirrors everything behind the camera, so z > 1 has to be
@@ -2752,7 +2771,7 @@ function resolveHit() {
     tmpV.copy(e.root.position).sub(strike);
     tmpV.y = 0;
     const d = tmpV.length();
-    if (d > CFG.strikeRadius + e.o.radius) continue;
+    if (d > CFG.strikeRadius + e.o.radius * CFG.enemyScale) continue;
     if (d < objD) { objD = d; obj = e; }
   }
   if (obj) {
@@ -2778,7 +2797,7 @@ function resolveHit() {
     tmpV.y = 0;
     const d = tmpV.length();
     // the binder is a wider target than a single sheet, and reads that way
-    if (d > CFG.strikeRadius + CFG.enemyRadius * e.v.radius) continue;
+    if (d > CFG.strikeRadius + CFG.enemyRadius * e.v.radius * CFG.enemyScale) continue;
     if (d < bestD) { bestD = d; best = e; }
   }
   state.lastProbe = { at: performance.now(), nearest: bestD, hit: !!best };
