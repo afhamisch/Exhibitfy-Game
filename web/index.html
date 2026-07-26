@@ -99,18 +99,6 @@
     position: absolute; left: 50%; top: 50%; width: 44px; height: 44px;
     border-radius: 50%; background: rgba(242,241,236,.62);
   }
-  /* FIND is the touch half of the F key: there is no keyboard on a phone, and
-     the phone is where turning to face a fleeing document is hardest. It has
-     the primary thumb spot to itself now that redaction is gone. */
-  #find-btn {
-    position: fixed; right: 18px; bottom: 26px; width: 84px; height: 84px;
-    border-radius: 50%; pointer-events: auto;
-    background: rgba(20,22,26,.62); border: 2px solid var(--orange);
-    color: var(--orange); font-size: 12px; font-weight: 700;
-    letter-spacing: .10em; display: flex; align-items: center;
-    justify-content: center; -webkit-tap-highlight-color: transparent;
-  }
-  #find-btn:active { background: var(--orange); color: #fff; }
   /* Under the HUD, not at the bottom of the screen: the bottom edge is where
      the ink gauge and the thumbs are. */
   #touch-hint {
@@ -350,8 +338,39 @@
     pointer-events: none;
   }
   #wake.on { opacity: 1; pointer-events: auto; }
-  #wake .card { max-width: 440px; padding: 28px 34px; }
-  #wake h1 { margin: 0 0 14px; font-size: 30px; letter-spacing: .01em; }
+  /* The verdict is a PLAQUE: walnut ground, double brass rule, engraved
+     caps, the scales up top. Winning a case should look like the thing you
+     would hang behind your desk. */
+  #wake .card {
+    max-width: 460px; padding: 34px 38px 30px; position: relative;
+    background: linear-gradient(160deg, #2a1e14, #1c140d 60%, #241a10);
+    border: 3px double rgba(201, 162, 39, .75); border-radius: 4px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6), inset 0 0 60px rgba(0,0,0,.45);
+  }
+  #wake .card::before {
+    content: "\2696"; display: block; font-size: 34px; margin-bottom: 6px;
+    color: #c9a227; text-shadow: 0 1px 2px rgba(0,0,0,.8);
+  }
+  #wake h1 {
+    margin: 0 0 14px; font-size: 30px; letter-spacing: .04em;
+    color: #e8d9a0; text-transform: none;
+  }
+  /* Fell short, and the office says so the only way it knows how: a rubber
+     stamp straight across the plaque. */
+  #wake.lost .card { border-color: rgba(150, 150, 150, .4); }
+  #wake.lost .card::before { color: #8b8b8b; }
+  #wake.lost .card::after {
+    content: "DENIED"; position: absolute; left: 50%; top: 42%;
+    transform: translate(-50%, -50%) rotate(-14deg);
+    font-size: 64px; font-weight: 900; letter-spacing: .12em;
+    color: rgba(217, 42, 21, .8); border: 6px solid rgba(217, 42, 21, .8);
+    border-radius: 6px; padding: 2px 18px; pointer-events: none;
+    text-shadow: none; mix-blend-mode: screen;
+  }
+  #wake.won .card::after {
+    content: "\1F3C6"; position: absolute; right: 22px; top: 24px;
+    font-size: 28px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.7));
+  }
   #wake p { margin: 0; opacity: .62; font-size: 13px; line-height: 1.7; }
   #wake .tag {
     font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
@@ -382,9 +401,8 @@
      that reported a coarse pointer. -->
 <div id="touch-ui" hidden>
   <div id="stick" hidden><div id="stick-nub"></div></div>
-  <div id="find-btn">FIND</div>
-  <div id="touch-hint">Left thumb walks · right thumb looks · tap to stamp
-    · FIND turns you to the nearest document</div>
+  <div id="touch-hint">Left thumb walks · right thumb looks ·
+    tap anywhere to stamp — the game aims for you</div>
   <div id="rotate-hint" hidden>↻ Turn your phone sideways — you need the width
     to see what is coming</div>
 </div>
@@ -450,8 +468,8 @@
     <table id="keys-touch" hidden>
       <tr><td class="k">Move</td><td class="v">Left thumb, anywhere</td></tr>
       <tr><td class="k">Look</td><td class="v">Right thumb, drag</td></tr>
-      <tr><td class="k">Stamp</td><td class="v">Tap, right side</td></tr>
-      <tr><td class="k">Face nearest</td><td class="v">The FIND button</td></tr>
+      <tr><td class="k">Stamp</td><td class="v">Tap anywhere</td></tr>
+      <tr><td class="k">Aim</td><td class="v">Automatic — drag to override</td></tr>
       <tr><td class="k">Sprint</td><td class="v">Push the stick further</td></tr>
     </table>
     <div id="loading">Loading assets…</div>

@@ -639,7 +639,6 @@ const els = {
   touchUi: document.getElementById('touch-ui'),
   stick: document.getElementById('stick'),
   stickNub: document.getElementById('stick-nub'),
-  findBtn: document.getElementById('find-btn'),
   rotateHint: document.getElementById('rotate-hint'),
   intro: document.getElementById('intro'),
   introVideo: document.getElementById('intro-video'),
@@ -1688,11 +1687,12 @@ function touchStart(e) {
       STICK.id = t.identifier;
       STICK.cx = t.clientX; STICK.cy = t.clientY;
       STICK.dx = 0; STICK.dy = 0;
+      STICK.t0 = e.timeStamp;             // so a left-side tap can be a swing
       showStick(true, t.clientX, t.clientY);
     } else if (!left && LOOK.id === null) {
       LOOK.id = t.identifier;
       LOOK.x = t.clientX; LOOK.y = t.clientY;
-      LOOK.moved = 0; LOOK.t0 = performance.now();
+      LOOK.moved = 0; LOOK.t0 = e.timeStamp;
     }
     TOUCHES.set(t.identifier, t);
   }
@@ -1737,12 +1737,24 @@ function touchEnd(e) {
   const live = new Set();
   for (const t of e.touches) live.add(t.identifier);
   if (STICK.id !== null && !live.has(STICK.id)) {
+    // Tap ANYWHERE stamps. A stab on the left that never really became a walk
+    // is a swing, exactly like a stab on the right that never became a look --
+    // asked for by the person holding the phone, and right: in a panic nobody
+    // audits which half of the glass their thumb landed on.
+    // e.timeStamp on both ends, NOT performance.now() in the handler: a
+    // phone that hitches for 300 ms delivers the touchend late, and measuring
+    // at handler time would turn a genuine 80 ms tap into a "long press" and
+    // silently drop the swing. Event timestamps are stamped by the input
+    // system, so the measurement is of the finger, not of the frame rate.
+    const quick = e.timeStamp - (STICK.t0 || 0) < TAP_MS;
+    const walked = Math.hypot(STICK.dx, STICK.dy) * STICK_R;
+    if (quick && walked < TAP_SLOP && state.playing) startSwing();
     STICK.id = null; STICK.dx = 0; STICK.dy = 0;
     showStick(false);
   }
   if (LOOK.id !== null && !live.has(LOOK.id)) {
     // a quick stab that did not really travel is a swing, not a look
-    const quick = performance.now() - LOOK.t0 < TAP_MS;
+    const quick = e.timeStamp - LOOK.t0 < TAP_MS;
     if (quick && LOOK.moved < TAP_SLOP && state.playing) startSwing();
     LOOK.id = null;
   }
@@ -1756,13 +1768,6 @@ if (TOUCH) {
   el.addEventListener('touchmove', touchMove, { passive: false });
   el.addEventListener('touchend', touchEnd, { passive: false });
   el.addEventListener('touchcancel', touchEnd, { passive: false });
-  // The F key, for thumbs. stopPropagation so the tap is not also read as a
-  // look-drag landing on the right half of the screen.
-  els.findBtn.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (state.playing) faceNearest();
-  }, { passive: false });
 }
 
 function showStick(on, x, y) {
@@ -3217,6 +3222,14 @@ function finish(complete, fromBonus) {
 
   const total = state.enemies.length;
   const v = endingFor(state, total);
+  // The plaque or the stamp. A closed binder is a career artefact -- brass,
+  // scales, engraving. Anything less gets the one treatment this office
+  // understands: a big red DENIED across the certificate. Disbarment is a
+  // loss whatever the binder says -- standing still while a man throws
+  // discovery at you outranks the case you won.
+  const won = complete && state.bonusTier !== 'disbarred';
+  els.wake.classList.toggle('won', won);
+  els.wake.classList.toggle('lost', !won);
   els.wakeTag.textContent = v.tag;
   els.wakeHead.textContent = v.head;
   let body = v.body;
@@ -3262,8 +3275,46 @@ function finish(complete, fromBonus) {
 const vel = new THREE.Vector3();
 const clock = new THREE.Clock();
 
+/**
+ * The phone aims itself. Hunting a fleeing document by dragging a thumb
+ * across glass was the hardest thing on the hardest platform, and a button
+ * (FIND) that had to be found and pressed was the wrong answer -- the player
+ * said auto look is crucial, and it is. So on touch, whenever the right thumb
+ * is NOT on the glass, the camera eases toward the current target: the
+ * closest thing that matters, threats first. The drag always wins the moment
+ * it lands, so the assist never fights a deliberate look; it only fills the
+ * silence between them. Desktop keeps the F key and gets no assist -- a mouse
+ * does not need its wrist held.
+ */
+function touchAutoLook(dt) {
+  if (!TOUCH || LOOK.id !== null || state.snap) return;
+  const here = camera.position;
+  const pick = (list, live) => list
+    .filter(live)
+    .sort((a, b) => a.root.position.distanceTo(here)
+                  - b.root.position.distanceTo(here))[0];
+  // An objection inside its hunting radius outranks everything -- it is the
+  // thing the alarm is already yelling about. Otherwise the nearest document,
+  // and in Round 2 the boss, who is where the binders come from.
+  const obj = pick(state.objections, (o) => o.alive
+    && o.root.position.distanceTo(here) < 9.0);
+  const t = obj || pick(state.enemies, (e) => e.alive)
+    || (state.boss ? state.boss : null);
+  if (!t) return;
+  const want = Math.atan2(here.x - t.root.position.x,
+                          here.z - t.root.position.z);
+  let d = ((want - camera.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+  if (d < -Math.PI) d += Math.PI * 2;
+  if (Math.abs(d) < 0.04) return;               // close enough; stop nudging
+  // Proportional and capped: quick over big errors, gentle near centre, and
+  // never so fast that it reads as the game grabbing the camera.
+  const rate = Math.max(-2.2, Math.min(2.2, d * 3.0));
+  camera.rotation.y += rate * dt;
+}
+
 function updatePlayer(dt) {
   const k = state.keys;
+  touchAutoLook(dt);
 
   // The arrows are the 1992 scheme on purpose: up/down walk, LEFT/RIGHT TURN.
   // WASD strafes and needs the mouse to turn, which is the whole difficulty --
