@@ -179,8 +179,9 @@ authored file cannot be transcoded, only shipped as-is.
 
 Sound is attempted unmuted, since the click that got us here is a gesture. If
 the browser refuses anyway the code retries muted rather than losing the intro
-over it, and only gives up and skips if that is refused too. It replays once
-per session, not once per reload: `sessionStorage` remembers.
+over it, and only gives up and skips if that is refused too. It plays **every**
+time — restarts included, by request: the film is the Exhibitfy brand, it is
+fifteen seconds, and anyone in a hurry is one click from the game.
 
 ## Controls
 
@@ -190,8 +191,9 @@ per session, not once per reload: `sessionStorage` remembers.
 | **Turn** | `←` `→` | Right thumb, drag |
 | Face nearest exhibit | `F` | The FIND button |
 | Stamp | Left click | Tap, right side |
-| Redact | Right click | The orange button |
+| Redact | Right click or `Space` | The orange button |
 | Sprint | `Shift` | Push the stick to its edge |
+| Exhibit markers on/off | `H` | — |
 | Strafe | `W` `A` `S` `D` + mouse | — |
 | Mute | `M` | — |
 | Release cursor | `Esc` | — |
@@ -211,10 +213,15 @@ face the nearest live exhibit, then the objection, then the boss. Hunting a
 0.6 m sheet of paper down a grey corridor with a mouse assumes a skill the rest
 of the game does not.
 
-And every live exhibit carries an orange chevron with its distance, clamped to
-the screen edge with an arrow when it is behind you, fading out inside 4 m
-where the paper speaks for itself. A document at 10 m is about nine pixels of
-white on a grey wall; the marker is what makes it a target.
+And every live exhibit carries a small orange chevron with its distance,
+clamped to the screen edge with an arrow when it is behind you, fading out
+inside 6 m where the paper speaks for itself. A document at 10 m is about nine
+pixels of white on a grey wall; the marker is what makes it a target. They are
+deliberately quiet — bare text, no chip — and **`H` turns them off** if you
+would rather hunt unaided. Objection markers are the exception on both counts:
+amber, chip-framed, pulsing, never faded and immune to the toggle, because a
+threat warning that can be silenced or that vanishes as the threat arrives is
+not a warning.
 
 You fell asleep assembling a trial binder. Chase the paperwork down and stamp
 it — Bates numbering is how exhibits get indexed, so a stamped document isn't

@@ -651,6 +651,7 @@ const els = {
 
 const state = {
   ready: false, score: 0, filed: 0, done: false, t: 0, clock: CFG.dreamTime,
+  markers: true,
   swinging: false, swingT: 0, hitDone: false,
   ink: CFG.inkMax, dryStamps: 0,
   enemies: [], pods: [], objections: [],
@@ -1260,7 +1261,14 @@ state.startBonus = startBonus;              // for tuning from the console
 const TOUCH = (() => {
   const q = matchMedia('(pointer: fine)');
   const fine = q.media === 'not all' ? true : q.matches;
-  return !fine || navigator.maxTouchPoints > 1;
+  // A fine primary pointer is a desktop, HOWEVER many touch points the screen
+  // reports: `|| maxTouchPoints > 1` put the thumb buttons on a Windows
+  // laptop that had a touchscreen and a mouse (seen in a player screenshot).
+  // The one legitimate exception is a fine pointer with no Pointer Lock API
+  // at all -- iPadOS with a trackpad -- where mouse-look cannot work, so the
+  // touch model plays regardless.
+  const lock = 'requestPointerLock' in HTMLElement.prototype;
+  return !fine || !lock;
 })();
 state.touch = TOUCH;
 
@@ -1335,14 +1343,18 @@ function introSource() {
 function playIntro() {
   const v = els.introVideo;
   const src = introSource();
-  // Nothing playable, or seen already this session: straight to the game
-  // rather than a black rectangle or a reel on every replay.
-  if (!src || sessionStorage.getItem('bates-intro') === 'seen') {
+  // Nothing playable: straight to the game rather than a black rectangle.
+  //
+  // Otherwise the reel plays EVERY time, restarts included -- there used to be
+  // a sessionStorage once-per-session gate here, and it was removed on
+  // purpose: the film is fifteen seconds, it is the Exhibitfy brand, and the
+  // brand plays. Anyone in a hurry is one click from the game; do not put the
+  // gate back as a courtesy.
+  if (!src) {
     startBed();
     startWake();
     return;
   }
-  try { sessionStorage.setItem('bates-intro', 'seen'); } catch (e) { /* private mode */ }
 
   state.intro = true;
   els.intro.hidden = false;
@@ -1615,6 +1627,18 @@ addEventListener('keydown', (e) => {
   // is a judgement call somebody has to make with their own eyes, side by side.
   if (e.code === 'KeyP') setRetro(!RETRO.on);
   if (e.code === 'KeyF') faceNearest();
+  if (e.code === 'KeyH') {
+    state.markers = !state.markers;
+    warn(state.markers ? 'Markers on' : 'Markers off');
+  }
+  // Space redacts. The redact hand is on the mouse's second button, which is
+  // fine until the same hand is also steering -- a keyboard redact means the
+  // left hand can do it mid-chase. Guarded so the same press that skips the
+  // intro or the wake does not also fire a redaction.
+  if (e.code === 'Space' && !state.intro && !state.waking && running()) {
+    e.preventDefault();
+    redact();
+  }
   // The arrows scroll the page otherwise, which drags the canvas off screen
   // on the one browser that is not holding the pointer.
   if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -2651,11 +2675,16 @@ function updateMarkers() {
   // the game's own rule that the attacker's silhouette announces itself first.
   const targets = [];
   if (running() && !state.done) {
-    for (const e of state.enemies) {
-      if (e.alive) targets.push({ p: e.root.position, cls: 'mark', sym: '\u25bc' });
+    // Exhibit markers obey state.markers (H toggles it -- a matter of taste,
+    // reported as such). Objection markers do NOT: they are a threat warning,
+    // and a player who turned the wayfinding off has not asked to be ambushed.
+    if (state.markers) {
+      for (const e of state.enemies) {
+        if (e.alive) targets.push({ p: e.root.position, cls: 'mark', sym: '\u25bc' });
+      }
     }
     for (const o of state.objections) {
-      if (o.alive) targets.push({ p: o.root.position, cls: 'mark obj', sym: '\u26a0' });
+      if (o.alive) targets.push({ p: o.root.position, cls: 'mark obj', sym: '\u26a0', warn: true });
     }
   }
   const w = innerWidth, h = innerHeight;
@@ -2692,7 +2721,11 @@ function updateMarkers() {
     el.style.left = `${x * w}px`;
     el.style.top = `${y * h}px`;
     el.textContent = off ? (x < 0.5 ? '\u25c0' : '\u25b6') : `${t.sym} ${Math.round(dist)}m`;
-    el.style.opacity = dist < 4 ? Math.max(0, (dist - 2.2) / 1.8) : 0.9;
+    // Exhibits fade out from 6 m -- close in, the paper speaks for itself and
+    // the label was sitting on top of the thing it labelled. Objections never
+    // fade: a warning that disappears as the threat arrives is not a warning.
+    el.style.opacity = t.warn ? 1
+      : dist < 6 ? Math.max(0, (dist - 3.4) / 2.6) * 0.75 : 0.75;
   }
 }
 

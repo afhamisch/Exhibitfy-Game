@@ -146,26 +146,27 @@
      drawing anything in the 3D scene. Pointer-events off -- they sit over the
      canvas that owns the mouse. */
   #markers { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
+  /* Exhibit markers are a whisper, not a label: bare text, small, faded, and
+     H turns them off entirely. The first pass was a chip with a border and it
+     sat over the game like a debug overlay -- the player said so. */
   #markers .mark {
     position: absolute; transform: translate(-50%, -50%);
-    font-size: 17px; font-weight: 700; letter-spacing: .04em;
+    font-size: 13px; font-weight: 700; letter-spacing: .04em;
     color: var(--orange); white-space: nowrap; line-height: 1;
-    /* A chip, not bare text. Orange-on-grey wall is legible; orange on a
-       white sheet of paper, which is exactly what these sit over, is not. */
-    background: rgba(10,11,13,.62); border: 1px solid rgba(217,62,21,.55);
-    border-radius: 3px; padding: 3px 7px;
-    text-shadow: 0 1px 3px rgba(0,0,0,.95);
+    text-shadow: 0 1px 3px rgba(0,0,0,.95), 0 0 8px rgba(0,0,0,.6);
     transition: opacity .2s linear;
   }
-  @media (pointer: coarse) { #markers .mark { font-size: 14px; } }
-  /* An objection's marker is a warning, not a waypoint: amber, and it pulses.
-     Same amber as the struck score and the low-ink gauge -- everything that
-     costs you shares one colour. */
+  /* An objection's marker is a warning, not a waypoint, and it stays a chip:
+     amber, pulsing, never faded, immune to the H toggle. Same amber as the
+     struck score and the dry gauge -- everything that costs you shares one
+     colour. */
   #markers .mark.obj {
-    color: #ffb020; border-color: rgba(255, 176, 32, .65);
+    font-size: 15px; color: #ffb020;
+    background: rgba(10,11,13,.62); border: 1px solid rgba(255,176,32,.65);
+    border-radius: 3px; padding: 3px 7px;
     animation: objPulse .6s steps(2) infinite;
   }
-  @keyframes objPulse { 50% { opacity: .45; } }
+  @keyframes objPulse { 50% { opacity: .5; } }
 
   /* objection callout — centred under the crosshair, brief */
   #warn {
@@ -399,9 +400,10 @@
       <tr><td class="k">Walk / turn</td><td class="v"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></td></tr>
       <tr><td class="k">Face nearest</td><td class="v"><kbd>F</kbd></td></tr>
       <tr><td class="k">Stamp</td><td class="v">Left click</td></tr>
-      <tr><td class="k">Redact</td><td class="v">Right click</td></tr>
+      <tr><td class="k">Redact</td><td class="v">Right click &middot; <kbd>Space</kbd></td></tr>
       <tr><td class="k">Sprint</td><td class="v"><kbd>Shift</kbd></td></tr>
       <tr><td class="k">Strafe</td><td class="v"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> + mouse</td></tr>
+      <tr><td class="k">Markers</td><td class="v"><kbd>H</kbd></td></tr>
       <tr><td class="k">Mute</td><td class="v"><kbd>M</kbd></td></tr>
       <tr><td class="k">Release</td><td class="v"><kbd>Esc</kbd></td></tr>
     </table>
