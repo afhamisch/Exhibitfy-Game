@@ -1098,7 +1098,9 @@ state.beginPlay = beginPlay;
 // video is then drawn over a game that is already live and simply held still
 // by running(). When the video ends the overlay goes and the world is already
 // yours.
-const INTRO_SRC = './screenshots/gameplay_demo.webm';
+// The 15 s cut, not the full reel: nobody should wait a minute to be allowed
+// to play, and a reel you want to skip is a bad reel.
+const INTRO_SRC = './screenshots/intro.webm';
 let introTimer = null;
 
 function playIntro() {

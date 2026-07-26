@@ -27,6 +27,11 @@ const TAIL = Math.round(FPS * 2.5);
 // How many runs to record before settling. The bonus round is scored in tiers
 // rather than won outright, so this keeps the attempt that survived the most.
 const TRIES = Number(process.argv[3] || 1);
+// The intro cut. A full run is around a minute, which is far too long to sit
+// through before being allowed to play -- Skip exists, but a reel you want to
+// skip is a bad reel. Fifteen seconds of the opening is the hook: the corridor,
+// a document run down, the stamp coming in.
+const INTRO_SECONDS = 15;
 const W = 960, H = 600;
 
 const STUB = () => {
@@ -385,4 +390,33 @@ async function record(browser, framesPath) {
     '-pix_fmt', 'yuv420p', '-y', webm], { stdio: 'inherit' });
   console.log('wrote', webm,
     (fs.statSync(webm).size / 1048576).toFixed(2) + ' MB');
+
+  // ---- and the short cut the title screen plays
+  //
+  // Sliced out of the same frames rather than captured again: it is by
+  // definition the same run, and a second capture would be a second bot with
+  // different luck.
+  const raw = fs.readFileSync(best.path);
+  const frames = [];
+  let i = 0;
+  for (;;) {
+    const a = raw.indexOf('\xff\xd8\xff', i, 'binary');
+    if (a < 0) break;
+    const b = raw.indexOf('\xff\xd9', a, 'binary');
+    if (b < 0) break;
+    frames.push(raw.subarray(a, b + 2));
+    i = b + 2;
+  }
+  const keep = frames.slice(0, Math.min(frames.length, INTRO_SECONDS * FPS));
+  const cutPath = `${OUT}/intro_frames.mjpeg`;
+  fs.writeFileSync(cutPath, Buffer.concat(keep));
+  const intro = `${OUT}/intro.webm`;
+  execFileSync(FFMPEG, ['-hide_banner', '-loglevel', 'error',
+    '-f', 'image2pipe', '-c:v', 'mjpeg', '-r', String(FPS),
+    '-i', 'file:' + cutPath,
+    '-c:v', 'libvpx', '-b:v', '1400k',
+    '-pix_fmt', 'yuv420p', '-y', intro], { stdio: 'inherit' });
+  fs.unlinkSync(cutPath);
+  console.log('wrote', intro, `${(keep.length / FPS).toFixed(1)}s`,
+    (fs.statSync(intro).size / 1048576).toFixed(2) + ' MB');
 })().catch(e => { console.error('FAILED:', e); process.exit(1); });
