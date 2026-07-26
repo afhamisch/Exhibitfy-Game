@@ -843,9 +843,15 @@ async function boot() {
     const hit = mixer.clipAction(hitClip);
     hit.setLoop(THREE.LoopOnce, 1);
     hit.clampWhenFinished = true;
+    // The Bates impression on the page. It rests at scale 1e-4 -- authored
+    // in place, hidden -- and the Stamped clip is what normally reveals it.
+    // Held here so a struck exhibit can be sent back onto the floor WEARING
+    // it: a document that was stamped once should say so.
+    const mark = g.getObjectByName(`${kind}_Bates_Mark`);
     state.enemies.push({
       kind, v, root: g, mixer, run, hit, alive: true,
       heading: g.rotation.y, dead: 0, phase: i * 1.7,
+      mark, markRest: mark ? mark.scale.x : 0,
       // the variants carry their own scale on the root (the binder is 1.16),
       // so the filing shrink has to be relative to it, not an absolute 1
       baseScale: g.scale.clone(), filed: false, restPos: new THREE.Vector3(),
@@ -2073,6 +2079,11 @@ function sustain(e) {
     x.root.rotation.set(0, x.heading, 0);
     x.hit.stop();
     x.run.reset().play();
+    // It keeps the impression it earned. hit.stop() restores the mark to its
+    // hidden rest scale, so this has to come after -- and it is the answer to
+    // "which of these did I already stamp": the one wearing red ink is the
+    // one the objection knocked out of your binder.
+    if (x.mark) x.mark.scale.setScalar(1);
     returned.push(x);
   }
 
@@ -3158,6 +3169,8 @@ function restart() {
     }
     e.hit.stop();
     e.run.reset().play();
+    // a fresh case, a clean page: the impression goes back to hidden
+    if (e.mark) e.mark.scale.setScalar(e.markRest);
   });
 
   // ---- ink pods come back standing, beacons lit
