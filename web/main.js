@@ -214,8 +214,11 @@ const CFG = {
 // scurry come out of the same numbers that made them look that way.
 const VARIANTS = {
   pleading:  { speed: 1.00, flee: 1.00, turn: 1.00, radius: 1.00, stride: 21 },
+  // weave amp was 0.85: measured over a full bot run it cost ~50 s across two
+  // chases, a third of the whole clock on one personality trait. 0.6 still
+  // reads as the dodge it is meant to be; it just stops being half the game.
   privilege: { speed: 0.92, flee: 1.30, turn: 1.25, radius: 0.97, stride: 19,
-               weave: { rate: 2.3, amp: 0.85 } },
+               weave: { rate: 2.3, amp: 0.6 } },
   binder:    { speed: 0.49, flee: 0.80, turn: 0.55, radius: 1.16, stride: 31 },
   stack:     { speed: 1.36, flee: 1.15, turn: 1.35, radius: 1.04, stride: 17 },
 };
@@ -312,6 +315,17 @@ const LAYOUT = {
     { kind: 'reception_counter', x: -10.9, z: -5.6, rot: Math.PI / 2 },
     { kind: 'banker_boxes', x: -9.6, z: -10.9, rot: -0.5 },
     { kind: 'file_cabinet', x: -12.9, z: -2.0, rot: Math.PI / 2 },
+    // Corner landmarks. The markers say WHERE a document is; these say where
+    // YOU are. The four legs of the ring were visually identical, so "which
+    // corridor is this" had no answer at a glance -- each corner now carries
+    // its own furniture signature, placement only, no new assets. All of them
+    // hug the outer wall: the walkable strip is 1.72 m and the precedent gap
+    // past the mid-leg banker's boxes is 0.65 m, so nothing here narrows the
+    // corridor below what already ships.
+    { kind: 'file_cabinet', x: 0.85, z: -10.6, rot: -Math.PI / 2 },  // SE
+    { kind: 'banker_boxes', x: 0.55, z: 4.72, rot: 0.9 },            // NE pair
+    { kind: 'banker_boxes', x: -0.30, z: 4.92, rot: 0.25 },
+    { kind: 'file_cabinet', x: -12.85, z: 4.55, rot: Math.PI / 2 },  // NW
   ],
   // Nothing to cap any more -- the ring has no dead ends. The `doorway` module
   // is still built and still validated; it is simply not what a room is
@@ -949,6 +963,13 @@ const sfx = {
   swing() {                                  // air, pitched down as it travels
     if (!AC) return;
     playNoise(AC.currentTime, 0.16, 'bandpass', 900, 260, 0.5, 0.8);
+  },
+  whoosh(x, z, close) {                      // a binder passing your ear
+    if (!AC) return;
+    const dest = ear(x, z, 1.6);
+    if (!dest) return;
+    playNoise(AC.currentTime, 0.22, 'bandpass', 1500, 240, 0.55 * close, 1.1,
+              dest);
   },
   stamp(hit) {
     if (!AC) return;
@@ -1984,11 +2005,61 @@ function sustain(e) {
   const n = Math.min(state.filed, e.o.strikes);
   state.filed -= n;
   state.struck += n;
+
+  // The struck exhibits COME BACK OUT. This is not flavour, it is the
+  // arithmetic that keeps the game finishable: the bonus round is gated on
+  // filed == total, and before this the strike only decremented the counter --
+  // the exhibit itself stayed invisible and filed-flagged, so one sustained
+  // objection made the binder permanently unclosable. Measured in a full bot
+  // run: all eight stamped, two struck, and forty seconds of fighting
+  // objections over a binder that could never close again. Now the sheet is
+  // thrown back onto the floor near the player, running, and has to be
+  // chased down again -- which is what "struck from the record" should cost.
+  const returned = [];
+  for (const x of state.enemies) {
+    if (returned.length >= n) break;
+    if (!x.filed) continue;
+    x.filed = false;
+    x.alive = true;
+    x.dead = 0;
+    const at = struckReturnPoint();
+    x.root.position.set(at.x, 0, at.z);
+    x.root.scale.copy(x.baseScale);
+    x.root.visible = true;
+    x.heading = Math.random() * Math.PI * 2;
+    x.root.rotation.set(0, x.heading, 0);
+    x.hit.stop();
+    x.run.reset().play();
+    returned.push(x);
+  }
+
   if (n > 0) swear(true);          // losing one off the board deserves it
   warn(n > 0
     ? `${e.o.label} sustained — ${n} exhibit${n === 1 ? '' : 's'} struck`
     : `${e.o.label} sustained — nothing in the binder to strike`);
   updateHud();
+}
+
+/**
+ * A walkable spot near the player for a struck exhibit to land on. Near,
+ * because the sheet is coming out of the binder in your hands; walkable,
+ * because a sheet dropped inside a filing cabinet is unreachable and the whole
+ * point of the return is that you can go get it back.
+ */
+function struckReturnPoint() {
+  const a0 = Math.random() * Math.PI * 2;
+  for (let r = 2.2; r <= 4.6; r += 1.2) {
+    for (let i = 0; i < 8; i++) {
+      const a = a0 + i * Math.PI / 4;
+      const x = camera.position.x + Math.cos(a) * r;
+      const z = camera.position.z + Math.sin(a) * r;
+      if (insideWalk(x, z)) return { x, z };
+    }
+  }
+  // Cornered everywhere near the player: fall back to the fixed spawns, which
+  // boot() asserts are walkable.
+  for (const [x, z] of LAYOUT.spawns) if (insideWalk(x, z)) return { x, z };
+  return { x: camera.position.x, z: camera.position.z };
 }
 
 // ------------------------------------------------------------- bonus round
@@ -2324,6 +2395,22 @@ function updateBinders(dt) {
       hitByBinder();
       continue;
     }
+
+    // A near miss should be HEARD. The round's whole tension is proximity and
+    // proximity was silent -- the only binders with a sound were the ones that
+    // connected, which is exactly backwards. The frame the distance to the
+    // player starts growing again is the pass; volume scales with how close
+    // the pass was, panned through the same ear() everything else uses.
+    const dNow = Math.hypot(p.root.position.x - camera.position.x,
+                            p.root.position.z - camera.position.z);
+    if (p.lastD !== undefined && !p.whooshed && dNow > p.lastD
+        && p.lastD < 1.6) {
+      p.whooshed = true;
+      sfx.whoosh(p.root.position.x, p.root.position.z,
+                 Math.max(0.3, 1 - p.lastD / 1.6));
+    }
+    p.lastD = dNow;
+
     // Gone past, into a wall, or out of the world. Tested against the room's
     // BOUNDS, not against insideWalk: that one also refuses the furniture,
     // which is right for feet and wrong for something flying at 1.2 m. It cost
@@ -2384,6 +2471,8 @@ function deflectBinder(p) {
   p.spin *= -2.2;
   p.deflected = true;
   p.life = 2.4;                   // it is somebody else's problem now
+  state.hitstop = 0.09;           // swatting 2 kg of discovery earns the pause
+  paperBurst(p.root.position, 10, 1.5);
   if (b) b.deflected = (b.deflected || 0) + 1;
   state.deflects += 1;
   state.deflectReady = false;     // the next one has to be dodged
@@ -2557,27 +2646,36 @@ state.faceNearest = faceNearest;
 const MARK = { pool: [] };
 
 function updateMarkers() {
-  const live = running() && !state.done
-    ? state.enemies.filter((e) => e.alive) : [];
+  // Exhibits AND objections. The chevrons first shipped covering only the
+  // things you chase; the one thing that chases YOU was unmarked, which broke
+  // the game's own rule that the attacker's silhouette announces itself first.
+  const targets = [];
+  if (running() && !state.done) {
+    for (const e of state.enemies) {
+      if (e.alive) targets.push({ p: e.root.position, cls: 'mark', sym: '\u25bc' });
+    }
+    for (const o of state.objections) {
+      if (o.alive) targets.push({ p: o.root.position, cls: 'mark obj', sym: '\u26a0' });
+    }
+  }
   const w = innerWidth, h = innerHeight;
-  // The pool grows to the roster, whatever the roster is. It was capped at a
+  // The pool grows to the population, whatever it is. It was capped at a
   // literal 8 -- exactly the roster size, so nothing was visibly wrong, and
   // the ninth enemy anyone adds would have silently gone unmarked.
-  for (let i = 0; i < Math.max(MARK.pool.length, live.length); i++) {
+  for (let i = 0; i < Math.max(MARK.pool.length, targets.length); i++) {
     let el = MARK.pool[i];
-    if (!el && i < live.length) {
+    if (!el && i < targets.length) {
       el = document.createElement('div');
-      el.className = 'mark';
       els.markers.appendChild(el);
       MARK.pool[i] = el;
     }
     if (!el) continue;
-    const e = live[i];
-    if (!e) { el.style.display = 'none'; continue; }
+    const t = targets[i];
+    if (!t) { el.style.display = 'none'; continue; }
 
     MARK.v = MARK.v || new THREE.Vector3();
     // Aim at the middle of the sheet, not the floor between its feet.
-    MARK.v.set(e.root.position.x, e.root.position.y + 0.45, e.root.position.z);
+    MARK.v.set(t.p.x, t.p.y + 0.45, t.p.z);
     const dist = camera.position.distanceTo(MARK.v);
     MARK.v.project(camera);
     // `project` mirrors everything behind the camera, so z > 1 has to be
@@ -2589,10 +2687,11 @@ function updateMarkers() {
     x = Math.max(0.03, Math.min(0.97, x));
     y = Math.max(0.06, Math.min(0.94, y));
 
+    el.className = t.cls;
     el.style.display = 'block';
     el.style.left = `${x * w}px`;
     el.style.top = `${y * h}px`;
-    el.textContent = off ? (x < 0.5 ? '\u25c0' : '\u25b6') : `\u25bc ${Math.round(dist)}m`;
+    el.textContent = off ? (x < 0.5 ? '\u25c0' : '\u25b6') : `${t.sym} ${Math.round(dist)}m`;
     el.style.opacity = dist < 4 ? Math.max(0, (dist - 2.2) / 1.8) : 0.9;
   }
 }
@@ -2628,6 +2727,8 @@ function resolveHit() {
     obj.dead = 0;
     obj.run.fadeOut(0.08);
     obj.hit.reset().play();
+    state.hitstop = 0.07;
+    paperBurst(obj.root.position, 10, 1.2);
     state.overruled += 1;
     warn(`${obj.o.label} overruled`);
     sfx.overruled();
@@ -2654,6 +2755,8 @@ function resolveHit() {
   best.restPos.copy(best.root.position);
   best.run.fadeOut(0.08);
   best.hit.reset().play();
+  state.hitstop = 0.07;
+  paperBurst(best.root.position, 14, 1.0);
   state.score += 1;
   // The trap: Bates-stamping the privilege paper indexes it for production, so
   // an unredacted one goes out to the other side. It still files -- that is
@@ -2665,6 +2768,69 @@ function resolveHit() {
   }
   updateHud();
   return true;
+}
+
+// ------------------------------------------------------------- paper burst
+//
+// A stamped document files itself -- squash, impression, gone -- and before
+// this the moment read as a disappearance. A dozen loose sheets thrown off the
+// impact is the difference between "it vanished" and "I hit it". One material
+// per burst, faded as a group and disposed at end of life, so a whole round of
+// filings leaks nothing.
+const BURSTS = [];
+const BURST_GEO = new THREE.PlaneGeometry(0.085, 0.11);
+
+function paperBurst(at, n = 12, spread = 1.0) {
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xf4f2ea, transparent: true, opacity: 1.0,
+    side: THREE.DoubleSide, depthWrite: false,
+  });
+  const g = new THREE.Group();
+  const parts = [];
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(BURST_GEO, mat);
+    m.position.set(at.x, at.y + 0.35, at.z);
+    m.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI,
+                   Math.random() * Math.PI);
+    const a = Math.random() * Math.PI * 2;
+    parts.push({
+      m,
+      vx: Math.cos(a) * (0.5 + Math.random() * 1.3) * spread,
+      vy: 1.3 + Math.random() * 1.7,
+      vz: Math.sin(a) * (0.5 + Math.random() * 1.3) * spread,
+      rx: (Math.random() - 0.5) * 9, rz: (Math.random() - 0.5) * 9,
+    });
+    g.add(m);
+  }
+  scene.add(g);
+  BURSTS.push({ g, mat, parts, life: 0 });
+}
+
+function updateBursts(dt) {
+  for (let i = BURSTS.length - 1; i >= 0; i--) {
+    const b = BURSTS[i];
+    b.life += dt;
+    for (const p of b.parts) {
+      // Falls like paper, not like gravel: low gravity, and a floor stop so
+      // sheets settle onto the carpet instead of sinking through it.
+      p.vy -= 5.2 * dt;
+      p.m.position.x += p.vx * dt;
+      p.m.position.y += p.vy * dt;
+      p.m.position.z += p.vz * dt;
+      if (p.m.position.y < 0.02) {
+        p.m.position.y = 0.02;
+        p.vy = 0; p.vx *= 0.9; p.vz *= 0.9;
+      }
+      p.m.rotation.x += p.rx * dt;
+      p.m.rotation.z += p.rz * dt;
+    }
+    b.mat.opacity = Math.max(0, 1 - Math.max(0, (b.life - 0.55) / 0.45));
+    if (b.life >= 1.0) {
+      scene.remove(b.g);
+      b.mat.dispose();
+      BURSTS.splice(i, 1);
+    }
+  }
 }
 
 function updateHud() {
@@ -3292,7 +3458,16 @@ function updateSwing(dt) {
 
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  let dt = Math.min(clock.getDelta(), 0.05);
+  // Hit-stop. A successful stamp freezes the whole world for a few frames --
+  // rendering continues, nothing simulates. It is the oldest trick in action
+  // games and the reason a hit feels different from a miss in the hand rather
+  // than just on the scoreboard. Only ever set on CONNECT (file, overrule,
+  // deflect), never on a dry stamp or a whiff: the contrast is the feature.
+  if (state.hitstop > 0) {
+    state.hitstop -= dt;
+    dt = 0;
+  }
   state.t += dt;
   if (state.ready && running()) {
     if (state.phase === 'bonus') {
@@ -3314,6 +3489,10 @@ function animate() {
     }
   }
   if (state.waking) updateWake(dt);
+  // Outside the running() gate on purpose: a burst thrown by the final filing
+  // finishes and cleans itself up across the finish() transition instead of
+  // hanging frozen in the air behind the ending screen.
+  updateBursts(dt);
   updateMarkers();
   if (state.armMixer) state.armMixer.update(dt);
   pumpMusic();

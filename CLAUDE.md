@@ -299,6 +299,15 @@ strike filed exhibits back out of the binder — but they are gated on `after`
 (1 / 2 / 3 filed), so a player who never files one never meets one, and reports
 that nothing attacks. That is a discoverability bug, not a missing feature.
 
+**A struck exhibit physically returns to the floor.** This is arithmetic, not
+flavour: the bonus round is gated on `filed == total`, and when the strike only
+decremented the counter, one sustained objection made the binder permanently
+unclosable — measured, a full bot run ended with all eight stamped, two struck
+and forty seconds of fighting objections over a binder that could never close.
+`sustain()` now un-files the exhibits and drops them at `struckReturnPoint()`,
+walkable and near the player, to be chased down again. Do not "simplify" the
+strike back to a counter.
+
 `ink_pod` is the kit's first piece that exists for a **rule** rather than for
 dressing: it is the stamp's ammunition, so the prototype instances it, hides it
 on pickup and respawns it. Everything odd about it is legibility at range. The

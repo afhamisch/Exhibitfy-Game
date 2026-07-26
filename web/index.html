@@ -158,6 +158,14 @@
     transition: opacity .2s linear;
   }
   @media (pointer: coarse) { #markers .mark { font-size: 14px; } }
+  /* An objection's marker is a warning, not a waypoint: amber, and it pulses.
+     Same amber as the struck score and the low-ink gauge -- everything that
+     costs you shares one colour. */
+  #markers .mark.obj {
+    color: #ffb020; border-color: rgba(255, 176, 32, .65);
+    animation: objPulse .6s steps(2) infinite;
+  }
+  @keyframes objPulse { 50% { opacity: .45; } }
 
   /* objection callout — centred under the crosshair, brief */
   #warn {
