@@ -53,7 +53,7 @@ const CFG = {
   // You do not get to stay asleep forever. The dream is the clock: run it out
   // and you wake with whatever binder you managed to assemble, and the verdict
   // is scaled to it.
-  dreamTime: 90,
+  dreamTime: 120,
   dreamPanic: 20,         // the countdown goes orange under this
 
   // Falling asleep at the desk is where the dream comes from, so that is where
@@ -220,8 +220,18 @@ const VARIANTS = {
   stack:     { speed: 1.36, flee: 1.15, turn: 1.35, radius: 1.04, stride: 17 },
 };
 
-// One of each, so every silhouette is on the floor to be told apart.
-const ROSTER = ['pleading', 'privilege', 'binder', 'stack'];
+// Two of each, so every silhouette is on the floor to be told apart and there
+// is something in reach wherever you are standing.
+//
+// Eight rather than four because the ring is twice the floor area the U was:
+// four documents in that much corridor is not a chase, it is a search -- and
+// "I can't tell what I'm doing" was the report that produced this whole pass.
+// Doubling the map and the population together keeps the density where it was.
+//
+// Interleaved rather than grouped, because spawns are handed out in list order
+// and two of a kind adjacent puts identical silhouettes side by side.
+const ROSTER = ['pleading', 'privilege', 'binder', 'stack',
+                'stack', 'binder', 'privilege', 'pleading'];
 
 // Objections are the other half of the game and they invert it. An exhibit runs
 // away and you want to catch it; an objection comes at you and you want it gone.
@@ -332,9 +342,16 @@ const LAYOUT = {
   // stack spawned out of bounds every single round -- free to be walked to,
   // but resolveMove will not let anything outside the set move except by luck
   // of heading, so it could stand there indefinitely.
-  // Two of the five sit inside the side rooms, so a room is somewhere you have
-  // to go rather than somewhere you may glance into.
-  spawns: [[3.6, -4], [-5.5, -12], [-15.8, -4], [-6.5, 4], [-9.5, -12]],
+  // One per document, spread right round the ring and into both rooms, so
+  // nothing spawns on top of anything else and no leg of the loop is empty.
+  // Two sit inside the side offices: a room is somewhere you have to go rather
+  // than somewhere you may glance into.
+  spawns: [
+    [3.6, -4], [-15.8, -4],          // the two side offices
+    [0, -6], [0, -10],               // the x = 0 leg
+    [-5.5, -12], [-9.5, -12],        // across the bottom
+    [-12, -6], [-6.5, 4],            // the far leg, and the top
+  ],
   // Ink pods, pushed out to the far ends and the two corners rather than sat
   // along the route you would walk anyway. A pod you pass over for free is not
   // a decision; these cost you the length of a corridor.
@@ -342,7 +359,12 @@ const LAYOUT = {
     [0.55, -10.6],       // near the first corner
     [-11.4, -11.2],      // the far corner
     [0.0, 0.9],          // back where you woke up
-    [-9.0, 4.0],         // the new top leg, furthest from everything
+    [-9.0, 4.0],         // the top leg, furthest from everything
+    // One in each side office. Eight documents need more ink than four did,
+    // and a refill is a second reason to walk into a room you might otherwise
+    // clear from the doorway.
+    [3.0, -2.9],
+    [-15.0, -2.9]
   ],
 };
 
@@ -1501,7 +1523,7 @@ function finishWake() {
     els.hud.hidden = els.clockBox.hidden = els.inkBox.hidden = false;
     els.touchUi.hidden = !TOUCH;      // desktop never had one to restore
   }
-  banner('Bates & Destroy', 'Ninety seconds — stamp everything');
+  banner('Bates & Destroy', 'Two minutes — stamp everything');
 }
 state.startWake = startWake;
 state.finishWake = finishWake;
@@ -2812,7 +2834,7 @@ const SPECIALS = [
     when: (s) => s.score === 0 && s.dryStamps === 0 && s.misses === 0,
     tag: 'No appearance entered',
     head: 'You just walked around.',
-    body: 'Ninety seconds, a loaded Bates stamp, four documents actively '
+    body: 'Two minutes, a loaded Bates stamp, eight documents actively '
         + 'fleeing from you, and not one swing. The binder is as empty as it '
         + 'was when you fell asleep. Opposing counsel, who prepared, is having '
         + 'a lovely morning.',

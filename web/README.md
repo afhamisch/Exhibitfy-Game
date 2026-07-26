@@ -56,8 +56,22 @@ corridor is now a 12 × 16 m ring, you can always keep walking, and you can
 never be cornered — which was the same player's other complaint. Two side
 offices hang off it through real openings (`hallway_door`, a corridor section
 with a hole in its *side*, as opposed to `doorway`, which is a wall laid across
-one). Two of the five document spawns are inside those rooms, so a room is
-somewhere you have to go rather than somewhere you glance into.
+one). Two of the eight document spawns are inside those rooms, and so is an ink pod
+each, so a room is somewhere you have to go rather than somewhere you glance
+into.
+
+**Eight documents, not four**, because the ring is twice the floor area the U
+was and four in that much corridor is a search rather than a chase. The clock
+went to **two minutes** with them: the bonus round needs every document filed,
+and eight in ninety seconds put it out of reach. Nothing hard-codes either
+number — `updateClosing` and `verdictFor` both read `state.enemies.length`.
+
+The things that attack you were always there. Objections chase you down, shake
+the view and strike filed exhibits back *out* of your binder — but they are
+gated on having filed something (1, 2 and 3 respectively), so a player who
+never files one never meets one. That was a discoverability problem, not a
+missing feature, and eight documents fixes it by getting you on the board
+sooner.
 
 ## Run it
 
@@ -205,7 +219,7 @@ it — Bates numbering is how exhibits get indexed, so a stamped document isn't
 destroyed, it's **filed**: it flattens, takes the impression, then files itself
 into the binder you're carrying.
 
-You have **90 seconds** before you wake up, and the binder you assemble in that
+You have **two minutes** before you wake up, and the binder you assemble in that
 time is the evidentiary record you walk into court with. The chaotic stack is the
 one that costs you — at 3.33 m/s it is faster than your walk, so it has to be
 sprinted down or cornered.
@@ -465,7 +479,7 @@ reachable and warns if a layout edit walls one in.
   running down.
 - Nothing can damage *you* — objections cost you exhibits, not health, so there
   is no reason to retreat from anything except to buy time.
-- One layout, four documents, no waves and no difficulty curve beyond the
+- One layout, eight documents, no waves and no difficulty curve beyond the
   objections arriving. A fast player can still close the binder before the first
   one spawns at 22 s — that now earns the bonus round rather than skipping
   content, but it does mean the objections themselves can go unmet.

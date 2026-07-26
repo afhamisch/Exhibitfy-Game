@@ -280,6 +280,19 @@ for a while — the committed GLBs already held 1,186 and 1,762, so the total wa
 14,300 before the ink pod, not 14,260. Read the counts back off a rebuild rather
 than off this table when they matter.
 
+**Eight documents, two minutes, six ink pods.** `ROSTER` is two of each variant
+interleaved, not four — the ring is twice the floor area the U was, and four
+documents in that much corridor is a search rather than a chase. The clock went
+90 → 120 with it, because the bonus round needs every document filed and eight
+in ninety seconds put it out of reach. `updateClosing` and `verdictFor` both
+read `state.enemies.length`, so neither needed touching; nothing should
+hard-code either number.
+
+The attackers were always there. Objections chase you, shake the view, and
+strike filed exhibits back out of the binder — but they are gated on `after`
+(1 / 2 / 3 filed), so a player who never files one never meets one, and reports
+that nothing attacks. That is a discoverability bug, not a missing feature.
+
 `ink_pod` is the kit's first piece that exists for a **rule** rather than for
 dressing: it is the stamp's ammunition, so the prototype instances it, hides it
 on pickup and respawns it. Everything odd about it is legibility at range. The
