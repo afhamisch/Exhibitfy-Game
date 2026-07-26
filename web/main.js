@@ -266,17 +266,32 @@ const ENEMIES_GLB = `${ASSETS}/enemies/enemies.glb`;
 const MODULE = 4.0;
 const HALF = 1.2 - CFG.playerRadius;      // clear half-width for the player
 const LAYOUT = {
+  // A closed ring, not a U. The U had two dead ends, each capped by a doorway
+  // whose leaf is modelled standing 62 degrees open -- so the art said "walk
+  // through" and the collision said "wall", which is exactly what it got
+  // reported as. Closing the loop deletes both dead ends rather than closing
+  // both doors: you can always keep walking, and you can never be cornered,
+  // which was the other half of the same complaint.
   halls: [
+    // the x = 0 leg
     { x: 0, z: 0, rot: 0 }, { x: 0, z: -4, rot: 0 }, { x: 0, z: -8, rot: 0 },
+    // the z = -12 leg, across the bottom
     { x: -4, z: -12, rot: Math.PI / 2 }, { x: -8, z: -12, rot: Math.PI / 2 },
+    // the x = -12 leg, back up
     { x: -12, z: -8, rot: 0 }, { x: -12, z: -4, rot: 0 },
     { x: -12, z: 0, rot: 0 },
+    // and the z = +4 leg that closes it
+    { x: -4, z: 4, rot: Math.PI / 2 }, { x: -8, z: 4, rot: Math.PI / 2 },
   ],
-  // rot PI  -> enter from +Z, leave towards -X
-  // rot -90 -> enter from +X, leave towards +Z
+  // A corner joins a leg running out along local +X to one running out along
+  // local -Z. Which pair that lands on in world space is all `rot` decides:
+  // rot   0  -> +X and -Z          rot  90 -> -X and -Z
+  // rot 180  -> -X and +Z          rot -90 -> +X and +Z
   corners: [
     { x: 0, z: -12, rot: Math.PI },
     { x: -12, z: -12, rot: -Math.PI / 2 },
+    { x: 0, z: 4, rot: Math.PI / 2 },
+    { x: -12, z: 4, rot: 0 },
   ],
   props: [
     { kind: 'file_cabinet', x: 0.92, z: -3.4, rot: -Math.PI / 2 },
@@ -286,11 +301,10 @@ const LAYOUT = {
     { kind: 'banker_boxes', x: -9.6, z: -10.9, rot: -0.5 },
     { kind: 'file_cabinet', x: -12.9, z: -2.0, rot: Math.PI / 2 },
   ],
-  // caps on the two dead ends
-  doors: [
-    { x: 0, z: 2.0, rot: 0 },
-    { x: -12, z: 2.0, rot: 0 },
-  ],
+  // Nothing to cap any more -- the ring has no dead ends. Kept as an empty
+  // list rather than deleted, because the doorway module is still built, still
+  // validated, and is what a side room will be entered through.
+  doors: [],
   // Every one of these must satisfy insideWalk, which boot() now asserts.
   // `[-1.0, -10.5]` did not: x was outside the corridor's +/-0.86 half-width
   // and z past the end of the last straight hall, so it sat in the wall. With
@@ -298,15 +312,15 @@ const LAYOUT = {
   // stack spawned out of bounds every single round -- free to be walked to,
   // but resolveMove will not let anything outside the set move except by luck
   // of heading, so it could stand there indefinitely.
-  spawns: [[0, -6], [-5.5, -12], [-12, -6], [-0.4, -11.5], [-9.5, -12]],
+  spawns: [[0, -6], [-5.5, -12], [-12, -6], [-6.5, 4], [-9.5, -12]],
   // Ink pods, pushed out to the far ends and the two corners rather than sat
   // along the route you would walk anyway. A pod you pass over for free is not
   // a decision; these cost you the length of a corridor.
   pods: [
     [0.55, -10.6],       // near the first corner
     [-11.4, -11.2],      // the far corner
-    [0.0, 0.9],          // back at the entrance you started from
-    [-12.0, -1.0],       // the opposite dead end
+    [0.0, 0.9],          // back where you woke up
+    [-9.0, 4.0],         // the new top leg, furthest from everything
   ],
 };
 
@@ -1129,6 +1143,9 @@ state.DECALS = DECALS;
 state.OBJECTIONS = OBJECTIONS;
 state.insideWalk = insideWalk;          // for tuning from the console
 state.fitView = fitView;
+state.LAYOUT = LAYOUT;
+state.WALK = WALK;
+state.BLOCKERS = BLOCKERS;
 state.setRetro = setRetro;
 state.RETRO = RETRO;
 state.sfx = sfx;                        // same object the loops call through
