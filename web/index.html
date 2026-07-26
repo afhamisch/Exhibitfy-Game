@@ -129,6 +129,24 @@
     #wakeclock .t { font-size: 22px; }
   }
 
+  /* Chevrons over the live exhibits. A sheet of paper 10 m down a grey
+     corridor is a smudge; this is the smallest thing that fixes that without
+     drawing anything in the 3D scene. Pointer-events off -- they sit over the
+     canvas that owns the mouse. */
+  #markers { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
+  #markers .mark {
+    position: absolute; transform: translate(-50%, -50%);
+    font-size: 17px; font-weight: 700; letter-spacing: .04em;
+    color: var(--orange); white-space: nowrap; line-height: 1;
+    /* A chip, not bare text. Orange-on-grey wall is legible; orange on a
+       white sheet of paper, which is exactly what these sit over, is not. */
+    background: rgba(10,11,13,.62); border: 1px solid rgba(217,62,21,.55);
+    border-radius: 3px; padding: 3px 7px;
+    text-shadow: 0 1px 3px rgba(0,0,0,.95);
+    transition: opacity .2s linear;
+  }
+  @media (pointer: coarse) { #markers .mark { font-size: 14px; } }
+
   /* objection callout — centred under the crosshair, brief */
   #warn {
     position: fixed; left: 50%; top: 58%; transform: translateX(-50%);
@@ -302,6 +320,7 @@
   <div class="score"><span id="score-label">FILED</span> <b id="score">0 / 4</b></div>
   <div class="sub" id="remaining">4 documents at large</div>
 </div>
+<div id="markers"></div>
 <div id="warn"></div>
 <div id="swear"></div>
 
@@ -356,11 +375,12 @@
     <h1>Tom Rexington, Esq.<br><b>Bates &amp; Destroy</b></h1>
     <div class="tag">Playable prototype</div>
     <table id="keys-desktop">
-      <tr><td class="k">Move</td><td class="v"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td></tr>
-      <tr><td class="k">Look</td><td class="v">Mouse</td></tr>
+      <tr><td class="k">Walk / turn</td><td class="v"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></td></tr>
+      <tr><td class="k">Face nearest</td><td class="v"><kbd>F</kbd></td></tr>
       <tr><td class="k">Stamp</td><td class="v">Left click</td></tr>
       <tr><td class="k">Redact</td><td class="v">Right click</td></tr>
       <tr><td class="k">Sprint</td><td class="v"><kbd>Shift</kbd></td></tr>
+      <tr><td class="k">Strafe</td><td class="v"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> + mouse</td></tr>
       <tr><td class="k">Mute</td><td class="v"><kbd>M</kbd></td></tr>
       <tr><td class="k">Release</td><td class="v"><kbd>Esc</kbd></td></tr>
     </table>

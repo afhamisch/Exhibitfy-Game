@@ -21,6 +21,11 @@ const CFG = {
   accel: 14,
   friction: 11,
   playerRadius: 0.34,
+  // Arrow-key turning, radians a second. The arrows are a TURN, not a strafe --
+  // see the note on updatePlayer. 2.6 is a little over a quarter-turn a second,
+  // fast enough to take a corner without a mouse and slow enough to aim with.
+  turnSpeed: 2.6,
+  snapTurn: 0.22,         // seconds for the face-nearest key to swing round
 
   // Stamp_Swing is 23 frames at 30fps; the die is planted on frames 11-13.
   swingDuration: 23 / 30,
@@ -547,6 +552,7 @@ const els = {
   clock: document.getElementById('clock'),
   clockLabel: document.getElementById('clock-label'),
   clockBox: document.getElementById('wakeclock'),
+  markers: document.getElementById('markers'),
   lids: document.getElementById('lids'),
   lidTop: document.querySelector('#lids i.t'),
   lidBottom: document.querySelector('#lids i.b'),
@@ -1493,6 +1499,10 @@ addEventListener('keydown', (e) => {
   // P flips the look. Kept because "does this read better smooth or chunky"
   // is a judgement call somebody has to make with their own eyes, side by side.
   if (e.code === 'KeyP') setRetro(!RETRO.on);
+  if (e.code === 'KeyF') faceNearest();
+  // The arrows scroll the page otherwise, which drags the canvas off screen
+  // on the one browser that is not holding the pointer.
+  if (e.code.startsWith('Arrow')) e.preventDefault();
   if (e.code === 'KeyM' && master) {
     state.muted = !state.muted;
     master.gain.value = state.muted ? 0 : 0.32;
@@ -2406,6 +2416,83 @@ const strike = new THREE.Vector3();
 const fileTo = new THREE.Vector3();
 
 /** Put `strike` where the die lands: a point ahead of the eye, on the floor. */
+/**
+ * Turn to face the nearest thing worth facing. The "auto look".
+ *
+ * Not an auto-aim that fires: it only rotates, and only when asked. Hunting a
+ * 0.6 m sheet of paper down a corridor with a mouse is the part of this that
+ * assumes you already play shooters, and nothing else in the game does.
+ *
+ * Priority is documents first, then an objection, then the boss -- an objection
+ * is on a timer and the boss cannot be missed, so neither needs the help that a
+ * fleeing exhibit does.
+ */
+function faceNearest() {
+  if (!running()) return;
+  const here = camera.position;
+  const pick = (list, live) => list
+    .filter(live)
+    .sort((a, b) => a.root.position.distanceTo(here)
+                  - b.root.position.distanceTo(here))[0];
+  const t = pick(state.enemies, (e) => e.alive)
+    || pick(state.objections, (o) => o.alive)
+    || (state.boss ? state.boss : null);
+  if (!t) { warn('Nothing left to file'); return; }
+
+  const want = Math.atan2(here.x - t.root.position.x,
+                          here.z - t.root.position.z);
+  let d = ((want - camera.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+  if (d < -Math.PI) d += Math.PI * 2;
+  state.snap = { left: d };
+}
+state.faceNearest = faceNearest;
+
+// -------------------------------------------------------------- markers
+//
+// A document is 0.6 m of paper in a grey corridor and at 10 m it is a smudge.
+// These are the smallest thing that fixes that: one chevron per live exhibit,
+// projected to the screen, clamped to the edge with an arrow when it is behind
+// you. They fade out inside 4 m, where the paper speaks for itself.
+const MARK = { pool: [], max: 8 };
+
+function updateMarkers() {
+  const live = running() && !state.done
+    ? state.enemies.filter((e) => e.alive) : [];
+  const w = innerWidth, h = innerHeight;
+  for (let i = 0; i < MARK.max; i++) {
+    let el = MARK.pool[i];
+    if (!el && i < live.length) {
+      el = document.createElement('div');
+      el.className = 'mark';
+      els.markers.appendChild(el);
+      MARK.pool[i] = el;
+    }
+    if (!el) continue;
+    const e = live[i];
+    if (!e) { el.style.display = 'none'; continue; }
+
+    MARK.v = MARK.v || new THREE.Vector3();
+    // Aim at the middle of the sheet, not the floor between its feet.
+    MARK.v.set(e.root.position.x, e.root.position.y + 0.45, e.root.position.z);
+    const dist = camera.position.distanceTo(MARK.v);
+    MARK.v.project(camera);
+    // `project` mirrors everything behind the camera, so z > 1 has to be
+    // handled or the marker for something at your back tracks the wrong way.
+    const behind = MARK.v.z > 1;
+    let x = (behind ? -MARK.v.x : MARK.v.x) * 0.5 + 0.5;
+    let y = (behind ? 1 : -MARK.v.y * 0.5 + 0.5);
+    const off = behind || x < 0.02 || x > 0.98 || y < 0.02 || y > 0.98;
+    x = Math.max(0.03, Math.min(0.97, x));
+    y = Math.max(0.06, Math.min(0.94, y));
+
+    el.style.display = 'block';
+    el.style.left = `${x * w}px`;
+    el.style.top = `${y * h}px`;
+    el.textContent = off ? (x < 0.5 ? '\u25c0' : '\u25b6') : `\u25bc ${Math.round(dist)}m`;
+    el.style.opacity = dist < 4 ? Math.max(0, (dist - 2.2) / 1.8) : 0.9;
+  }
+}
+
 function aimStrike() {
   camera.getWorldDirection(fwd);
   fwd.y = 0; fwd.normalize();
@@ -2910,9 +2997,28 @@ const clock = new THREE.Clock();
 
 function updatePlayer(dt) {
   const k = state.keys;
+
+  // The arrows are the 1992 scheme on purpose: up/down walk, LEFT/RIGHT TURN.
+  // WASD strafes and needs the mouse to turn, which is the whole difficulty --
+  // walk into a corridor that bends and "forward" stops meaning forward, so you
+  // grind along a wall wondering why W changed direction. Turning on the
+  // keyboard means the corridor is always ahead of you. Both schemes are live
+  // at once; nobody has to be told which one they are using.
+  if (k.ArrowLeft) camera.rotation.y += CFG.turnSpeed * dt;
+  if (k.ArrowRight) camera.rotation.y -= CFG.turnSpeed * dt;
+
+  // A turn under way outranks the keys -- see faceNearest.
+  if (state.snap) {
+    const step = Math.min(1, dt / CFG.snapTurn);
+    camera.rotation.y += state.snap.left * step;
+    state.snap.left -= state.snap.left * step;
+    if (Math.abs(state.snap.left) < 0.002) state.snap = null;
+  }
+
   const wish = new THREE.Vector3(
     (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0), 0,
-    (k.KeyS ? 1 : 0) - (k.KeyW ? 1 : 0));
+    (k.KeyS ? 1 : 0) - (k.KeyW ? 1 : 0)
+    + (k.ArrowDown ? 1 : 0) - (k.ArrowUp ? 1 : 0));
   if (wish.lengthSq() > 0) wish.normalize();
 
   // The stick is analogue and overrides the keys when it is being held: a
@@ -3104,6 +3210,7 @@ function animate() {
     }
   }
   if (state.waking) updateWake(dt);
+  updateMarkers();
   if (state.armMixer) state.armMixer.update(dt);
   pumpMusic();
 

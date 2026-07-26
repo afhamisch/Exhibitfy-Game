@@ -155,15 +155,35 @@ per session, not once per reload: `sessionStorage` remembers.
 
 | | Desktop | Phone |
 |---|---|---|
-| Move | `W` `A` `S` `D` | Left thumb, anywhere on the left |
-| Look | Mouse | Right thumb, drag |
+| Walk | `↑` `↓` | Left thumb, anywhere on the left |
+| **Turn** | `←` `→` | Right thumb, drag |
+| Face nearest exhibit | `F` | — |
 | Stamp | Left click | Tap, right side |
 | Redact | Right click | The orange button |
 | Sprint | `Shift` | Push the stick to its edge |
+| Strafe | `W` `A` `S` `D` + mouse | — |
 | Mute | `M` | — |
 | Release cursor | `Esc` | — |
 
 The title card shows whichever set applies before you start.
+
+**The arrows turn, they do not strafe.** That is the 1992 scheme and it is the
+default on purpose. `WASD` needs the mouse to turn, and that is the whole
+difficulty for anyone who does not already play shooters: walk into a corridor
+that bends and "forward" stops meaning forward, so you grind along a wall
+wondering why `W` changed direction. Turning on the keyboard means the corridor
+is always ahead of you. Both schemes are live at once and nobody has to be told
+which one they are using.
+
+`F` is the other half of that. It turns you — only turns, it does not fire — to
+face the nearest live exhibit, then the objection, then the boss. Hunting a
+0.6 m sheet of paper down a grey corridor with a mouse assumes a skill the rest
+of the game does not.
+
+And every live exhibit carries an orange chevron with its distance, clamped to
+the screen edge with an arrow when it is behind you, fading out inside 4 m
+where the paper speaks for itself. A document at 10 m is about nine pixels of
+white on a grey wall; the marker is what makes it a target.
 
 You fell asleep assembling a trial binder. Chase the paperwork down and stamp
 it — Bates numbering is how exhibits get indexed, so a stamped document isn't
