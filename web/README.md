@@ -82,26 +82,25 @@ match. And the binder collision is smaller on touch (`binderRadiusTouch`),
 because a thumb on a stick cannot commit to a direction as sharply as a finger
 on a key, which does mean the bonus tiers ask slightly less of a phone.
 
-### The look is deliberate
+### The arms are lit in the texture, not just by the engine
 
-The game renders into a drawing buffer 55% of the window and lets the browser
-point-sample it back up, with every texture on nearest magnification. **Press P
-to toggle it.**
+The skin map used to measure a luminance spread of 16 out of 255 — effectively
+a flat colour, with every bit of shape on the arm coming from three.js lighting
+alone. That, not polygon count, was why the forearm read as a pale tube: the
+viewmodel is 12,780 triangles, an order of magnitude more than a 1997 console
+ever gave a first-person hand.
 
-This is a style decision, not a performance one. What makes Wolfenstein and
-GoldenEye still look good is that they *commit* — chunky pixels, hard texel
-edges, every asset agreeing to the same rules. Rendered smooth, this viewmodel
-sat in the uncanny middle: detailed enough to invite comparison with a real
-arm, not painted enough to win it. It is 12,780 triangles, which is an order of
-magnitude more than GoldenEye ever gave Bond; detail was never the problem.
-
-The other half of the fix is in the texture rather than the renderer. The skin
-map used to measure a luminance spread of 16 out of 255 — effectively a flat
-colour, with every bit of shape on the arm coming from three.js lighting alone.
 `_form_shade()` in `tools/textures.py` now paints the form in the way a texture
-artist would, and the light is deliberately placed off to one side of the limb
-rather than on the side facing you: centred on the visible face it produced a
-28-level band and no gradient at all.
+artist would, and the light is deliberately placed off to one silhouette edge
+rather than on the side facing you. That last part is the whole trick: the arm
+is posed knuckles-to-camera on purpose, so a light centred on the visible face
+puts the terminator behind the tube and leaves everything you can see in flat
+full light. Measured that way it changed nothing at all. Off to the edge, the
+visible sweep runs 218 → 148 and the limb reads round.
+
+There is also a retro renderer — 55% drawing buffer, point-sampled up, nearest
+magnification, the Wolfenstein look. It is **off**; it was tried and not kept,
+because it muddies the `EXHIBITFY` plate on the die. **Press P** to see it.
 
 **WebGL is still required**, and over anything but `localhost` you still need
 **HTTPS**, since pointer lock is refused outside a secure context on desktop.

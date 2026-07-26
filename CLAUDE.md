@@ -335,22 +335,27 @@ Do not "correct" `LIGHT_U` to match the hair, and do not flatten `core`
 (`#3E1F12`) back toward the old palette: the four original entries only spanned
 luminance 149–206, which is why there was nowhere for a shadow to go.
 
-## The retro pass is a deliberate style, not a performance hack
+## The retro pass exists and is OFF
 
-`RETRO = { on: true, scale: 0.55 }` in `web/main.js` renders into a drawing
-buffer 55% of the element and lets the browser point-sample it up. Two halves,
-and **either alone does nothing**: `applyRes()` passes `false` to `setSize` so
-three.js does not write the CSS size back, and `canvas.crisp` in `index.html`
-carries `image-rendering: pixelated`.
+`RETRO = { on: false, scale: 0.55 }` in `web/main.js`. It was built, looked at
+side by side, and **not kept** — it muddies the die's `EXHIBITFY` plate, which
+is the joke, and the form shading in the skin map turned out to be doing the
+work it was supposed to do. **The game ships rendering at full resolution with
+linear filtering, exactly as before.** Do not switch it back on by default.
 
-`retroFilter()` sets `magFilter` to nearest and **leaves `minFilter` alone**.
-Nearest minification is authentically 1992 and authentically nauseating — a
-shimmering mess on every wall down a 12 m corridor. It has to be re-run for
-anything fetched after boot, which means the arena and the boss.
+Left in rather than deleted because it is four functions and a CSS class, and
+because it is a taste call that may go the other way on a different screen.
+**P** toggles it at runtime, which is how the call was made.
 
-`scale` was 0.40 first. It made `EXHIBITFY` on the die unreadable, and that
-label is the joke. 0.55 keeps it legible with the texels still visibly square.
-**P** toggles the whole thing at runtime, which is how the call was made.
+If you do touch it: it renders into a buffer `scale` of the element and lets
+the browser point-sample it up, and **either half alone does nothing** —
+`applyRes()` passes `false` to `setSize` so three.js does not write the CSS
+size back, and `canvas.crisp` in `index.html` carries
+`image-rendering: pixelated`. `retroFilter()` sets `magFilter` to nearest and
+**leaves `minFilter` alone**, because nearest minification is authentically
+1992 and authentically nauseating down a 12 m corridor; it has to be re-run for
+anything fetched after boot, which means the arena and the boss. `scale` 0.40
+was tried first and was worse.
 
 ## Clips
 

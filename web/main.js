@@ -380,10 +380,16 @@ const app = document.getElementById('app');
 // it. Rendered at 40% and point-sampled up, the same geometry reads as a
 // deliberate style rather than as a near miss.
 //
-// It costs nothing -- it renders a sixth of the pixels -- and it is a shrunken
+// It costs nothing -- it renders a third of the pixels -- and it is a shrunken
 // drawing buffer scaled by the browser, not a post-process chain: no render
 // targets, no EffectComposer, nothing to vendor.
-const RETRO = { on: true, scale: 0.55 };
+//
+// OFF by default: tried, looked at side by side, and not kept. It muddies the
+// die's EXHIBITFY plate, which is the joke, and the form shading in the skin
+// map turned out to be doing the work this was supposed to do. Left switchable
+// rather than deleted because it is four functions and a CSS class, and the
+// judgement is a taste one that may go the other way on a different screen.
+const RETRO = { on: false, scale: 0.55 };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
