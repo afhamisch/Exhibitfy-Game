@@ -32,6 +32,10 @@ const TRIES = Number(process.argv[3] || 1);
 // skip is a bad reel. Fifteen seconds of the opening is the hook: the corridor,
 // a document run down, the stamp coming in.
 const INTRO_SECONDS = 15;
+// --dry: run the bot and report the numbers with no screenshots. A playtest
+// harness, not a capture -- screenshots are ~90% of the wall clock, so this is
+// what makes "does the new balance work" a question answerable in minutes.
+const DRY = process.argv.includes('--dry');
 const W = 960, H = 600;
 
 const STUB = () => {
@@ -317,8 +321,10 @@ async function record(browser, framesPath) {
     const kind = await page.evaluate(() => window.__demo.tick());
     seen[kind] = (seen[kind] || 0) + 1;
     await page.evaluate(() => window.__step());
-    const buf = await page.screenshot({ type: 'jpeg', quality: 82 });
-    fs.writeSync(fd, buf);
+    if (!DRY) {
+      const buf = await page.screenshot({ type: 'jpeg', quality: 82 });
+      fs.writeSync(fd, buf);
+    }
     shot += 1;
     // The wake screen fades up over 1.1 s. Hold it long enough to read the
     // verdict and then stop -- an earlier cut ran to a fixed frame count and
@@ -379,6 +385,9 @@ async function record(browser, framesPath) {
   await browser.close();
   console.log('kept:', best.ending, `survived ${best.survived},`,
     `${(best.frames / FPS).toFixed(1)}s`);
+
+  // A dry run has no frames to encode -- the numbers above were the product.
+  if (DRY) { fs.unlinkSync(best.path); return; }
 
   const webm = `${OUT}/bates_demo.webm`;
   execFileSync(FFMPEG, ['-hide_banner', '-loglevel', 'error',
