@@ -338,7 +338,7 @@ const LAYOUT = {
   // Every one of these must satisfy insideWalk, which boot() now asserts.
   // `[-1.0, -10.5]` did not: x was outside the corridor's +/-0.86 half-width
   // and z past the end of the last straight hall, so it sat in the wall. With
-  // four documents indexing `spawns[i % 5]` that slot is always used, so the
+  // documents indexing `spawns[i % n]`, a short list meant every round reused
   // stack spawned out of bounds every single round -- free to be walked to,
   // but resolveMove will not let anything outside the set move except by luck
   // of heading, so it could stand there indefinitely.
@@ -2874,7 +2874,7 @@ state.SPECIALS = SPECIALS;
  *
  * "File another binder" used to be `location.reload()`, which re-fetched about
  * 12 MB to rebuild a scene that was already sitting in memory: several seconds
- * of black screen between two rounds of a ninety-second game, and on a
+ * of black screen between two rounds of a two-minute game, and on a
  * projector's wifi rather longer than that. Everything below is scene state,
  * so all of it can simply be wound back.
  *
