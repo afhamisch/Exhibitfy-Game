@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audio Extractor — pull the audio track out of a video</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1d2026;
+    --panel-2: #232730;
+    --line: #323845;
+    --text: #e8eaef;
+    --muted: #9aa3b2;
+    --accent: #e8a33d;
+    --accent-2: #f0c069;
+    --ok: #5fbf77;
+    --err: #e06c60;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px 64px;
+  }
+  main { width: 100%; max-width: 760px; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: 0.2px; }
+  h1 .tag { color: var(--accent); }
+  p.sub { margin: 0 0 24px; color: var(--muted); }
+
+  #drop {
+    border: 2px dashed var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    padding: 42px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  #drop.hover { border-color: var(--accent); background: var(--panel-2); }
+  #drop strong { color: var(--accent-2); }
+  #drop .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  #file { display: none; }
+
+  section.card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-top: 18px;
+  }
+  section.card h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  .hidden { display: none !important; }
+
+  #meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  #meta div { background: var(--panel-2); border-radius: 8px; padding: 8px 12px; }
+  #meta dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+  #meta dd { margin: 2px 0 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+  video#preview {
+    width: 100%;
+    max-height: 300px;
+    border-radius: 8px;
+    background: #000;
+    display: block;
+  }
+
+  canvas#wave {
+    width: 100%;
+    height: 120px;
+    display: block;
+    border-radius: 8px;
+    background: var(--panel-2);
+  }
+
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+  button {
+    font: inherit;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 9px 18px;
+    cursor: pointer;
+    transition: filter 0.1s;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.15); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #1a1204;
+    font-weight: 600;
+  }
+  a.dl {
+    display: inline-block;
+    background: var(--ok);
+    color: #06180b;
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 9px 18px;
+    text-decoration: none;
+  }
+  #status { margin-top: 12px; color: var(--muted); min-height: 1.5em; }
+  #status.err { color: var(--err); }
+  #status.ok { color: var(--ok); }
+  footer { margin-top: 28px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Audio Extractor <span class="tag">— video in, audio out</span></h1>
+  <p class="sub">Everything runs in your browser. The file never leaves your machine.</p>
+
+  <div id="drop" tabindex="0" role="button" aria-label="Choose a video file">
+    <div><strong>Drop a video here</strong> or click to browse</div>
+    <div class="hint">Any format your browser can play — MP4, WebM, MOV, MKV, OGG …</div>
+  </div>
+  <input type="file" id="file" accept="video/*,audio/*">
+
+  <section class="card hidden" id="videoCard">
+    <h2>Source</h2>
+    <video id="preview" controls playsinline></video>
+    <dl id="meta"></dl>
+    <div class="row">
+      <button class="primary" id="extractBtn">Extract audio</button>
+      <button id="resetBtn">Start over</button>
+    </div>
+    <div id="status"></div>
+  </section>
+
+  <section class="card hidden" id="resultCard">
+    <h2>Extracted audio</h2>
+    <canvas id="wave" width="1440" height="240"></canvas>
+    <div class="row">
+      <audio id="player" controls style="flex:1; min-width: 240px;"></audio>
+      <a class="dl" id="download" download>Download WAV</a>
+    </div>
+  </section>
+
+  <footer>
+    Decodes the audio track with the Web Audio API and re-encodes it as
+    16-bit PCM WAV. If the container can't be decoded directly, it falls back
+    to playing the file through and capturing the audio in real time
+    (saved as WebM/Opus instead).
+  </footer>
+</main>
+
+<script>
+"use strict";
+
+const drop = document.getElementById("drop");
+const fileInput = document.getElementById("file");
+const videoCard = document.getElementById("videoCard");
+const resultCard = document.getElementById("resultCard");
+const preview = document.getElementById("preview");
+const meta = document.getElementById("meta");
+const extractBtn = document.getElementById("extractBtn");
+const resetBtn = document.getElementById("resetBtn");
+const statusEl = document.getElementById("status");
+const wave = document.getElementById("wave");
+const player = document.getElementById("player");
+const download = document.getElementById("download");
+
+let currentFile = null;
+let objectUrl = null;
+let resultUrl = null;
+
+// ---- file selection -------------------------------------------------------
+
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) loadFile(fileInput.files[0]);
+});
+for (const ev of ["dragenter", "dragover"]) {
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("hover"); });
+}
+for (const ev of ["dragleave", "drop"]) {
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("hover"); });
+}
+drop.addEventListener("drop", e => {
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+
+function setStatus(msg, cls) {
+  statusEl.textContent = msg;
+  statusEl.className = cls || "";
+}
+
+function loadFile(file) {
+  resetResult();
+  currentFile = file;
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(file);
+  preview.src = objectUrl;
+  videoCard.classList.remove("hidden");
+  extractBtn.disabled = false;
+  setStatus("");
+  renderMeta({ Name: file.name, Size: fmtSize(file.size), Type: file.type || "unknown" });
+  preview.addEventListener("loadedmetadata", () => {
+    renderMeta({
+      Name: file.name,
+      Size: fmtSize(file.size),
+      Type: file.type || "unknown",
+      Duration: fmtTime(preview.duration),
+    });
+  }, { once: true });
+}
+
+function renderMeta(fields) {
+  meta.innerHTML = "";
+  for (const [k, v] of Object.entries(fields)) {
+    const box = document.createElement("div");
+    const dt = document.createElement("dt");
+    const dd = document.createElement("dd");
+    dt.textContent = k;
+    dd.textContent = v;
+    box.append(dt, dd);
+    meta.append(box);
+  }
+}
+
+function resetResult() {
+  resultCard.classList.add("hidden");
+  if (resultUrl) { URL.revokeObjectURL(resultUrl); resultUrl = null; }
+  player.removeAttribute("src");
+}
+
+resetBtn.addEventListener("click", () => {
+  resetResult();
+  videoCard.classList.add("hidden");
+  if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+  preview.removeAttribute("src");
+  fileInput.value = "";
+  currentFile = null;
+  setStatus("");
+});
+
+// ---- extraction -----------------------------------------------------------
+
+extractBtn.addEventListener("click", async () => {
+  if (!currentFile) return;
+  extractBtn.disabled = true;
+  resetResult();
+  try {
+    setStatus("Decoding audio track…");
+    const buffer = await decodeFile(currentFile);
+    if (buffer.length === 0) throw new Error("The decoded audio track is empty.");
+    const wav = encodeWav(buffer);
+    presentResult(wav, "audio/wav", wavName(currentFile.name, ".wav"), buffer);
+    setStatus(`Done — ${buffer.numberOfChannels} channel${buffer.numberOfChannels > 1 ? "s" : ""}, ` +
+              `${buffer.sampleRate} Hz, ${fmtTime(buffer.duration)}.`, "ok");
+  } catch (err) {
+    console.warn("decodeAudioData path failed:", err);
+    try {
+      setStatus("Direct decode failed — capturing audio in real time instead (this takes as long as the video)…");
+      const { blob, buffer } = await captureFallback();
+      presentResult(blob, blob.type, wavName(currentFile.name, ".webm"), buffer);
+      setStatus("Done via real-time capture — saved as WebM/Opus.", "ok");
+    } catch (err2) {
+      console.error(err2);
+      setStatus("Could not extract audio: " + (err2.message || err2), "err");
+    }
+  } finally {
+    extractBtn.disabled = false;
+  }
+});
+
+async function decodeFile(file) {
+  const data = await file.arrayBuffer();
+  const ctx = new OfflineAudioContext(1, 1, 44100);
+  return ctx.decodeAudioData(data);
+}
+
+// Real-time fallback for containers decodeAudioData rejects: play the file in
+// a muted-to-speakers pipeline and record the audio stream with MediaRecorder.
+function captureFallback() {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    video.src = objectUrl;
+    video.muted = false;
+    video.addEventListener("error", () => reject(new Error("The browser cannot play this file at all.")), { once: true });
+    video.addEventListener("loadedmetadata", () => {
+      const ctx = new AudioContext();
+      const src = ctx.createMediaElementSource(video);
+      const dest = ctx.createMediaStreamDestination();
+      src.connect(dest); // deliberately NOT connected to ctx.destination — silent capture
+      if (!window.MediaRecorder) return reject(new Error("MediaRecorder is not supported here."));
+      const rec = new MediaRecorder(dest.stream, { mimeType: pickAudioMime() });
+      const chunks = [];
+      rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      rec.onstop = async () => {
+        ctx.close();
+        const blob = new Blob(chunks, { type: rec.mimeType });
+        let buffer = null;
+        try { buffer = await decodeFile(new File([blob], "capture")); } catch (_) {}
+        if (!chunks.length) return reject(new Error("No audio was captured — the file may have no audio track."));
+        resolve({ blob, buffer });
+      };
+      video.addEventListener("ended", () => rec.stop(), { once: true });
+      rec.start(250);
+      video.play().catch(reject);
+    }, { once: true });
+  });
+}
+
+function pickAudioMime() {
+  for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"]) {
+    if (MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return "";
+}
+
+function presentResult(blobOrBytes, type, name, buffer) {
+  const blob = blobOrBytes instanceof Blob ? blobOrBytes : new Blob([blobOrBytes], { type });
+  resultUrl = URL.createObjectURL(blob);
+  player.src = resultUrl;
+  download.href = resultUrl;
+  download.download = name;
+  download.textContent = "Download " + name.split(".").pop().toUpperCase() +
+                         " (" + fmtSize(blob.size) + ")";
+  if (buffer) drawWave(buffer);
+  else wave.getContext("2d").clearRect(0, 0, wave.width, wave.height);
+  resultCard.classList.remove("hidden");
+}
+
+// ---- WAV encoding ---------------------------------------------------------
+
+function encodeWav(buffer) {
+  const nCh = buffer.numberOfChannels;
+  const nFrames = buffer.length;
+  const rate = buffer.sampleRate;
+  const bytesPerSample = 2;
+  const blockAlign = nCh * bytesPerSample;
+  const dataSize = nFrames * blockAlign;
+  const out = new ArrayBuffer(44 + dataSize);
+  const dv = new DataView(out);
+
+  writeAscii(dv, 0, "RIFF");
+  dv.setUint32(4, 36 + dataSize, true);
+  writeAscii(dv, 8, "WAVE");
+  writeAscii(dv, 12, "fmt ");
+  dv.setUint32(16, 16, true);           // fmt chunk size
+  dv.setUint16(20, 1, true);            // PCM
+  dv.setUint16(22, nCh, true);
+  dv.setUint32(24, rate, true);
+  dv.setUint32(28, rate * blockAlign, true);
+  dv.setUint16(32, blockAlign, true);
+  dv.setUint16(34, 16, true);           // bits per sample
+  writeAscii(dv, 36, "data");
+  dv.setUint32(40, dataSize, true);
+
+  const channels = [];
+  for (let c = 0; c < nCh; c++) channels.push(buffer.getChannelData(c));
+  let off = 44;
+  for (let i = 0; i < nFrames; i++) {
+    for (let c = 0; c < nCh; c++) {
+      const s = Math.max(-1, Math.min(1, channels[c][i]));
+      dv.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      off += 2;
+    }
+  }
+  return out;
+}
+
+function writeAscii(dv, off, str) {
+  for (let i = 0; i < str.length; i++) dv.setUint8(off + i, str.charCodeAt(i));
+}
+
+// ---- waveform -------------------------------------------------------------
+
+function drawWave(buffer) {
+  const ctx = wave.getContext("2d");
+  const W = wave.width, H = wave.height, mid = H / 2;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = "#3a4152";
+  ctx.beginPath();
+  ctx.moveTo(0, mid);
+  ctx.lineTo(W, mid);
+  ctx.stroke();
+
+  const data = buffer.getChannelData(0);
+  const step = Math.max(1, Math.floor(data.length / W));
+  ctx.fillStyle = "#e8a33d";
+  for (let x = 0; x < W; x++) {
+    let min = 1, max = -1;
+    const start = x * step;
+    const end = Math.min(start + step, data.length);
+    for (let i = start; i < end; i++) {
+      const v = data[i];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    if (min > max) continue;
+    const y1 = mid - max * mid;
+    const y2 = mid - min * mid;
+    ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+  }
+}
+
+// ---- misc -----------------------------------------------------------------
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1024 / 1024).toFixed(1) + " MB";
+}
+
+function fmtTime(sec) {
+  if (!isFinite(sec)) return "unknown";
+  const m = Math.floor(sec / 60);
+  const s = sec - m * 60;
+  return m + ":" + s.toFixed(1).padStart(4, "0");
+}
+
+function wavName(name, ext) {
+  return name.replace(/\.[^.]+$/, "") + ext;
+}
+</script>
+</body>
+</html>
